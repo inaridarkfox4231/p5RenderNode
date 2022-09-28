@@ -535,48 +535,6 @@ const p5wgex = (function(){
     if(info.textureWrap === undefined){ info.textureWrap = "clamp"; }
   }
 
-  // gl定数は文字列から変換する辞書を作ってそれ使った方が速いわね、おそらく。というかこれただの数字だから、
-  // 極端な話...全部数字でいいのよね。それも記録する必要はなくて、グローバルで...あれすればいい。
-
-  // 文字列をgl定数に変換
-  function _parseTextureParam(gl, info){
-    switch(info.textureType){
-      case "float":
-        info.textureType = gl.FLOAT; break;
-      case "half_float":
-        info.textureType = gl.HALF_FLOAT; break;
-      default:
-        info.textureType = gl.UNSIGNED_BYTE; // 色はUNSIGNED_BYTEですね...
-    }
-
-    switch(info.textureInternalFormat){
-      case "rgba16f":
-        info.textureInternalFormat = gl.RGBA16F; break;
-      case "rgba32f":
-        info.textureInternalFormat = gl.RGBA32F; break;
-      default:
-        info.textureInternalFormat = gl.RGBA;
-    }
-
-    info.textureFormat = gl.RGBA; // 単純に。
-
-    switch(info.textureFilter){
-      case "linear":
-        info.textureFilter = gl.LINEAR; break;
-      default:
-        info.textureFilter = gl.NEAREST;
-    }
-
-    switch(info.textureWrap){
-      case "repeat":
-        info.textureWrap = gl.REPEAT; break;
-      case "mirror":
-        info.textureWrap = gl.MIRRORED_REPEAT; break;
-      default:
-        info.textureWrap = gl.CLAMP_TO_EDGE;
-    }
-  }
-
   // というわけでややこしいんですが、
   // 「gl.RGBAーgl.RGBAーgl.UNSIGNED_BYTE」「gl.RGBA32Fーgl.RGBAーgl.FLOAT」「gl.RGBA16Fーgl.RGBAーgl.HALF_FLOAT」
   // という感じなので、Typeの種類にInternalFormatとFormatが左右されるのですね。
@@ -671,47 +629,6 @@ const p5wgex = (function(){
       texelSizeX: 1/info.w, texelSizeY: 1/info.h, double: true,
     }
     // infoの役割終了
-  }
-
-  // drawModeを文字列から生成する
-  function _parseDrawMode(gl, mode){
-    switch(mode){
-      case "points": // [0], [1], [2], ... 点描画。点ごと。ドット打ち。
-        return gl.POINTS;
-      case "lines": // [0,1], [2,3], [4,5], ... 2つずつ線分を作る。余ったものは無視される。
-        return gl.LINES;
-      case "line_strip": // [0,1], [1,2], [2,3], ...次の点とつないで線分を並べていく。
-        return gl.LINE_STRIP;
-      case "line_loop": // [0,1], [1,2], [2,3], ..., [n-1,0] 基本line_stripだが、最後の点と最初の点をつなぐ。
-        return gl.LINE_LOOP;
-      case "triangle_strip": // [0,1,2], [2,1,3], [2,3,4], [4,3,5], ... ジグザグに並んだ頂点に対し3つずつつながるように三角形。
-        return gl.TRIANGLE_STRIP;
-      case "triangle_fan": // [0,1,2],[0,2,3],[0,3,4],...,[0,n-2,n-1] だと思う。扇形。
-        return gl.TRIANGLE_FAN;
-      default:
-        return gl.TRIANGLES;
-    }
-    // triangles. もしくは未指定。"triangles"ってちゃんと書こうね。
-    // [0,1,2], [3,4,5], [6,7,8], ...3つずつ三角形。一番オーソドックスな指定の仕方。
-    return gl.TRIANGLES;
-  }
-
-  // blendFactorを文字列で指定するためのパーサー...配列でいい気がしてきた。
-  // とりあえず必要なものだけ。
-  function _parseBlendFactor(gl, name){
-    switch(name){
-      case "one": return gl.ONE;
-      case "src_color": return gl.SRC_COLOR;
-      case "dst_color": return gl.DST_COLOR;
-      case "one_minus_src_color": return gl.ONE_MINUS_SRC_COLOR;
-      case "one_minus_dst_color": return gl.ONE_MINUS_DST_COLOR;
-      case "src_alpha": return gl.SRC_ALPHA;
-      case "dst_alpha": return gl.DST_ALPHA;
-      case "one_minus_src_alpha": return gl.ONE_MINUS_SRC_ALPHA;
-      case "one_minus_dst_alpha": return gl.ONE_MINUS_DST_ALPHA;
-      default: return gl.ZERO;
-    }
-    return gl.ZERO;
   }
 
   // あとはp5の2D,webgl画像からテクスチャを作るのとか用意したいね.
@@ -898,6 +815,27 @@ const p5wgex = (function(){
   // ていうかそれだけだと判断できない場合もあるからね。
 
   // ---------------------------------------------------------------------------------------------- //
+  // blendについて...
+  // 基本は
+  // 描画色＝描画元の色 * sFactor + 描画先の色 * dFactor
+  // ですね。なのでたとえば、ONEとONE_MINUS_SRC_ALPHAにすると、ソースアルファが1のところはソースが維持されるため、
+  // すでに塗った色への上書きができるというわけ。そんな感じ。ONEーONEで通常のADDになったりする。
+  // ...webgl2なのでもっと複雑なのができる。らしい。
+  // さらにこれは足し算だが、引き算や、逆引き算も定義出来て、それがblendEquationで、
+  // しかもwebgl2では加えてMINとMAXも指定できるのだ。以上。
+  // blendFuncはこのファクターをそれぞれ決めている。
+  // blendFuncSeparateを使うと(srcRGB, dstRGB, srcA, dstA)って感じで計算結果が分離される。
+  // 個別のファクター決定ができるということ。
+  // blendEquationは真ん中の「+」を別のものにできる。FUNC_SUBTRACTで描画元 - 描画先、
+  // これは描画先の分だけ描画内容を減算。逆にFUNC_REVERSE_SUBTRACTは描画先 - 描画元、描画してある結果からマイナス。
+  // 加えてMINとMAXが追加されました...！これでDARKESTやLIGHTESTを実現できるというわけ。
+  // blendEquationSeparateはRGBとAで個別に計算方法を変えることができるよ。そんなところ。
+
+  // ただね
+
+  // 使い方を知らないと何にもできません。何にもね。
+
+  // ---------------------------------------------------------------------------------------------- //
   // RenderNode.
 
   class RenderNode{
@@ -932,55 +870,23 @@ const p5wgex = (function(){
       return this;
     }
     enable(name){
+      // 有効化指定(cull_face, depth_test, blendなど)
       this.gl.enable(this.dict[name]);
-      /*
-      const gl = this.gl;
-      // 文字列で有効化指定（ドローコールに合わせてスネークで）
-      switch(name){
-        case "blend": gl.enable(gl.BLEND); break;
-        case "cull_face": gl.enable(gl.CULL_FACE); break;
-        case "depth_test": gl.enable(gl.DEPTH_TEST); break;
-      }
-      */
       return this;
     }
     cullFace(mode){
+      // デフォルトはBACK（上から見て反時計回り）
       this.gl.cullFace(this.dict[mode]); // default: back.
-      /*
-      const gl = this.gl;
-      // カルフェイスのデフォはbackなんだそうです。
-      switch(mode){
-        case "front": gl.cullFace(gl.FRONT); break;
-        case "back": gl.cullFace(gl.BACK); break;
-        case "front_and_back": gl.cullFace(gl.FRONT_AND_BACK); break;
-      }
-      */
       return this;
     }
     blendFunc(sFactorName, dFactorName){
-      // blend関数について...
-      // 描画色＝描画元の色 * sFactor + 描画先の色 * dFactor
-      // ですね。なのでたとえば、ONEとONE_MINUS_SRC_ALPHAにすると、ソースアルファが1のところはソースが維持されるため、
-      // すでに塗った色への上書きができるというわけ。そんな感じ。ONEーONEで通常のADDになったりする。
+      // blendFunc. ファクターを一律に決める。
       this.gl.blendFunc(this.dict[sFactorName], this.dict[dFactorName]);
-      /*
-      sFactor = _parseBlendFactor(this.gl, sFactor);
-      dFactor = _parseBlendFactor(this.gl, dFactor);
-      this.gl.blendFunc(sFactor, dFactor);
-      */
       return this;
     }
     disable(name){
+      // 非有効化(cull_face, depth_test, blend)
       this.gl.disable(this.dict[name]);
-      /*
-      const gl = this.gl;
-      // 非有効化
-      switch(name){
-        case "blend": gl.disable(gl.BLEND); break;
-        case "cull_face": gl.disable(gl.CULL_FACE); break;
-        case "depth_test": gl.disable(gl.DEPTH_TEST); break;
-      }
-      */
       return this;
     }
     registPainter(name, vs, fs){
