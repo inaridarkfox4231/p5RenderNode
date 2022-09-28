@@ -1,0 +1,10 @@
+ここにリスト。どんどん並べる感じで...
+何でもかんでも辞書に放り込みたいわけじゃないんよ。あくまで外部から文字列で
+指定したいのだけ、ね。
+
+_parseTextureParam
+_parseDrawMode
+_parseBlendFactor
+enable(name)(RenderNode内部)
+cullFace(mode)(RenderNode内部)
+disable(name)(RenderNode内部)
