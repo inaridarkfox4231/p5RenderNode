@@ -99,19 +99,25 @@ const dataFrag =
 // 次にデータ更新用ですね。
 // 単純に反射でよいかと。えー、...この場合のFigureっていうのはただの板ポリなのです...主役はフレームバッファなので。
 // アクセスは...んー。そうか。使えないわ。どうするかな。...
+// ハードコーディングになってるやん。ちょっといじるから待ってね。
+// できましたね。ちょろいな...
 const updateVert =
 "precision mediump float;" +
 "attribute vec2 aPosition;" + // 板ポリの4つの頂点
+"varying vec2 vUv;" + // UV座標。板ポリですから！
 "void main(){" +
+"  vUv = aPosition.xy * 0.5 + 0.5;" +
+"  vUv.y = 1.0 - vUv.y;" + // これを使ってフラグメントの方でフェッチする。いつもの、いつもの板ポリ芸。
 "  gl_Position = vec4(aPosition, 0.0, 1.0);" +
 "}";
 
+// gl_FragCoordはpixelのdensityに左右されるので極力使いたくないのです。
 const updateFrag =
 "precision mediump float;" +
 "uniform sampler2D uTex;" + // いいよuTexで。これがいわゆる「read」側
+"varying vec2 vUv;" + // UV座標。
 "void main(){" +
-"  vec2 coord = gl_FragCoord.xy / 32.0;" +
-"  vec4 data = texture2D(uTex, coord);" +
+"  vec4 data = texture2D(uTex, vUv);" + // Oh...これでいいんだ。やった！
 "  vec2 p = data.xy;" +
 "  vec2 v = data.zw;" +
 "  if(p.x + v.x < -0.999 || p.x + v.x > 0.999){ v.x *= -1.0; }" +

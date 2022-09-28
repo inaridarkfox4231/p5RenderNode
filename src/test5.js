@@ -10,6 +10,15 @@
 // 学びが何にもないから
 // だめなんですよ。
 
+// 原因分かりました。またgl_PointSize=1.0でした、...なぜ？？？なぜ同じところで？？？
+// チェックシート...いや、慣れ、だな。
+
+// gl_VertexID使えましたね。やったぁ。
+
+// あっさり（おい）
+// あっさり。さすがにもう波乱はないか、...
+// これ使って正方形の位置をいじれれば（速度は回転量とかに使う）、メッシュでもいけるね。
+
 // ----------------------------------------------------------------------------------------- //
 // global.
 
@@ -29,15 +38,17 @@ const dataVert =
 `#version 300 es
 precision mediump float;
 in vec4 aData;
-in float aIndex;
 out vec4 vData;
 uniform float uSize;
 void main(){
-  vec2 p = vec2(mod(aIndex, uSize), floor(aIndex / uSize)) + 0.5;
+  float index = float(gl_VertexID); // 使えるようです。やったね。
+  vec2 p = vec2(mod(index, uSize), floor(index / uSize)) + 0.5;
   p /= uSize;
   p = (p - 0.5) * 2.0;
+  p.y = -p.y;
   gl_Position = vec4(p, 0.0, 1.0);
   vData = aData;
+  gl_PointSize = 1.0; // おかしいな。またこいつか。何で？？
 }
 `;
 
@@ -45,21 +56,59 @@ const dataFrag =
 `#version 300 es
 precision mediump float;
 in vec4 vData;
-out vec4 pv;
+out vec4 pv; // position/velocityなのでpvで。
 void main(){
   pv = vData;
 }
 `;
 
+// updateステージ。
+// 板ポリ芸です。ですが、pixelDensityの問題があるので、こっちであれを渡す...ことはして、いませんね。
+// 直しました。というわけでいつもの板ポリ芸です。pavelさん万歳。
+const updateVert =
+`#version 300 es
+precision mediump float;
+in vec2 aPosition;
+out vec2 vUv;
+void main(){
+  vUv = aPosition * 0.5 + 0.5;
+  vUv.y = 1.0 - vUv.y;
+  gl_Position = vec4(aPosition, 0.0, 1.0);
+}
+`;
+
+// 単純に反射処理でいいです。
+const updateFrag =
+`#version 300 es
+precision mediump float;
+in vec2 vUv; // フェッチ用
+uniform sampler2D uTex; // readのデータ
+out vec4 pv; // 結果
+void main(){
+  vec4 data = texture(uTex, vUv);
+  vec2 p = data.xy;  // 位置
+  vec2 v = data.zw;  // 速度
+  if(p.x + v.x < -0.999 || p.x + v.x > 0.999){ v.x *= -1.0; }
+  if(p.y + v.y < -0.999 || p.y + v.y > 0.999){ v.y *= -1.0; }
+  p += v;
+  pv = vec4(p, v); // うん、色とは限らないから分かりやすくていいよね。
+}
+`;
+
+// さすがに何にもないとまずいので...まあいいか。
+// 使い方次第ですね。付随させる必要がなくなるのは有難いわね。
+// 個人的な意見としては仕様変更とか考えると、
+// aIndexありじゃないですかね。こういうのはマナーとして明示すべきじゃないでしょうか。そう思う。今回は実験なのでね。やったけどね。
 const colorVert =
 `#version 300 es
 precision mediump float;
-in float aIndex;
+in float aIndex; // ダミー。全部0. ただ、attributeって1回は登場させないといけないらしくて...あんま意味ないな。
 uniform float uSize;
 uniform float uPointSize;
 uniform sampler2D uTex;
 void main(){
-  vec2 p = vec2(mod(aIndex, uSize), floor(aIndex / uSize)) + 0.5;
+  float index = float(gl_VertexID) + aIndex;
+  vec2 p = vec2(mod(index, uSize), floor(index / uSize)) + 0.5;
   p /= uSize;
   vec4 data = texture(uTex, p);
   gl_Position = vec4(data.xy, 0.0, 1.0);
@@ -67,12 +116,17 @@ void main(){
 }
 `;
 
+// こんなもんでいいか。
 const colorFrag =
 `#version 300 es
 precision mediump float;
-out vec4 color;
+out vec4 fragColor;
 void main(){
-  color = vec4(1.0);
+  vec2 p = (gl_PointCoord.xy - 0.5) * 2.0;
+  if(length(p) > 1.0){ discard; }
+  vec3 col = vec3(0.4, 0.7, 1.0);
+  col *= pow(1.0 - length(p), 2.0);
+  fragColor = vec4(col, 1.0);
 }
 `
 
@@ -86,7 +140,7 @@ function setup(){
 
   // Painter.
   _node.registPainter("data", dataVert, dataFrag);
-  //_node.registPainter("update", updateVert, updateFrag);
+  _node.registPainter("update", updateVert, updateFrag);
   _node.registPainter("color", colorVert, colorFrag);
 
   // Figure.
@@ -100,9 +154,9 @@ function setup(){
     dataArray.push(x, y, _speed * Math.cos(_direction), _speed * Math.sin(_direction));
     indexArray.push(i);
   }
-  _node.registFigure("data", [{name:"aData", size:4, data:dataArray}, {name:"aIndex", size:1, data:indexArray}]);
+  _node.registFigure("data", [{name:"aData", size:4, data:dataArray}]);
   _node.registFigure("board", [{name:"aPosition", size:2, data:[-1, -1, 1, -1, -1, 1, 1, 1]}]);
-  _node.registFigure("indices", [{name:"aIndex", size:1, data:indexArray}]);
+  _node.registFigure("indices", [{name:"aIndex", size:1, data: new Array(SIZE*SIZE).fill(0)}]); // これでOKってこと？
 
   _node.registDoubleFBO("sprites", {w:SIZE, h:SIZE, textureType:"float"});
 
@@ -117,17 +171,31 @@ function setup(){
   _node.unbind();
 }
 
-// 同じものをコピーしたいわけじゃないんです。300esを試したいだけなんです。だからコピペして終わりじゃないんです。
+// 同じものをコピーしたいわけじゃないんです。#version 300 esを試したいだけなんです。だからコピペして終わりじゃないんです。
 // たとえて言うなら模写をコンビニのコピーで済ますようなもので、無意味です。
 function draw(){
+
+  // メインディッシュの調理と行こうか
+  _node.bindFBO("sprites");
+  _node.use("update", "board");
+  _node.setFBOtexture2D("uTex", "sprites");
+  _node.drawArrays("triangle_strip");
+  _node.swapFBO("sprites");
+  _node.unbind();
+
+  _node.enable("blend");
+  _node.blendFunc("one", "one");
+
   // 点描画
   _node.bindFBO(null);
   _node.clear();
   _node.use("color", "indices");
   _node.setFBOtexture2D("uTex", "sprites");
   _node.setUniform("uSize", SIZE);
-  _node.setUniform("uPointSize", 16.0);
+  _node.setUniform("uPointSize", 16.0 * pixelDensity());
   _node.drawArrays("points");
   _node.unbind();
   _node.flush();
+
+  _node.disable("blend");
 }

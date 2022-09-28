@@ -76,6 +76,12 @@
 // copyはそれすらできない、TransformFeedbackでGPU内部の処理で変更することは可能みたい。だからこれを指定すると。
 // readはあれ、readPixelsを使うってことなんだろうね。使い方...
 
+// カメラについてなんだけどさ...
+// vec3とかクォータニオンとか用意して整理するのはどうよ。で、カメラの3本をグローバルのベクトルにして...
+// とかしたら面白そう。よくわかんないけど。vec3はクォータニオンに含ませることができる。そして回転量はクォータニオンで
+// あらわせる、のも知ってるし、演算も知ってる。ただ使い道とか細かい部分について理解が足りないというか。それで二の足踏んでる感じ
+// なんだけど、他の用途（線形補間によるアニメーション）もあるし、苦手意識をなくしたいのよね。
+
 // --------------------------- //
 // まず、...
 // うまくいくんかいな。まあ別に死ぬわけじゃないし。死にかけたし。気楽にやろ。死ぬことが無いなら何でもできる。
@@ -957,6 +963,7 @@ const p5wgex = (function(){
         // attributeLocationを通知し登録する
         this.gl.vertexAttribPointer(attr.location, vbo.size, vbo.type, false, 0, 0);
       }
+      return this;
     }
     setTexture2D(name, _texture){
       // 有効になっているPainterにテクスチャを付与
@@ -1088,9 +1095,11 @@ const p5wgex = (function(){
       this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, null);
       this.currentIBO = undefined;
       this.currentPainter.unbind();
+      return this;
     }
     flush(){
       this.gl.flush();
+      return this;
     }
   }
 
@@ -1324,6 +1333,9 @@ const p5wgex = (function(){
   // モデルはまた別のモジュールを用意しないとねぇ
   // ものによってはカメラ要らないですからそこら辺。p5js常にカメラが備わってるので柔軟性が低いんですよね。
   // うそですよ
+
+  // まあ色々と雑だから何とかしたいよね...問題はp5jsみたく節操無く何でも用意した挙句使い方分かりません！使わない！
+  // ってならないためにはどうすればいいかっていうね。
 
   class CameraEx{
     constructor(w, h){
