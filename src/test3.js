@@ -50,6 +50,9 @@
 // だから使えないのよね...難しいところ。使えなくもないんだけどそれを考慮した値になるわけで。
 // それもあってかpixi.jsでは全部rectにtexture貼り付けてる。まあ当然か。
 
+// ポイントスプライトが嫌な場合は、たとえば32x32の大きさにこだわるなら、んー。
+// 32x32の正方形メッシュを32x32個用意してやればいいと思う。
+
 // --------------------------------------------------------------------------- //
 // global.
 
@@ -146,7 +149,7 @@ const colorFrag =
 "  rgb = rgb * rgb * (3.0 - 2.0 * rgb);" +
 "  return c.z * mix(vec3(1.0), rgb, c.y);" +
 "}" +
-// メインコード
+// メインコード（速度を明度に変換）
 "void main(){" +
 "  vec2 p = (gl_PointCoord.xy - 0.5) * 2.0;" +
 "  if(length(p) > 1.0){ discard; }" +
@@ -225,7 +228,7 @@ function draw(){
   _node.clear(); // スクリーンを黒で初期化
   _node.use("color", "indices");
   _node.setUniform("uSize", SIZE);
-  _node.setUniform("uPointSize", 32.0);
+  _node.setUniform("uPointSize", 16.0 * pixelDensity()); // 一つの考え方。pixelDensity()を掛ける。これで依存しない。
   _node.setFBOtexture2D("uTex", "sprites");
   _node.drawArrays("points");
   _node.unbind();

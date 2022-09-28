@@ -67,6 +67,14 @@
 
 // gl定数の辞書は...リスト作っておいて文字列でアクセスできるようにしましょうね...汎用性考えるとね。
 // 辞書作らないとキリがないので。
+// 勝手に数字書き換えられても困るのでマジックナンバーは使わない方向で
+
+// usage誤解してたわ：https://developer.mozilla.org/ja/docs/Web/API/WebGLRenderingContext/bufferData
+// となると頻繁に更新するならSTREAM_DRAWがいいわけだ...そしてwebgl2なので書き込めないようにできるということ。
+// でもめんどくさいのでとりあえず...
+// readとcopyは書き込み不可能ということですね。readの場合はメソッドで取り出せるようです。
+// copyはそれすらできない、TransformFeedbackでGPU内部の処理で変更することは可能みたい。だからこれを指定すると。
+// readはあれ、readPixelsを使うってことなんだろうね。使い方...
 
 // --------------------------- //
 // まず、...
@@ -159,6 +167,69 @@ const p5wgex = (function(){
       return {r:red(col), g:green(col), b:blue(col)};
     }
     return {r:255, g:255, b:255};
+  }
+
+  // ---------------------------------------------------------------------------------------------- //
+  // dictionary.(随時追加...？)
+
+  function getDict(gl){
+    const d = {};
+    // -------textureFormat-------//
+    d.float = gl.FLOAT;
+    d.half_float = gl.HALF_FLOAT;
+    d.ubyte = gl.UNSIGNED_BYTE;
+    d.uint = gl.UNSIGNED_INT;
+    d.rgba = gl.RGBA; // rgba忘れてたっ
+    d.rgba16f = gl.RGBA16F;
+    d.rgba32f = gl.RGBA32F;
+    d.short = gl.SHORT;
+    d.ushort = gl.UNSIGNED_SHORT;
+    d.int = gl.INT;
+    // -------usage-------//
+    d.static_draw = gl.STATIC_DRAW;
+    d.dynamic_draw = gl.DYNAMIC_DRAW;
+    d.stream_draw = gl.STREAM_DRAW;
+    d.static_read = gl.STATIC_READ;
+    d.dynamic_read = gl.DYNAMIC_READ;
+    d.stream_read = gl.STREAM_READ;
+    d.static_copy = gl.STATIC_COPY;
+    d.dynamic_copy = gl.DYNAMIC_COPY;
+    d.stream_copy = gl.STREAM_COPY;
+    // -------textureParam-------//
+    d.linear = gl.LINEAR;
+    d.nearest = gl.NEAREST;
+    d.repeat = gl.REPEAT;
+    d.mirror = gl.MIRRORED_REPEAT;
+    d.clamp = gl.CLAMP_TO_EDGE;
+    // -------drawCall-------//
+    d.points = gl.POINTS;
+    d.lines = gl.LINES;
+    d.line_loop = gl.LINE_LOOP;
+    d.line_strip = gl.LINE_STRIP;
+    d.triangles = gl.TRIANGLES;
+    d.triangle_strip = gl.TRIANGLE_STRIP;
+    d.triangle_fan = gl.TRIANGLE_FAN;
+    // -------blendOption-------//
+    d.one = gl.ONE;
+    d.zero = gl.ZERO;
+    d.src_color = gl.SRC_COLOR;
+    d.dst_color = gl.DST_COLOR;
+    d.one_minus_src_color = gl.ONE_MINUS_SRC_COLOR;
+    d.one_minus_dst_color = gl.ONE_MINUS_DST_COLOR;
+    d.src_alpha = gl.SRC_ALPHA;
+    d.dst_alpha = gl.DST_ALPHA;
+    d.one_minus_src_alpha = gl.ONE_MINUS_SRC_ALPHA;
+    d.one_minus_dst_alpha = gl.ONE_MINUS_DST_ALPHA;
+    // -------enable-------//
+    d.blend = gl.BLEND;
+    d.cull_face = gl.CULL_FACE;
+    d.depth_test = gl.DEPTH_TEST;
+    d.stencil_test = gl.STENCIL_TEST;
+    // -------cullFace-------//
+    d.front = gl.FRONT;
+    d.back = gl.BACK;
+    d.front_and_back = gl.FRONT_AND_BACK;
+    return d;
   }
 
   // ---------------------------------------------------------------------------------------------- //
@@ -373,8 +444,10 @@ const p5wgex = (function(){
   // attrの構成例：{name:"aPosition", size:2, data:[-1,-1,-1,1,1,-1,1,1], usage:"static"}
   // ああそうか隠蔽するからこうしないとまずいわ...修正しないと。"static"とか。
   // 今staticとdynamicしかないからstatic意外はdynamicってやっておきますか。
-  function _createVBO(gl, attr){
-    const _usage = (attr.usage === "static" ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
+  function _createVBO(gl, attr, dict){
+    //const _usage = (attr.usage === "static_draw" ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
+    const _usage = dict[attr.usage];
+    const _type = dict[attr.type];
 
     const vbo = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
@@ -387,22 +460,22 @@ const p5wgex = (function(){
       data: attr.data,
       count: attr.data.length, // countに名前を変更
       size: attr.size, // vec2なら2ですし、vec4なら4です。作るときに指定。
-      type: attr.type,  // いつの日か整数属性を使う時が来たら考える。今は未定義でgl.FLOATになるくらいで。
+      type: _type,  // いつの日か整数属性を使う時が来たら考える。今は未定義でgl.FLOATになるくらいで。
       usage: attr.usage,
     };
   }
 
   // attrsはattrの配列
-  function _createVBOs(gl, attrs){
+  function _createVBOs(gl, attrs, dict){
     const vbos = {};
     for(let attr of attrs){
-      vbos[attr.name] = _createVBO(gl, attr);
+      vbos[attr.name] = _createVBO(gl, attr, dict);
     }
     return vbos;
   }
 
   function _validateForIBO(gl, info){
-    if(info.usage === undefined){ info.usage = "static"; } // これも基本STATICですね...
+    if(info.usage === undefined){ info.usage = "static_draw"; } // これも基本STATICですね...
     if(info.large === undefined){ info.large = false; } // largeでT/F指定しよう. 指定が無ければUint16.
     if(info.large){
       info.type = Uint32Array;
@@ -416,9 +489,10 @@ const p5wgex = (function(){
   // infoの指定の仕方
   // 必須: dataにインデックス配列を入れる。nameは渡すときに付与されるので要らない。
   // 任意：usageは"static"か"dynamic"を指定
-  function _createIBO(gl, info){
+  function _createIBO(gl, info, dict){
     _validateForIBO(gl, info);
-    const _usage = (info.usage === "static" ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
+    const _usage = dict[info.usage];
+    //const _usage = (info.usage === "static_draw" ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
 
     const ibo = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
@@ -517,9 +591,9 @@ const p5wgex = (function(){
   // 学術計算とかなら"linear"使うかも
   // textureWrap: 境界処理。デフォルトは"clamp"だが"repeat"や"mirror"を指定する場合もあるかも。
   // 色として普通に使うなら全部指定しなくてOK. 点情報の格納庫として使うなら"float"だけ要ると思う。
-  function _createFBO(gl, info){
+  function _createFBO(gl, info, dict){
     _validateForFBO(gl, info);
-    _parseTextureParam(gl, info);
+    //_parseTextureParam(gl, info);
 
     // framebufferを生成
     let framebuffer = gl.createFramebuffer();
@@ -546,14 +620,15 @@ const p5wgex = (function(){
     // ちなみに3つの引数の正式名称はInternalFormat, Format, Typeです。「textureType」の方が正しいようで。
     // textureInternalFormatとtextureFormatはundefinedなら自動決定、という方向で。
     // 手動でも決定できるようにするか。最終的にgl変数は辞書使って何でも指定可能にするつもり...
-    gl.texImage2D(gl.TEXTURE_2D, 0, info.textureInternalFormat, info.w, info.h, 0, info.textureFormat, info.textureType, null);
+    gl.texImage2D(gl.TEXTURE_2D, 0, dict[info.textureInternalFormat], info.w, info.h, 0,
+                  dict[info.textureFormat], dict[info.textureType], null);
 
     // テクスチャパラメータ
     // このNEARESTのところを可変にする
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, info.textureFilter);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, info.textureFilter);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, info.textureWrap);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, info.textureWrap);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[info.textureFilter]);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[info.textureFilter]);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, dict[info.textureWrap]);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[info.textureWrap]);
 
     // フレームバッファにテクスチャを関連付ける
     // こっちがFramebuffer is incompleteか。
@@ -577,12 +652,12 @@ const p5wgex = (function(){
     // infoの役割終了
   }
 
-  function _createDoubleFBO(gl, info){
+  function _createDoubleFBO(gl, info, dict){
     // assignでコピーしないと多分infoの内容が正しく伝わらないので
     const info0 = Object.assign({}, info);
-    let fbo0 = _createFBO(gl, info0);
+    let fbo0 = _createFBO(gl, info0, dict);
     const info1 = Object.assign({}, info);
-    let fbo1 = _createFBO(gl, info1);
+    let fbo1 = _createFBO(gl, info1, dict);
     // 各種情報は生成にしか使わないのでこれでいい。
     return {
       read: {f:fbo0.f, d:fbo0.d, t:fbo0.t},  // f,d,tしか要らないので。
@@ -702,22 +777,23 @@ const p5wgex = (function(){
 
   // ---------------------------------------------------------------------------------------------- //
   // Figure.
+  // いろいろやることあるんかなぁ。今はこんな感じ。dict渡したけどまあ、何かに使えるでしょう...分かんないけど。
 
   class Figure{
-    constructor(_gl, name, attrs){
+    constructor(_gl, name, attrs, dict){
       this._gl = _gl;
       this.gl = _gl.GL;
       this.name = name;
       const gl = this._gl.GL;
       this.validate(attrs);
-      this.vbos = _createVBOs(gl, attrs);
+      this.vbos = _createVBOs(gl, attrs, dict);
     }
     validate(attrs){
       // attrsは配列です。各成分の形：{name:"aPosition",data:[-1,-1,-1,1,1,-1,1,1]}とか。場合によってはusage:gl.DYNAMIC_DRAWなど
       // sizeも追加で。1とか2とか。これも追加でよろしく。
       for(let attr of attrs){
-        if(attr.usage === undefined){ attr.usage = "static"; }
-        if(attr.type === undefined){ attr.type = this.gl.FLOAT; } // おいおいなんとかしていくつもり
+        if(attr.usage === undefined){ attr.usage = "static_draw"; }
+        if(attr.type === undefined){ attr.type = "float"; } // ていうか色でもFLOATでいいんだ？？
       }
     }
     getVBOs(){
@@ -833,10 +909,10 @@ const p5wgex = (function(){
       this.fbos = {};
       this.ibos = {};
       this.currentPainter = undefined;
-      //this.currentShader = undefined;
       this.currentFigure = undefined;
       this.currentIBO = undefined; // このくらいはいいか。
       this.enableExtensions(); // 拡張機能
+      this.dict = getDict(this.gl); // 辞書を生成
     }
     enableExtensions(){
       // color_buffer_floatのEXT処理。pavelさんはこれ使ってwebgl2でもfloatへの書き込みが出来るようにしてた。
@@ -856,6 +932,8 @@ const p5wgex = (function(){
       return this;
     }
     enable(name){
+      this.gl.enable(this.dict[name]);
+      /*
       const gl = this.gl;
       // 文字列で有効化指定（ドローコールに合わせてスネークで）
       switch(name){
@@ -863,9 +941,12 @@ const p5wgex = (function(){
         case "cull_face": gl.enable(gl.CULL_FACE); break;
         case "depth_test": gl.enable(gl.DEPTH_TEST); break;
       }
+      */
       return this;
     }
     cullFace(mode){
+      this.gl.cullFace(this.dict[mode]); // default: back.
+      /*
       const gl = this.gl;
       // カルフェイスのデフォはbackなんだそうです。
       switch(mode){
@@ -873,19 +954,25 @@ const p5wgex = (function(){
         case "back": gl.cullFace(gl.BACK); break;
         case "front_and_back": gl.cullFace(gl.FRONT_AND_BACK); break;
       }
+      */
       return this;
     }
-    blendFunc(sFactor, dFactor){
+    blendFunc(sFactorName, dFactorName){
       // blend関数について...
       // 描画色＝描画元の色 * sFactor + 描画先の色 * dFactor
       // ですね。なのでたとえば、ONEとONE_MINUS_SRC_ALPHAにすると、ソースアルファが1のところはソースが維持されるため、
       // すでに塗った色への上書きができるというわけ。そんな感じ。ONEーONEで通常のADDになったりする。
+      this.gl.blendFunc(this.dict[sFactorName], this.dict[dFactorName]);
+      /*
       sFactor = _parseBlendFactor(this.gl, sFactor);
       dFactor = _parseBlendFactor(this.gl, dFactor);
       this.gl.blendFunc(sFactor, dFactor);
+      */
       return this;
     }
     disable(name){
+      this.gl.disable(this.dict[name]);
+      /*
       const gl = this.gl;
       // 非有効化
       switch(name){
@@ -893,6 +980,7 @@ const p5wgex = (function(){
         case "cull_face": gl.disable(gl.CULL_FACE); break;
         case "depth_test": gl.disable(gl.DEPTH_TEST); break;
       }
+      */
       return this;
     }
     registPainter(name, vs, fs){
@@ -902,27 +990,27 @@ const p5wgex = (function(){
     }
     registFigure(name, attrs){
       // attrsは配列です。
-      const newFigure = new Figure(this._gl, name, attrs);
+      const newFigure = new Figure(this._gl, name, attrs, this.dict);
       this.figures[name] = newFigure;
       return this;
     }
     registIBO(name, info){
       info.name = name; // infoは{data:[0,1,2,2,1,3]}みたいなので問題ないです。配列渡すのでもいいんだけど...柔軟性考えるとね...
-      const newIBO = _createIBO(this.gl, info);
+      const newIBO = _createIBO(this.gl, info, this.dict);
       this.ibos[name] = newIBO;
       return this;
     }
     registFBO(name, info){
       // nameはここで付けるので要らないね。doubleは生成時に付与するので要らんわな。
       info.name = name;
-      const newFBO = _createFBO(this.gl, info);
+      const newFBO = _createFBO(this.gl, info, this.dict);
       this.fbos[name] = newFBO;
       return this;
     }
     registDoubleFBO(name, info){
       // nameは以下略
       info.name = name;
-      const newFBO = _createDoubleFBO(this.gl, info);
+      const newFBO = _createDoubleFBO(this.gl, info, this.dict);
       this.fbos[name] = newFBO;
       return this;
     }
@@ -1076,16 +1164,16 @@ const p5wgex = (function(){
         count = vbos[name].count / vbos[name].size;
       }
       // modeの文字列からgl定数を取得
-      mode = _parseDrawMode(this.gl, mode);
+      //mode = _parseDrawMode(this.gl, mode);
       // 実行
-      this.gl.drawArrays(mode, first, count);
+      this.gl.drawArrays(this.dict[mode], first, count);
       return this;
     }
     drawElements(mode, count){
       // typeとsizeがそのまま使えると思う
       const ibo = this.currentIBO;
-      mode = _parseDrawMode(this.gl, mode);
-      this.gl.drawElements(mode, ibo.count, ibo.intType, 0);
+      //mode = _parseDrawMode(this.gl, mode);
+      this.gl.drawElements(this.dict[mode], ibo.count, ibo.intType, 0);
       return this;
     }
     unbind(){
@@ -1168,7 +1256,6 @@ const p5wgex = (function(){
     this.m[14] = s.m[12]*_m[2] + _s.m[13]*_m[6] + _s.m[14]*_m[10] + _s.m[15]*_m[14];
     this.m[15] = s.m[12]*_m[3] + _s.m[13]*_m[7] + _s.m[14]*_m[11] + _s.m[15]*_m[15];
   */
-
 
   // ---------------------------------------------------------------------------------------------- //
   // utility for Matrix4x4.

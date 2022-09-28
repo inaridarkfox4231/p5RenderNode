@@ -2,9 +2,57 @@
 何でもかんでも辞書に放り込みたいわけじゃないんよ。あくまで外部から文字列で
 指定したいのだけ、ね。
 
+現時点で使ってるのそんな多くないな...さっさとまとめちゃおう。
+
 _parseTextureParam
 _parseDrawMode
 _parseBlendFactor
 enable(name)(RenderNode内部)
 cullFace(mode)(RenderNode内部)
 disable(name)(RenderNode内部)
+
+"float": gl.FLOAT;
+"half_float": gl.HALF_FLOAT;
+"ubyte": gl.UNSIGNED_BYTE;
+ついでに
+"uint": gl.UNSIGNED_INT;
+"rgba16f": gl.RGBA16F;
+"rgba32f": gl.RGBA32F;
+"short": gl.SHORT;
+"ushort": gl.UNSIGNED_SHORT;
+"int": gl.INT;
+
+
+"linear": gl.LINEAR;
+"nearest": gl.NEAREST;
+"repeat": gl.REPEAT;
+"mirror": gl.MIRRORED_REPEAT;
+"clamp": gl.CLAMP_TO_EDGE;
+
+"points": gl.POINTS;
+"lines": gl.LINES;
+"line_loop": gl.LINE_LOOP;
+"line_strip": gl.LINE_STRIP;
+"triangle_strip": gl.TRIANGLE_STRIP;
+"triangle_fan": gl.TRIANGLE_FAN;
+"triangles": gl.TRIANGLES;
+
+"one": gl.ONE;
+"zero": gl.ZERO;
+"src_color": gl.SRC_COLOR;
+"dst_color": gl.DST_COLOR;
+"one_minus_src_color": gl.ONE_MINUS_SRC_COLOR;
+"one_minus_dst_color": gl.ONE_MINUS_DST_COLOR;
+"src_alpha": gl.SRC_ALPHA;
+"dst_alpha": gl.DST_ALPHA;
+"one_minus_src_alpha": gl.ONE_MINUS_SRC_ALPHA;
+"one_minus_dst_alpha": gl.ONE_MINUS_DST_ALPHA;
+
+"blend": gl.BLEND;
+"cull_face": gl.CULL_FACE;
+"depth_test": gl.DEPTH_TEST;
+"stencil_test": gl.STENCIL_TEST;
+
+"front": gl.FRONT;
+"back": gl.BACK;
+"front_and_back": gl.FRONT_AND_BACK;
