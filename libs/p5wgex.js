@@ -1,87 +1,3 @@
-// やり直し！
-
-// 行列って要するに特定のライティング用のシェーダ使うときのカメラ操作とか
-// オブジェクトに回転や平行移動をさせたい場合の簡易オプションみたいな位置づけだから
-// それ専用のモジュール用意したらいいわね。どうするかな～そのままパクってもいいんだけど...
-
-// というわけで一通りやったよ～疲れた
-// てか視錐台見えないっての。何かしらの方法で可視化しないと厳しいわね。
-// いつかね。
-// テストするにあたり、パイプラインを...ていうかシェーダーを用意しないと。まあそれは
-// グローバルで自前で用意するんだけど。
-// だって備え付けても仕方ないでしょいじってなんぼなんだから。中身見えてないと色々めんどくさいし。
-
-// カリングについても突っ込まないといけないんだよなぁ...仕方ないんだけど。あれ苦手。でもやらねばね。
-
-// 20220927
-// 一応動いたわ...寝るわ...
-// Painter側のsizeとtypeは意図した挙動しないということで廃止
-// Figureサイドでsizeを2とか3とか指定したうえでcountで割って...って感じで。よろしくで。
-// Figureのtypeが今んとこgl.FLOAT固定だけどそのうち色々使う機会が来る...かもしれない。
-// 動的更新は今んとこ実行する方法...まあそのうち用意するつもり。Float32の配列を渡してそれ使って...
-// グローバルで...とかいう感じで。
-// 行列も含めて検証することが山積み。大変だ～。
-// webgl2表記でシェーダー書いたりとか。色々ね。
-
-// 手始めに「createShader」と「shader」、これを移してしまう。
-// _glでアクセスできないので...（意外だった）まあ仕方ないわね。setUniformもおいおい移していくけど...（未定）
-
-// setUniform、中でuseProgramしてるのか...分けたいんだよな～
-// ていうかこの方法でshader作っちゃうとsetUniformが付与されないわけね。まずいわな。
-
-// キャッシュデータのは多分、同じ内容を毎フレームsetUniformするのが無駄が多いんだと思う。でもなぁ...
-// テクスチャとか考えるとそれ別に要らないんじゃ...って思ってしまう（いいけど）
-// あとこれで網羅したわけじゃないってのはちょっと気になるかも。
-
-// 中でしか使わない関数(private)は_で始めた方がいいと思う。ちょっと修正が必要かも。
-
-// background(~~~)だっけ
-// 単色で塗りつぶすのとか欲しいかも
-
-// 20220927
-// clearをunbindに改称（clearは別の意味で使いたいので）
-// こっちでしか使わない関数に_を付ける（エクスポートしない関数）
-
-// 20220928
-// webgl2ではtexImage2Dでの指定の仕方について、typeがgl.FLOATの場合、ちょっとややこしいようで...
-// 具体的には「https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/texImage2D」のInternalFormatのとこに
-// リンクが：「https://registry.khronos.org/webgl/specs/latest/2.0/#TEXTURE_TYPES_FORMATS_FROM_DOM_ELEMENTS_TABLE」
-// 張ってあってこの組み合わせじゃないといけない。つまりgl.RGBAーgl.RGBAの場合UNSIGNED_BYTE(0～255)を含む3通りで
-// gl.FLOATは対象外！
-// webgl1のようにやりたかったら下から2番目の「gl.RGBA32Fーgl.RGBAーgl.FLOAT」にしないといけないのだ。
-// ...適宜修正しないとね...
-
-// それ以前に
-// https://stackoverflow.com/questions/69016956/webgl2-incomplete-framebuffer
-// RGBA32Fは書き込み不可能？？「https://registry.khronos.org/OpenGL/specs/es/3.0/es_spec_3.0.pdf#page=143&zoom=100,168,666」
-// renderableではない、ということ。つまり書き込めるテクスチャとして使えないと...で、調べたらtexStorage2Dというのが
-// でてきました。こっちを使え...？というかwebgl2においてそもそもtexImage2Dが非推奨なんだそうです。
-// 参考：https://ics.media/web3d-maniacs/webgl2_texture2darray/
-// でもpavelさんの流体のは普通にtexImage2Dで取得してたし、書き込んでたし。つじつま合わないんですよね...
-
-// pavelさんこれ使ってた：
-// https://developer.mozilla.org/en-US/docs/Web/API/EXT_color_buffer_float
-// 拡張機能です。gl.getExtension('EXT_color_buffer_float');
-// これで使えるようになるとのこと。はぁ...なるほどね...これでcolor-renderableになるわけだ...
-// webgl2だから拡張無しでOKかと思ったらそういうわけにはいかないわけだ。
-
-// gl定数の辞書は...リスト作っておいて文字列でアクセスできるようにしましょうね...汎用性考えるとね。
-// 辞書作らないとキリがないので。
-// 勝手に数字書き換えられても困るのでマジックナンバーは使わない方向で
-
-// usage誤解してたわ：https://developer.mozilla.org/ja/docs/Web/API/WebGLRenderingContext/bufferData
-// となると頻繁に更新するならSTREAM_DRAWがいいわけだ...そしてwebgl2なので書き込めないようにできるということ。
-// でもめんどくさいのでとりあえず...
-// readとcopyは書き込み不可能ということですね。readの場合はメソッドで取り出せるようです。
-// copyはそれすらできない、TransformFeedbackでGPU内部の処理で変更することは可能みたい。だからこれを指定すると。
-// readはあれ、readPixelsを使うってことなんだろうね。使い方...
-
-// カメラについてなんだけどさ...
-// vec3とかクォータニオンとか用意して整理するのはどうよ。で、カメラの3本をグローバルのベクトルにして...
-// とかしたら面白そう。よくわかんないけど。vec3はクォータニオンに含ませることができる。そして回転量はクォータニオンで
-// あらわせる、のも知ってるし、演算も知ってる。ただ使い道とか細かい部分について理解が足りないというか。それで二の足踏んでる感じ
-// なんだけど、他の用途（線形補間によるアニメーション）もあるし、苦手意識をなくしたいのよね。
-
 // --------------------------- //
 // まず、...
 // うまくいくんかいな。まあ別に死ぬわけじゃないし。死にかけたし。気楽にやろ。死ぬことが無いなら何でもできる。
@@ -235,6 +151,10 @@ const p5wgex = (function(){
     d.front = gl.FRONT;
     d.back = gl.BACK;
     d.front_and_back = gl.FRONT_AND_BACK;
+    // -------targetName------- //
+    d.array_buf = gl.ARRAY_BUFFER;
+    d.element_buf = gl.ELEMENT_ARRAY_BUFFER;
+    d.transform_feedback_buf = gl.TRANSFORM_FEEDBACK_BUFFER; // こんなところで。
     return d;
   }
 
@@ -965,8 +885,18 @@ const p5wgex = (function(){
       }
       return this;
     }
+    bufferSubData(attrName, targetName, srcData, srcOffset = 0){
+      // いわゆる動的更新。currentFigureに対し、それがもつ属性の名前と放り込む際に使う配列を渡して更新させる。
+      // srcOffsetは何処から読むか、ということのようです。
+      // targetNameは array_buf: ARRAY_BUFFER で element_buf: ELEMENT_ARRAY_BUFFER ということですね。OK!
+      const vbos = this.currentFigure.getVBOs();
+      const vbo = vbos[attrName];
+      this.gl.bindBuffer(this.dict[targetName], vbo.buf);
+      this.gl.bufferSubData(this.dict[targetName], 0, srcData, srcOffset); // srcDataはFloat32Arrayの何か
+      return this;
+    }
     setTexture2D(name, _texture){
-      // 有効になっているPainterにテクスチャを付与
+      // 有効になっているPainterがテクスチャユニフォームを持っているとして、それを使えるようにbindする。
       this.currentPainter.setTexture2D(name, _texture);
       return this;
     }
