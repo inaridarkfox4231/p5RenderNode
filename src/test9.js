@@ -15,9 +15,17 @@
 // 短いコードで書けるようになったね...あんな四苦八苦してたのが嘘みたいだわね。過去のコードこれで書き直すのも
 // ありかな、とりあえず正方形とかでやってみるか？多分10000個でも軽いと思う。計算次第だけど。
 
+// せっかく実装したんだからliquidFunと組み合わせたいわよね
+// 2Dはそうでもしないと見栄えが出ない。それか3D.
+
+// Timer実装しました。簡単です。setで名前指定して放り込む。で、getDeltaでsetしてからの経過ミリ秒、
+// getDeltaSecondでその秒数指定、getDeltaFPStextでfpsがいくつ、の場合の桁数含めて指定してさらにテキストにしたやつを取得。
+// 表示するのは大変だけどな。んー...
+
 // -------global------- //
 const ex = p5wgex;
 let _node;
+let _timer; // 使ってみる
 const NUM = 1024;
 let posiData = new Array(NUM*2*3).fill(0);
 let posiDataTyped = new Float32Array(NUM*2*3);
@@ -52,7 +60,9 @@ void main(){
 // -------setup------- //
 function setup(){
   createCanvas(640, 640, WEBGL);
-  _startTime = performance.now();
+  //_startTime = performance.now();
+  _timer = new ex.Timer();
+  _timer.set("duration");
   const _gl = this._renderer;
   _node = new ex.RenderNode(_gl);
 
@@ -69,7 +79,8 @@ function setup(){
     colors[i*3+1] = col.g;
     colors[i*3+2] = col.b;
   }
-  _node.registFigure("triangle", [{name:"aPosition", size:2, data:posiData}, {name:"aColor", size:3, data:colors}]);
+  _node.registFigure("triangle", [{name:"aPosition", size:2, data:posiData, usage:"dynamic_draw"},
+                                  {name:"aColor", size:3, data:colors}]);
 
   _node.clearColor(0, 0, 0, 1);
 }
@@ -87,7 +98,7 @@ function draw(){
 }
 
 function dataUpdate(){
-  const currentTime = (performance.now() - _startTime) / 1000.0; // 経過秒数
+  const currentTime = _timer.getDeltaSecond("duration"); // 経過秒数
 
   for(let i=0; i<NUM; i++){
     const offset = i*6;

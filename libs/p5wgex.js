@@ -91,6 +91,39 @@ const p5wgex = (function(){
     return {r:255, g:255, b:255};
   }
 
+  // 簡単なタイマー的な何か
+  // 単純に経過ミリ秒を返す...
+  // たとえば適当なタイミングで"draw"とかしてgetDeltaでdrawって呼ぶとそこまでの差が出るから
+  class Timer{
+    constructor(){
+      this.stumps = {};
+    }
+    set(keyName){
+      // これを呼び出すことで登録される
+      this.stumps[keyName] = window.performance.now();
+    }
+    getDelta(keyName){
+      // 単純に経過ミリ秒を返す。
+      if(this.stumps[keyName] === undefined){
+        console.log("invalid name");
+        return null;
+      }
+      return window.performance.now() - this.stumps[keyName];
+    }
+    getDeltaSecond(keyName){
+      // 秒数にする
+      const delta = this.getDelta(keyName);
+      if(delta === null){ return null; }
+      return delta / 1000; // 1000で割ってミリ秒にする
+    }
+    getDeltaFPStext(keyName, fps = 60, digits = 3){
+      // fpsのテキストを返してくれる。ざっくりいうと1に近いほど遅い。
+      const delta = this.getDelta(keyName);
+      if(delta === null){ return null; }
+      return (delta * fps / 1000).toFixed(digits); // 1000/fpsで割って...桁数指定で文字列を返す。
+    }
+  }
+
   // ---------------------------------------------------------------------------------------------- //
   // dictionary.(随時追加...？)
 
@@ -1484,6 +1517,7 @@ const p5wgex = (function(){
   ex.getNormalMat = getNormalMat;
 
   // class.
+  ex.Timer = Timer;
   ex.Painter = Painter;
   ex.Figure = Figure;
   ex.RenderNode = RenderNode;
