@@ -243,19 +243,26 @@ function setModelView(){
 }
 
 // 平面のtf
+// どういうことかというと、(0,0),(100,0),(100,100),(0,100)の正方形を重心で回転させるには、
+// 重心が原点に来るように(-50,-50)のtranslateしてから回転、次いで(50,50)のtranslateで戻す必要があると。
+// そこでそれを逆に並べて(50,50)のtranslate,rotateZ,(-50,-50)のtranslateしたというわけさ。
+// 難しいね...ていうか普通はこういう面倒なことしなくて済むように原点中心で作るんだけどな！（それはそう）
 function movePlane(){
   tf.initialize()
-    .translate(100, 100, 0)
-    .rotateZ(frameCount*TAU/120);
+    .translate(50, 50, 0)
+    .rotateZ(frameCount*TAU/120)
+    .translate(-50,-50,0);
   setModelView();
 }
 
 // キューブのtf
+// これも同じことで、この場合特定の場所で重心を中心に回転させたいわけだが、点集合で考えれば
+// 回転してから然るべくtranslate,となるから、それを逆回ししただけ。さらにスケール変換...？これ最後なのでは...？
 function moveCube(){
   tf.initialize()
-    .scale(0.5, 0.5, 0.5)
     .translate(-100,-100,0)
     .rotateX(frameCount*TAU/240)
-    .rotateY(frameCount*TAU/240);
+    .rotateY(frameCount*TAU/240)
+    .scale(0.5, 0.5, 0.5); // うん。最後だわ。ごめーん。
   setModelView();
 }

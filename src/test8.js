@@ -25,6 +25,8 @@
 // OpenProcessingのループプロテクト、一般的に機能してるからもう手遅れだなこれ。まあ他の...ではあれだし。
 // もうめんどくさいから一律ガン無視で行こう。ばかばかしいわ。
 
+// SimplexNoiseの計算を放棄してループノイズのテーブル作ってそれ参照するとか。却下。インチキ禁止。
+
 // -------global------- //
 const ex = p5wgex;
 let gr0, gr1;
@@ -135,28 +137,6 @@ void main(){
 }
 `;
 
-// ノイズの前に...
-const testFrag1 =
-`#version 300 es
-precision mediump float;
-in vec2 vUv;
-uniform float uTime;
-uniform sampler2D uRandom;
-out vec4 fragColor;
-// getRGB(HSBをRGBに変換する関数)
-vec3 getRGB(float h, float s, float b){
-  vec3 c = vec3(h, s, b);
-  vec3 rgb = clamp(abs(mod(c.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
-  rgb = rgb * rgb * (3.0 - 2.0 * rgb);
-  return c.z * mix(vec3(1.0), rgb, c.y);
-}
-void main(){
-  float t = uTime;
-  vec4 dummy = texture(uRandom, t * 0.0 + vUv);
-  fragColor = dummy;
-}
-`;
-
 // データ入力はこのシェーダでuSize=512ってやれば簡単にできるよ。gl_VertexID使えば必要なのはデータだけでOK.
 const dataVert =
 `#version 300 es
@@ -190,22 +170,17 @@ void main(){
 function setup(){
   createCanvas(800, 640);
   _startTime = performance.now();
-  gr0 = createGraphics(400, 320, WEBGL);
-  gr1 = createGraphics(400, 320, WEBGL);
+  gr0 = createGraphics(width, height, WEBGL);
   _node0 = new ex.RenderNode(gr0._renderer);
-  _node1 = new ex.RenderNode(gr1._renderer); // これでよいはず
 
   // まあ難しくなく、板ポリで。
   const positions = [-1, -1, 1, -1, -1, 1, 1, 1];
   _node0.registPainter("test0", copyVert, testFrag0);
-  _node1.registPainter("test1", copyVert, testFrag1);
 
   _node0.registFigure("board", [{name:"aPosition", size:2, data:positions}]);
-  _node1.registFigure("board", [{name:"aPosition", size:2, data:positions}]);
 
   // うまくいくんかな～
   prepareRandomTable(_node0);
-  prepareRandomTable(_node1);
 }
 
 // -------draw------- //
@@ -219,15 +194,8 @@ function draw(){
         .setFBOtexture2D("uRandom", "rdm")
         .drawArrays("triangle_strip")
         .unbind().flush();
-  _node1.bindFBO(null)
-        .use("test1", "board")
-        .setUniform("uTime", _time)
-        .setFBOtexture2D("uRandom", "rdm")
-        .drawArrays("triangle_strip")
-        .unbind().flush();
 
   image(gr0, 0, 0);
-  image(gr1, 400, 320);
 }
 
 // nodeに対して512x512x4の乱数テーブルを用意させる感じ
