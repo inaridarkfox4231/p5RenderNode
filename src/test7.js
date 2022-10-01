@@ -91,8 +91,8 @@ function setup(){
   _startTime = performance.now();
   gr0 = createGraphics(400, 320, WEBGL);
   gr1 = createGraphics(400, 320, WEBGL);
-  _node0 = new ex.RenderNode(gr0._renderer);
-  _node1 = new ex.RenderNode(gr1._renderer); // これでよいはず
+  _node0 = new ex.RenderNode(gr0._renderer.GL);
+  _node1 = new ex.RenderNode(gr1._renderer.GL); // これでよいはず
 
   // まあ難しくなく、板ポリで。
   const positions = [-1, -1, 1, -1, -1, 1, 1, 1];

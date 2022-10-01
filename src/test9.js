@@ -63,8 +63,8 @@ function setup(){
   //_startTime = performance.now();
   _timer = new ex.Timer();
   _timer.set("duration");
-  const _gl = this._renderer;
-  _node = new ex.RenderNode(_gl);
+  const gl = this._renderer.GL;
+  _node = new ex.RenderNode(gl);
 
   _node.registPainter("color", triangleVert, triangleFrag);
 

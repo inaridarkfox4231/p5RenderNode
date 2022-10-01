@@ -25,7 +25,7 @@ p5.RendererGL.prototype._setAttributeDefaults = function(pInst) {
   return;
 };
 
-// その前に卍解やっとこう。ばん！かい！
+// その前に卍解やっとこう。ばん！かい！webgl2を有効化します。
 p5.RendererGL.prototype._initContext = function() {
   try {
     this.drawingContext =
@@ -46,10 +46,9 @@ p5.RendererGL.prototype._initContext = function() {
     throw er;
   }
 };
-// これでwebglでやろうとしてたことは大体webgl2になります。よかったね。
 
-// ばんかいしたので本題
-// これがp5webglのexです、RenderNodeは_glから生成します。
+// これがp5webglのexです。
+// glからRenderNodeを生成します。glです。(2022/10/02)
 const p5wgex = (function(){
 
   // ---------------------------------------------------------------------------------------------- //
@@ -125,7 +124,8 @@ const p5wgex = (function(){
   }
 
   // ---------------------------------------------------------------------------------------------- //
-  // dictionary.(随時追加...？)
+  // dictionary.
+  // gl定数を外部から文字列でアクセスできるようにするための辞書
 
   function getDict(gl){
     const d = {};
@@ -227,7 +227,7 @@ const p5wgex = (function(){
 
     // プログラムの作成
     let _program = gl.createProgram();
-    // シェーダーにアタッチ → リンク
+    // シェーダーにアタッチ → リンク (transform feedbackの場合は片方だけでいい？要検証)
     gl.attachShader(_program, vShader);
     gl.attachShader(_program, fShader);
     gl.linkProgram(_program);
@@ -246,6 +246,7 @@ const p5wgex = (function(){
   // sizeはなぜかvec2なのに1とか出してくるし
   // typeはgl.FLOATとかじゃなくてFLOAT_VEC2とかだしでbindに使えない
   // まあそういうわけでどっちも廃止。
+  // TRANSFORM_FEEDBACK_VARYINGSを使えば入力と出力をそれぞれ取得できる？要検証
   function _loadAttributes(gl, pg){
     // 属性の総数を取得
     const numAttributes = gl.getProgramParameter(pg, gl.ACTIVE_ATTRIBUTES);
@@ -400,11 +401,10 @@ const p5wgex = (function(){
     }
   }
 
-  // attrの構成例：{name:"aPosition", size:2, data:[-1,-1,-1,1,1,-1,1,1], usage:"static"}
+  // attrの構成例：{name:"aPosition", size:2, data:[-1,-1,-1,1,1,-1,1,1], usage:"static_draw"}
   // ああそうか隠蔽するからこうしないとまずいわ...修正しないと。"static"とか。
-  // 今staticとdynamicしかないからstatic意外はdynamicってやっておきますか。
+  // usage指定：static_draw, dynamic_drawなど。
   function _createVBO(gl, attr, dict){
-    //const _usage = (attr.usage === "static_draw" ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
     const _usage = dict[attr.usage];
     const _type = dict[attr.type];
 
@@ -424,6 +424,12 @@ const p5wgex = (function(){
     };
   }
 
+  // vba生成関数。そのうちね...vbo保持する必要がなくなるのでstatic_draw前提なのよね。
+  // だからstatic指定の場合にvba使うように誘導する方がいいかもしれない。とはいえどうせ隠蔽されるのであんま意味ないけどね...
+  function _createVBA(gl, attrs, dict){
+    /* please wait... */
+  }
+
   // attrsはattrの配列
   function _createVBOs(gl, attrs, dict){
     const vbos = {};
@@ -433,6 +439,7 @@ const p5wgex = (function(){
     return vbos;
   }
 
+  // ibo用のvalidation関数。基本staticで。多めの場合にlargeをtrueにすればよろしくやってくれる。
   function _validateForIBO(gl, info){
     if(info.usage === undefined){ info.usage = "static_draw"; } // これも基本STATICですね...
     if(info.large === undefined){ info.large = false; } // largeでT/F指定しよう. 指定が無ければUint16.
@@ -446,12 +453,11 @@ const p5wgex = (function(){
   }
 
   // infoの指定の仕方
-  // 必須: dataにインデックス配列を入れる。nameは渡すときに付与されるので要らない。
-  // 任意：usageは"static"か"dynamic"を指定
+  // 必須: dataにインデックス配列を入れる。そんだけ。nameは渡すときに付与されるので要らない。
+  // 任意：usageは"static_draw"か"dynamic_draw"を指定
   function _createIBO(gl, info, dict){
     _validateForIBO(gl, info);
     const _usage = dict[info.usage];
-    //const _usage = (info.usage === "static_draw" ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
 
     const ibo = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
@@ -500,17 +506,18 @@ const p5wgex = (function(){
   // ていうかFormatだと思ってた引数の正式名称はTypeでしたね。色々間違ってる！！textureTypeに改名しないと...
 
   // infoの指定の仕方
-  // 必須：name, w, h. ？あ、name要らないわ。あっちで付けるわ。
+  // 必須：wとhだけでOK. nameは定義時。
   // 任意：textureType: テクスチャの種類。色なら"ubyte"(デフォルト), 浮動小数点数なら"float"や"half_float"
   // 他のパラメータとか若干ややこしいのでそのうち何とかしましょう...webgl2はややこしいのだ...
-  // pavelさんのあれは対応してたと思うよ。きちんと見なきゃね...
+  // 場合によってはtextureInternalFormatとtextureFormatも指定するべきなんだろうけど
+  // まだ扱ったことが無くて。でもおいおい実験していかなければならないだろうね。てか、やりたい。やらせてください（OK!）
+
   // textureFilter: テクスチャのフェッチの仕方。通常は"nearest"（点集合など正確にフェッチする場合など）、
   // 学術計算とかなら"linear"使うかも
   // textureWrap: 境界処理。デフォルトは"clamp"だが"repeat"や"mirror"を指定する場合もあるかも。
   // 色として普通に使うなら全部指定しなくてOK. 点情報の格納庫として使うなら"float"だけ要ると思う。
   function _createFBO(gl, info, dict){
     _validateForFBO(gl, info);
-    //_parseTextureParam(gl, info);
 
     // framebufferを生成
     let framebuffer = gl.createFramebuffer();
@@ -532,11 +539,7 @@ const p5wgex = (function(){
     // フレームバッファ用のテクスチャをバインド
     gl.bindTexture(gl.TEXTURE_2D, fTexture);
     // フレームバッファ用のテクスチャにカラー用のメモリ領域を確保
-    // こっちがInvalid Internal Formatで...
-    // わかりました。webgl2ならではの事情だそうです。上記：↑
-    // ちなみに3つの引数の正式名称はInternalFormat, Format, Typeです。「textureType」の方が正しいようで。
-    // textureInternalFormatとtextureFormatはundefinedなら自動決定、という方向で。
-    // 手動でも決定できるようにするか。最終的にgl変数は辞書使って何でも指定可能にするつもり...
+    // どうでもいいけどInternalFormatってエラーが言ってるならそれに従うべきよ。
     gl.texImage2D(gl.TEXTURE_2D, 0, dict[info.textureInternalFormat], info.w, info.h, 0,
                   dict[info.textureFormat], dict[info.textureType], null);
 
@@ -569,6 +572,9 @@ const p5wgex = (function(){
     // infoの役割終了
   }
 
+  // テクスチャはクラスにするつもり。もう少々お待ちを...canvas要素から生成できるように作るつもり。
+
+  // fboのダブル。TFFとは違うのよね。フレームの別の場所参照できるから。そこが異なるようです。
   function _createDoubleFBO(gl, info, dict){
     // assignでコピーしないと多分infoの内容が正しく伝わらないので
     const info0 = Object.assign({}, info);
@@ -593,17 +599,14 @@ const p5wgex = (function(){
   // あとはp5の2D,webgl画像からテクスチャを作るのとか用意したいね.
   // 登録しておいてそこから取り出して編集とか。そうね。それでもいいかも。bgManagerの後継機みたいな。さすがにクラスにしないと...
 
-  // _glだけ汎用的にしてglが必要なときは適宜取り出す感じで（p5.jsに倣う）
-
   // ---------------------------------------------------------------------------------------------- //
   // Painter.
 
   // shaderは廃止。いいのかどうかは知らない。
   // getProgramで名前を渡す。理由は原因追及をしやすくするため。
   class Painter{
-    constructor(_gl, name, vs, fs){
-      this._gl = _gl;
-      this.gl = _gl.GL;
+    constructor(gl, name, vs, fs){
+      this.gl = gl;
       this.name = name;
       this.program = _getProgram(name, this.gl, vs, fs); // プログラムだけでいいのよね
       this.attributes = _loadAttributes(this.gl, this.program); // 属性に関するshader情報
@@ -656,11 +659,9 @@ const p5wgex = (function(){
   // いろいろやることあるんかなぁ。今はこんな感じ。dict渡したけどまあ、何かに使えるでしょう...分かんないけど。
 
   class Figure{
-    constructor(_gl, name, attrs, dict){
-      this._gl = _gl;
-      this.gl = _gl.GL;
+    constructor(gl, name, attrs, dict){
+      this.gl = gl;
       this.name = name;
-      const gl = this._gl.GL;
       this.validate(attrs);
       this.vbos = _createVBOs(gl, attrs, dict);
     }
@@ -798,9 +799,8 @@ const p5wgex = (function(){
   // RenderNode.
 
   class RenderNode{
-    constructor(_gl){
-      this._gl = _gl;
-      this.gl = _gl.GL;
+    constructor(gl){
+      this.gl = gl;
       this.painters = {};
       this.figures = {};
       this.fbos = {};
@@ -849,13 +849,13 @@ const p5wgex = (function(){
       return this;
     }
     registPainter(name, vs, fs){
-      const newPainter = new Painter(this._gl, name, vs, fs);
+      const newPainter = new Painter(this.gl, name, vs, fs);
       this.painters[name] = newPainter;
       return this;
     }
     registFigure(name, attrs){
       // attrsは配列です。
-      const newFigure = new Figure(this._gl, name, attrs, this.dict);
+      const newFigure = new Figure(this.gl, name, attrs, this.dict);
       this.figures[name] = newFigure;
       return this;
     }

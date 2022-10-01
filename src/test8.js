@@ -171,7 +171,7 @@ function setup(){
   createCanvas(800, 640);
   _startTime = performance.now();
   gr0 = createGraphics(width, height, WEBGL);
-  _node0 = new ex.RenderNode(gr0._renderer);
+  _node0 = new ex.RenderNode(gr0._renderer.GL);
 
   // まあ難しくなく、板ポリで。
   const positions = [-1, -1, 1, -1, -1, 1, 1, 1];

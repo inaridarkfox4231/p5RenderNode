@@ -83,7 +83,8 @@ void main(void){
 function setup(){
   createCanvas(800, 640, WEBGL);
   const _gl = this._renderer; // こうして渡すと変なエラーが出ないことが分かった
-  _node = new ex.RenderNode(_gl);
+  const gl = _gl.GL;
+  _node = new ex.RenderNode(gl);
 
   // さてと...
   let meshData = [] // 汎用エイリアス。

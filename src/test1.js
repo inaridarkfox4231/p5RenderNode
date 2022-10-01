@@ -78,7 +78,8 @@ const simpleFrag =
 function setup(){
   createCanvas(800, 640, WEBGL);
   const _gl = this._renderer; // レンダラーを取得
-  _node = new ex.RenderNode(_gl); // レンダーノード
+  const gl = _gl.GL;
+  _node = new ex.RenderNode(gl); // レンダーノード
 
   let meshData = []; // 汎用メッシュ配列。今回は点のデータと色のデータを入れるつもり。
   const hsv = ex.hsv2rgb;

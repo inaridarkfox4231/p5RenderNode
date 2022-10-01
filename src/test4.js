@@ -45,7 +45,7 @@ function setup(){
   createCanvas(640, 640, WEBGL);
   const _gl = this._renderer;
   const gl = _gl.GL;
-  _node = new ex.RenderNode(_gl);
+  _node = new ex.RenderNode(gl);
 
   let indices = [];
   for(let i=0; i<SIZE*SIZE; i++){ indices.push(i); }

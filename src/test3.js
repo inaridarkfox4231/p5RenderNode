@@ -173,8 +173,8 @@ const colorFrag =
 
 function setup(){
   createCanvas(640, 640, WEBGL);
-  const _gl = this._renderer;
-  _node = new ex.RenderNode(_gl);
+  const gl = this._renderer.GL;
+  _node = new ex.RenderNode(gl);
 
   // まずシェーダー一通り用意しちゃうか。
   _node.registPainter("data", dataVert, dataFrag);
