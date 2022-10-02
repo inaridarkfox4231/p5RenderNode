@@ -62,7 +62,8 @@ void main(){
 `;
 
 // 2_0: legacy.
-// ここからランダムですね～スマホの挙動はおそらく死ぬ！
+// ここからランダムですね～スマホの挙動はおそらく死...ななかった。
+// なるほど？これはちょっと意外。まあ、サクサク行こうか。
 const frag1 =
 `#version 300 es
 precision highp float;
@@ -70,90 +71,98 @@ out vec4 fragColor;
 in vec2 vUv;
 int channel; // いきなりグローバル？
 uniform float uTime; // 時間！でてきた。
+uniform vec2 uResolution; // 仕方ないか。通常のwidth,heightだとまずいのよね。
 const float TAU = 6.28318; // じゃあTAU欲しいです
+// sin(x)に1000を掛けてfract.
+float fractSin11(float x){
+  return fract(1000.0 * sin(x));
+}
+// よくあるやつですね...スマホだと... あれ。普通に見れるの...ね？
+float fractSin21(vec2 xy){
+  return fract(sin(dot(xy, vec2(12.9898, 78.233))) * 43758.5453123);
+}
+// どうしようかな。まあ仕方ないな。gl_FragCoord使うかー
 void main(){
-  vec2 pos = vUv;
-  // おお赤、黄色、ピンク、白ですか（カラフルっ）
-  vec3[4] col4 = vec3[](
-    vec3(1.0, 0.0, 0.0),
-    vec3(1.0, 1.0, 0.0),
-    vec3(1.0, 0.0, 1.0),
-    vec3(1.0, 1.0, 1.0)
-  );
-  float n = 4.0;
-  pos *= n; // (0.0, 0.0)～(4.0, 4.0)ですね～
-  channel = int(2.0 * vUv.x); // チャンネルか。テレビのチャンネルみたいな？左が0で右が1のようです。
-  // つまり画面の左側と右側で描画内容を変えるようですね。
+  vec2 coord = gl_FragCoord.xy; // どうもこれvec3らしいのでxyってしないとエラーを吐く。
+  // おそらく深度値です。まだやってない内容です。
+  channel = int(vUv.x * 2.0); // 左で0で右で1になるやつ。
+  coord += floor(60.0 * uTime);
+  vec3 col;
   if(channel == 0){
-    // left: step. これは0.5より小さいとき0で0.5より大きいとき1とかだったはず。
-    pos = floor(pos) + step(0.5, fract(pos));
+    col = vec3(fractSin11(coord.x));
   }else{
-    // right: smoothstep. これは閾値a, bについてaより小さいとき0でbより大きいとき1で間では滑らかに補間するのよ～
-    // それで(0.0, 1.0)～(0.5, 0.5)の間で時間経過で変化するのでああなると。途中左と一緒になるわね。
-    float thr = 0.25 * sin(uTime * TAU * 0.25);
-    pos = floor(pos) + smoothstep(0.25 + thr, 0.75 - thr, fract(pos));
+    // uResolutionで割りました。これでいいね。
+    col = vec3(fractSin21(coord / uResolution));
   }
-  pos /= n; // 計算結果を(0.0, 0.0)～(1.0, 1.0)に落として最後はさっきと同じように色補間
-  // この色補間のところを画像とかにすると。多分そういう処理...なのか？
-  vec3 col = mix(mix(col4[0], col4[1], pos.x), mix(col4[2], col4[3], pos.x), pos.y);
   fragColor = vec4(col, 1.0);
 }
 `;
 
-// 1_4: polar.
-// おおatanあるんだ...あー、そうか。xが0のところ...？これ要るの？んー...
-// 調べたらglslのatanはxが0のとき挙動を規定してないとか。使えないな...てわけでこんなふうに書いてるのね。signは0が返る模様。
-// あーなる。偏角が-PI～0で（反時計回り）青から赤、そのあと赤から青、で、それを中心から外に向かって白と補間してるのか。
-// ああ知らなかったです。「%」使えるんですね...webgl2いいですね...
+// 2_1: binary. ちょっとビットの話を...ということらしい。
+// https://blog.oimo.io/2022/03/27/glsl-types/
+// uintは32bit符号なし整数型ですね。jsでも(1<<31)ってやると負のめちゃでかい数になるからそこら辺。
+// 32bit符号なし整数なので整数しか扱えないみたいです。さて...
+// そういうわけで、((1<<n)<<(31-n)) >> 31が-1になるかどうかでnの桁があるかどうかわかるということですね。
+// 足して31にすることで左右が逆になるのと相殺させているということで。
+// 34個とか35個ずらすとループして2とか3と同じ挙動になると。<<3と<<35は同じ挙動なのです。それで大体わかるかと。
+// でvec3(-1)これはclampされて0扱いです。uintで-1だとなんかばかでかい数字になって1にクランプされるようですね。
+// 分ける必要あるんかな。uintでしょ？floatで使う...あ、そうか。
+// マウスのインタラクションで数いじったりとかしたら面白そうじゃない？
+// では参りましょう。
 const frag2 =
 `#version 300 es
 precision highp float;
+precision highp int; // 今回はintもhighだけどあんま意味なさそうだな
 out vec4 fragColor;
 in vec2 vUv;
-const float PI = 3.14159;
-// 改良版atan2.ゼロ割に対応、とのこと。割と、ポンコツなのね...
-float atan2(float y, float x){
-  if(x == 0.0){
-    return sign(y) * PI / 2.0;
-  }else{
-    return atan(y, x);
-  }
-  // 3項演算子は分かりづらいのでいいです
-}
-// デカルト → ポーラー
-vec2 xy2pol(vec2 xy){
-  return vec2(atan2(xy.y, xy.x), length(xy));
-}
-// ポーラー → デカルト（y座標が原点との距離）
-vec2 pol2xy(vec2 pol){
-  return pol.y * vec2(cos(pol.x), sin(pol.x));
-}
-// テクスチャ、要するに色ですね。入力のpolは極座標表示であることが前提です。PIとか使ってるしいいよね。
-vec3 tex(vec2 pol){
-  // 青から赤へ、赤から青へ。
-  vec3[3] col3 = vec3[](
-    vec3(0.0, 0.0, 1.0),
-    vec3(1.0, 0.0, 0.0),
-    vec3(1.0)
-  );
-  // 極座標の成分
-  float angle = pol.x;
-  float r = pol.y;
-  angle = angle / PI + 1.0; // -PI～PIを0～2に変換。このとき2未満になるらしい（atanの仕様）
-  int ind = int(angle);
-  // 調べたら「%」もwebgl2から使えるそうな...まじかよ。便利だな～ていうかmod要らねーじゃん！ああ%でいいんだ！くそ
-  // やられた！
-  vec3 col = mix(col3[ind % 2], col3[(ind + 1) % 2], fract(angle)); // 小数部分で補間
-  // 最後に中心白、外に向かって本来の色、で、補間
-  return mix(col3[2], col, r);
-}
+uniform float uTime; // 今回は時間だけ
 void main(){
-  vec2 pos = vUv * 2.0 - 1.0; // 今回は(0.5, 0.5)中心で-1～1でやります。
-  pos = xy2pol(pos); // 極座標に変換
-  vec3 col = tex(pos);
-  fragColor = vec4(col, 1.0);
+  vec2 pos = vUv;
+  pos.y = 1.0 - pos.y; // 今回は上から下へ。これで大丈夫です。
+  pos *= vec2(32.0, 9.0); // 横32分割、縦9分割
+  uint[9] uintArray = uint[](
+    // わかりにくいので上からこの順に並べましょうかね。分かりにくい。何でそうしてないの...
+    uint(uTime), // 時間のuint表現、uint取ってるので実質floor取った整数値をuintにしている。
+    0xbu, // 0xbが要するに11でそのuint表現
+    9u, // 9のuint表現
+    0xbu ^ 9u, // 11と9のuint表現のビット排他的論理和。1011と1001だから10、つまり2.
+    0xffffffffu, // uintの最大値。
+    0xffffffffu + uint(uTime), // uintの最大値はこの場合-1のようにふるまう。足し算の理屈。で、後は同じ。
+    floatBitsToUint(floor(uTime)), // uTimeの整数切り詰めはfloatなわけだがそのfloat表示のままにuintの値として扱うということ
+    floatBitsToUint(-floor(uTime)), // するとどうなるかというとfloatで用いられているビット表記をuintの手法で取り出して可視化できる
+    floatBitsToUint(11.5625)
+    // 11.5625 = 2^3 + 2^1 + 2^0 + 2^(-1) + 2^(-4)
+    //         = 2^3(1 + 2^(-2) + 2^(-3) + 2^(-4) + 2^(-7))
+    // 2^3=2^(130-127)で130 = 2^7 + 2^1 だから7,6,5,4,3,2,1,0のうち7と2が点灯する
+    // うしろの-2,-3,-4,-7に該当する...-1,-2,-3,...と並んでるから、2,3,4,7番が点灯する。そういうことです。
+  );
+  if(fract(pos.x) < 0.1){ // 縦線を引いているところ。
+    if(floor(pos.x) == 1.0){
+      fragColor = vec4(1, 0, 0, 1); // 符号部（赤）
+    }else if(floor(pos.x) == 9.0){
+      fragColor = vec4(0, 1, 0, 1); // 指数部（緑）
+    }else{
+      fragColor = vec4(vec3(0.5), 1); // 通常の敷居。あ、そうそう、1とか普通に1.0にキャストされるっぽいよ。webgl2すげぇ。
+    }
+  }else if(fract(pos.y) < 0.1){ // 横線を引いているところ
+    fragColor = vec4(vec3(0.5), 1);
+  }else{
+    // ここでビットごとの値を決めてるんだけどサンプルが逆順なので逆にした。うまくいくはず...できましたね。
+    uint u = uintArray[int(pos.y)];
+    // ここは何をしてるかというとたとえばuint(pos.x)が7だった場合に下から24番目のビットが1であれば7だけビットをずらして
+    // 桁あふれで一番先頭が1になってそれを...-2^31ですね。これになるので、>>31で-1になると。で、uintだから0xffffffffuになると。
+    // それを最終的に色にぶちこんでる。ちなみに6以下でも8以上でも最後の>>31で0になります。理由はビットずらしの周期性。
+    // 32は0と同じ、戻るということ...上手くできてる。個人的には2のべきとの&の方が分かりやすいかと...
+    u = (u << uint(pos.x)) >> 31;
+    vec3 col = (u != 0u ? vec3(fract(pos.y), 0.5 + 0.5 * fract(pos.y), 1.0) : vec3(0.0));
+    fragColor = vec4(col, 1.0);
+  }
 }
 `;
+
+// OBSも有効活用の仕方きちんと考えないとね。宝の持ち腐れが過ぎる。
+
+// 問題だそうですね。インタラクションとか作りたいわね。クリックで数作れるの。で、p5.jsで表示する...
 
 // 1_5: polarRot.
 // おおなんかよくわからないことを...ほぼ一緒なんだけれどね。んー。
@@ -222,19 +231,24 @@ function setup(){
 
 function draw(){
   background(0);
-  showProgram("frag0", 0, 0, true);
-  showProgram("frag1", 320, 0, true);
-  showProgram("frag2", 0, 320);
-  showProgram("frag3", 320, 320, true);
+  showProgram("frag0", 0, 0, {time:true});
+  showProgram("frag1", 320, 0, {time:true, resolution:true});
+  showProgram("frag2", 0, 320, {time:true});
   _node.unbind().flush();
 }
 
-// 時間使えるようにちょっと修正
-function showProgram(programName, x, y, useTime = false){
+// 時間とか解像度使えるようにちょっと修正
+function showProgram(programName, x, y, settings = {}){
+	if(settings.time === undefined){ settings.time = false; }
+	if(settings.resolution === undefined){ settings.resolution = false; }
+	const gl = gr._renderer.GL; // glからdrawingBufferWidthとdrawingBufferHeight取り出せばいいんだわ
   _node.use(programName, "board");
-  if(useTime){
+  if(settings.time){
     const currentTime = _Timer.getDeltaSecond("uTime");
     _node.setUniform("uTime", currentTime);
+  }
+  if(settings.resolution){
+    _node.setUniform("uResolution", [gl.drawingBufferWidth, gl.drawingBufferHeight]);
   }
   _node.drawArrays("triangle_strip");
   image(gr, x, y);
