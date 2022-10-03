@@ -27,11 +27,14 @@
 
 // SimplexNoiseの計算を放棄してループノイズのテーブル作ってそれ参照するとか。却下。インチキ禁止。
 
+// フレームバッファ用意してfbmをまずそこに落として、それ使って雲表示するシェーダを書くのどうかなって。
+
 // -------global------- //
 const ex = p5wgex;
 let gr0, gr1;
 let _node0, _node1;
-let _startTime;
+let _timer = new ex.Timer();
+let info, infoTex;
 
 // -------shaders------- //
 // webgl2なのでESSL300で書いてみる。
@@ -39,7 +42,6 @@ let _startTime;
 // 板ポリだし上下も関係ないわね
 const copyVert =
 `#version 300 es
-precision mediump float;
 
 in vec2 aPosition;
 out vec2 vUv; // vertexStageのvaryingはoutで、
@@ -55,7 +57,7 @@ void main(void){
 // フレームバッファに乱数ぶちこむ。256x256x4のちょっとしたもの→512x512x4に変更
 const testFrag0 =
 `#version 300 es
-precision mediump float;
+precision highp float;
 in vec2 vUv;
 uniform float uTime;
 uniform sampler2D uRandom;
@@ -137,10 +139,12 @@ void main(){
 }
 `;
 
+// R32Fのフレームバッファにfbm値だけ書き込んでそれ使って描画する感じとか
+// あるいはもういっそノイズ値をswapでどんどん足していくとか。ひとつひとつのシェーダの負荷を減らす。
+
 // データ入力はこのシェーダでuSize=512ってやれば簡単にできるよ。gl_VertexID使えば必要なのはデータだけでOK.
 const dataVert =
 `#version 300 es
-precision mediump float;
 in vec4 aData;
 out vec4 vData;
 uniform float uSize;
@@ -158,7 +162,7 @@ void main(){
 
 const dataFrag =
 `#version 300 es
-precision mediump float;
+precision highp float;
 in vec4 vData;
 out vec4 random4; // 乱数の4つ組
 void main(){
@@ -166,36 +170,77 @@ void main(){
 }
 `;
 
+// copy.
+// webgl2なのでESSL300で書いてみる。
+// ごめんなさいcopyVert多重定義...
+
+let copyFrag =
+`#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+in vec2 vUv; // fragmentStageのinと呼応するシステム。vertexStageのinはattributeなので
+uniform sampler2D uTex;
+out vec4 fragColor;
+
+void main(void){
+  fragColor = texture(uTex, vUv); // なんとtextureでいいらしい...！
+}
+`;
+
 // -------setup------- //
 function setup(){
-  createCanvas(800, 640);
-  _startTime = performance.now();
+  createCanvas(640, 640);
+  _timer.set("slot0");
   gr0 = createGraphics(width, height, WEBGL);
   _node0 = new ex.RenderNode(gr0._renderer.GL);
 
   // まあ難しくなく、板ポリで。
   const positions = [-1, -1, 1, -1, -1, 1, 1, 1];
   _node0.registPainter("test0", copyVert, testFrag0);
+  _node0.registPainter("copy", copyVert, copyFrag);
 
   _node0.registFigure("board", [{name:"aPosition", size:2, data:positions}]);
 
   // うまくいくんかな～
   prepareRandomTable(_node0);
+
+  info = createGraphics(640, 640);
+  info.fill(0);
+  info.textSize(16);
+  info.textAlign(LEFT, TOP);
+  infoTex = new p5.Texture(gr0._renderer, info);
 }
 
 // -------draw------- //
 function draw(){
-  const _time = (performance.now() - _startTime) / 1000;
+  const currentTime = _timer.getDeltaSecond("slot0");
+  _timer.set("fps");
 
   background(0);
   _node0.bindFBO(null)
         .use("test0", "board")
-        .setUniform("uTime", _time)
+        .setUniform("uTime", currentTime)
         .setFBOtexture2D("uRandom", "rdm")
         .drawArrays("triangle_strip")
         .unbind().flush();
 
+  _node0.enable("blend")
+        .blendFunc("one", "one_minus_src_alpha");
+
+  _node0.use("copy", "board")
+        .setTexture2D("uTex", infoTex.glTex)
+        .drawArrays("triangle_strip")
+        .unbind()
+        .flush()
+        .disable("blend");
+
   image(gr0, 0, 0);
+
+  const fps = _timer.getDeltaFPStext("fps");
+  info.clear();
+  info.text(fps, 5, 5);
+  infoTex.update();
 }
 
 // nodeに対して512x512x4の乱数テーブルを用意させる感じ

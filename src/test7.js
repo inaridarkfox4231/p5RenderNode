@@ -22,7 +22,6 @@ let _startTime;
 // 板ポリだし上下も関係ないわね
 const copyVert =
 `#version 300 es
-precision mediump float;
 
 in vec2 aPosition;
 out vec2 vUv; // vertexStageのvaryingはoutで、
@@ -36,7 +35,7 @@ void main(void){
 // そうね...
 const testFrag0 =
 `#version 300 es
-precision mediump float;
+precision highp float;
 in vec2 vUv;
 uniform float uTime;
 out vec4 fragColor;
@@ -58,7 +57,7 @@ void main(){
 // チェック模様を反転でいじるとかでどう？
 const testFrag1 =
 `#version 300 es
-precision mediump float;
+precision highp float;
 in vec2 vUv;
 uniform float uTime;
 out vec4 fragColor;

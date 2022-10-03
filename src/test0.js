@@ -16,6 +16,10 @@
 // 他にもいろいろあるんですけどね...試してる時間が...まあぼちぼち、って感じで。texelFetchとか気になるのよ。
 // あとはビット演算ができるのとか勾配関数とかも。ブレンドのMINとMAXも気になる...あ、shader関係ないわ。
 
+// 20221003
+// バーテックスシェーダは精度修飾子要らないとのこと...
+// そしてフラグメント側はもうhighpで統一して良さそうな感じです。
+
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
 
@@ -40,8 +44,8 @@ const copyVert =
 "}";
 
 const copyFrag =
-"precision mediump float;" +
-"precision mediump sampler2D;" +
+"precision highp float;" +
+"precision highp sampler2D;" +
 "varying vec2 vUv;" +
 "uniform sampler2D uTex;" +
 "void main () {" +
@@ -52,7 +56,6 @@ const copyFrag =
 // 見ての通り、バージョン指定は1行目なら問題ないみたいです。
 let copyVertw2 =
 `#version 300 es
-precision mediump float;
 
 in vec2 aPosition;
 out vec2 vUv; // vertexStageのvaryingはoutで、
@@ -66,7 +69,8 @@ void main(void){
 // texture関数はtexture2Dとか不要で、textureとだけ書けば勝手に判断してくれるようですね...
 let copyFragw2 =
 `#version 300 es
-precision mediump float;
+precision highp float;
+precision highp sampler2D;
 
 in vec2 vUv; // fragmentStageのinと呼応するシステム。vertexStageのinはattributeなので
 uniform sampler2D uTex;

@@ -104,7 +104,7 @@ const p5wgex = (function(){
     getDelta(keyName){
       // 単純に経過ミリ秒を返す。
       if(this.stumps[keyName] === undefined){
-        console.log("invalid name");
+        window.alert("invalid name");
         return null;
       }
       return window.performance.now() - this.stumps[keyName];
@@ -137,6 +137,9 @@ const p5wgex = (function(){
     d.rgba = gl.RGBA; // rgba忘れてたっ
     d.rgba16f = gl.RGBA16F;
     d.rgba32f = gl.RGBA32F;
+    d.r16f = gl.R16F;
+    d.r32f = gl.R32F;
+    d.red = gl.RED;
     d.short = gl.SHORT;
     d.ushort = gl.UNSIGNED_SHORT;
     d.int = gl.INT;
@@ -197,7 +200,7 @@ const p5wgex = (function(){
   // シェーダーを作る
   function _getShader(name, gl, source, type){
     if(type !== "vs" && type !== "fs"){
-      console.log("invalid type");
+      window.alert("invalid type");
       return null;
     }
 
@@ -213,7 +216,7 @@ const p5wgex = (function(){
     // 結果のチェック
     if(!gl.getShaderParameter(_shader, gl.COMPILE_STATUS)){
       console.error(gl.getShaderInfoLog(_shader));
-      console.log("name: " + name + ", " + type + ", compile failure.");
+      window.alert("name: " + name + ", " + type + ", compile failure.");
       return null;
     }
 
@@ -234,8 +237,8 @@ const p5wgex = (function(){
 
     // 結果のチェック
     if(!gl.getProgramParameter(_program, gl.LINK_STATUS)){
-      console.error('Could not initialize shaders');
-      console.log("name: " + name + ", program link failure.");
+      window.alert('Could not initialize shaders');
+      window.alert("name: " + name + ", program link failure.");
       return null;
     }
     return _program;
@@ -877,6 +880,9 @@ const p5wgex = (function(){
       info.name = name;
       const newFBO = _createDoubleFBO(this.gl, info, this.dict);
       this.fbos[name] = newFBO;
+      if(newFBO === undefined){
+        window.alert("failure to create doubleFramebuffer.");
+      }
       return this;
     }
     usePainter(name){
@@ -958,8 +964,7 @@ const p5wgex = (function(){
         let fbo = this.fbos[target];
         if(!fbo){
           // fboが無い場合の警告
-          alert("The corresponding framebuffer does not exist.");
-          noLoop();
+          window.alert("bind failure: The corresponding framebuffer does not exist.");
           return this;
         }
         if(fbo.double){
@@ -996,15 +1001,13 @@ const p5wgex = (function(){
       // FBOを名前経由でセット。ダブルの場合はreadをセット。
       if(fboName === undefined || (typeof fboName !== 'string')){
         // 指定の仕方に問題がある場合
-        alert("Inappropriate name setting.");
-        noLoop();
+        window.alert("setTexture failure: Inappropriate name setting.");
         return this;
       }
       let fbo = this.fbos[fboName];
       if(!fbo){
         // fboが無い場合の警告
-        alert("The corresponding framebuffer does not exist.");
-        noLoop();
+        window.alert("setTexture failure: The corresponding framebuffer does not exist.");
         return this;
       }
       if(fbo.double){
@@ -1022,8 +1025,7 @@ const p5wgex = (function(){
       let fbo = this.fbos[fboName];
       if(!fbo){
         // fboが無い場合の警告
-        alert("The corresponding framebuffer does not exist.");
-        noLoop();
+        window.alert("The corresponding framebuffer does not exist.");
         return this;
       }
       if(fbo.read && fbo.write){ fbo.swap(); }

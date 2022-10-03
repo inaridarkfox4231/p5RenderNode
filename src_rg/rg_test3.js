@@ -9,7 +9,6 @@ let gr;
 // ----shaders---- //
 const basicVert =
 `#version 300 es
-precision highp float;
 in vec2 aPosition;
 out vec2 vUv;
 void main(){

@@ -73,7 +73,6 @@ const SIZE = 32;
 // 実はwebgl2では「https://wgld.org/d/webgl2/w008.html」にあるようにgl_VertexIDでindexをint型で取得して
 // ivec2にしてテクセルフェッチで...とかできるんだけど今回はやりません。ナイーブにwebgl1でやります。ひとまずね。
 const dataVert =
-"precision mediump float;" +
 "attribute vec4 aData;" +    // 位置と速度からなる4つのfloatの組
 "attribute float aIndex;" +  // インデックス情報0～1023
 "varying vec4 vData;" + // フラグメントシェーダで使うデータ値
@@ -90,7 +89,7 @@ const dataVert =
 "}";
 
 const dataFrag =
-"precision mediump float;" +
+"precision highp float;" +
 "varying vec4 vData;" + // バーテックスシェーダより。
 "void main(){" +
 "  gl_FragColor = vData;" + // おしまい！
@@ -102,7 +101,6 @@ const dataFrag =
 // ハードコーディングになってるやん。ちょっといじるから待ってね。
 // できましたね。ちょろいな...
 const updateVert =
-"precision mediump float;" +
 "attribute vec2 aPosition;" + // 板ポリの4つの頂点
 "varying vec2 vUv;" + // UV座標。板ポリですから！
 "void main(){" +
@@ -113,7 +111,7 @@ const updateVert =
 
 // gl_FragCoordはpixelのdensityに左右されるので極力使いたくないのです。
 const updateFrag =
-"precision mediump float;" +
+"precision highp float;" +
 "uniform sampler2D uTex;" + // いいよuTexで。これがいわゆる「read」側
 "varying vec2 vUv;" + // UV座標。
 "void main(){" +
@@ -129,7 +127,6 @@ const updateFrag =
 // 最後に描画用。色はどうでもいいですとりあえず。全部白で。
 // attributeはindexのみ。
 const colorVert =
-"precision mediump float;" +
 "attribute float aIndex;" +
 "uniform float uSize;" + // 32.0です。
 "uniform float uPointSize;" + // 暫定8.0で。
@@ -146,7 +143,7 @@ const colorVert =
 
 // gl_PointCoord使って円かなんかにするのがいいと思うんだけどね。
 const colorFrag =
-"precision mediump float;" +
+"precision highp float;" +
 "varying vec2 vVelocity;" +
 // getRGB(HSBをRGBに変換する関数)
 "vec3 getRGB(float h, float s, float b){" +

@@ -24,9 +24,7 @@ let tf, cam;
 // shaders.
 
 // 現時点でのライティング。
-let lightVert=
-"precision mediump float;" +
-
+let lightVert =
 "attribute vec3 aPosition;" +
 "attribute vec3 aVertexColor;" +
 "attribute vec3 aNormal;" +
@@ -60,6 +58,10 @@ let lightVert=
 "  vAmbientColor = uAmbientColor;" +
 "}";
 
+// なんかね、lightFragはmediumpにしないといけない...？
+// 富士山に雪降らせるやつでlightのやつhighpにしたらおかしくなった。
+// 何でもかんでもhighpにすればいいってわけじゃないみたいです。
+// って思ったけどレイマのライティングはいいんよね...んー。まあ臨機応変で...
 let lightFrag =
 "precision mediump float;" +
 

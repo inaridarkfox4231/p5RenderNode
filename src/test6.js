@@ -36,7 +36,6 @@ const SIZE = 32;
 // ここでは32x32個のvec4を用意された32x32のフレームバッファに放り込みます。
 const dataVert =
 `#version 300 es
-precision mediump float;
 in vec4 aData;
 out vec4 vData;
 uniform float uSize;
@@ -54,7 +53,7 @@ void main(){
 
 const dataFrag =
 `#version 300 es
-precision mediump float;
+precision highp float;
 in vec4 vData;
 out vec4 pv; // position/velocityなのでpvで。
 void main(){
@@ -67,7 +66,6 @@ void main(){
 // 直しました。というわけでいつもの板ポリ芸です。pavelさん万歳。
 const updateVert =
 `#version 300 es
-precision mediump float;
 in vec2 aPosition;
 out vec2 vUv;
 void main(){
@@ -80,7 +78,7 @@ void main(){
 // 単純に反射処理でいいです。
 const updateFrag =
 `#version 300 es
-precision mediump float;
+precision highp float;
 in vec2 vUv; // フェッチ用
 uniform sampler2D uTex; // readのデータ
 out vec4 pv; // 結果
@@ -101,7 +99,6 @@ void main(){
 // 余りで位置、位相のずれは渡した時間変数と速度の大きさを掛け算してラジアン、大体そんな感じ。
 const triangleVert =
 `#version 300 es
-precision mediump float;
 in float aIndex; // 32x32x3個
 in vec3 aColor; // 申し訳程度に、色
 uniform float uSize; // 一応32
@@ -127,7 +124,7 @@ void main(){
 // 色塗るだけ
 const triangleFrag =
 `#version 300 es
-precision mediump float;
+precision highp float;
 in vec3 vColor;
 out vec4 fragColor;
 void main(){

@@ -36,7 +36,6 @@ const SIZE = 32;
 // データステージ。ここでは32x32個のvec4を用意された32x32のフレームバッファに放り込みます。
 const dataVert =
 `#version 300 es
-precision mediump float;
 in vec4 aData;
 out vec4 vData;
 uniform float uSize;
@@ -54,7 +53,7 @@ void main(){
 
 const dataFrag =
 `#version 300 es
-precision mediump float;
+precision highp float;
 in vec4 vData;
 out vec4 pv; // position/velocityなのでpvで。
 void main(){
@@ -67,7 +66,6 @@ void main(){
 // 直しました。というわけでいつもの板ポリ芸です。pavelさん万歳。
 const updateVert =
 `#version 300 es
-precision mediump float;
 in vec2 aPosition;
 out vec2 vUv;
 void main(){
@@ -80,7 +78,7 @@ void main(){
 // 単純に反射処理でいいです。
 const updateFrag =
 `#version 300 es
-precision mediump float;
+precision highp float;
 in vec2 vUv; // フェッチ用
 uniform sampler2D uTex; // readのデータ
 out vec4 pv; // 結果
@@ -101,7 +99,6 @@ void main(){
 // aIndexありじゃないですかね。こういうのはマナーとして明示すべきじゃないでしょうか。そう思う。今回は実験なのでね。やったけどね。
 const colorVert =
 `#version 300 es
-precision mediump float;
 in float aIndex; // ダミー。全部0. ただ、attributeって1回は登場させないといけないらしくて...あんま意味ないな。
 uniform float uSize;
 uniform float uPointSize;
@@ -119,7 +116,7 @@ void main(){
 // こんなもんでいいか。
 const colorFrag =
 `#version 300 es
-precision mediump float;
+precision highp float;
 out vec4 fragColor;
 void main(){
   vec2 p = (gl_PointCoord.xy - 0.5) * 2.0;

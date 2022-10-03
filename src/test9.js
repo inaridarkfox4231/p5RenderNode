@@ -37,7 +37,6 @@ const TRIANGLE_SIZE = 0.02;
 // -------shaders------- //
 const triangleVert =
 `#version 300 es
-precision mediump float;
 in vec2 aPosition;
 in vec3 aColor;
 out vec3 vColor;
@@ -49,7 +48,7 @@ void main(){
 
 const triangleFrag =
 `#version 300 es
-precision mediump float;
+precision highp float;
 in vec3 vColor;
 out vec4 fragColor;
 void main(){

@@ -20,7 +20,6 @@ const SIZE = 32;
 
 // attributeはindexのみ。
 const colorVert =
-"precision mediump float;" +
 "attribute float aIndex;" +
 "uniform float uSize;" + // 32.0です。
 "uniform float uPointSize;" + // 暫定8.0で。
@@ -33,7 +32,7 @@ const colorVert =
 
 // gl_PointCoord使って円かなんかにするのがいいと思うんだけどね。
 const colorFrag =
-"precision mediump float;" +
+"precision highp float;" +
 "void main(){" +
 "  gl_FragColor = vec4(vec3(0.0), 1.0);" + // 終了！
 "}";

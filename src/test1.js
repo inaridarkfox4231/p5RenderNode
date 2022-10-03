@@ -33,7 +33,6 @@ let bg, bgTex;
 
 // copy. 2D背景付けたい場合にどうぞ。
 const copyVert =
-"precision mediump float;" +
 "attribute vec2 aPosition;" +
 "varying vec2 vUv;" +
 "void main () {" +
@@ -43,8 +42,8 @@ const copyVert =
 "}";
 
 const copyFrag =
-"precision mediump float;" +
-"precision mediump sampler2D;" +
+"precision highp float;" +
+"precision highp sampler2D;" +
 "varying highp vec2 vUv;" +
 "uniform sampler2D uTex;" +
 "void main () {" +
@@ -53,7 +52,6 @@ const copyFrag =
 
 // simple. 頂点の位置と色を受け取るだけ。3Dではなく、単純にいきなり正規化デバイスからスタート。
 const simpleVert =
-"precision mediump float;" +
 "attribute vec2 aPosition;" +
 "attribute vec3 aColor;" +
 "varying vec3 vColor;" +
@@ -65,7 +63,7 @@ const simpleVert =
 
 // 本来はこんな感じで色を出すだけの代物なのよね
 const simpleFrag =
-"precision mediump float;" +
+"precision highp float;" +
 "varying vec3 vColor;" +
 "uniform vec3 uTint;" +
 "void main(){" +
