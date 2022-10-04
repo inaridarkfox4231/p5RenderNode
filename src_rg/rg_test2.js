@@ -247,14 +247,15 @@ function draw(){
 function showProgram(programName, x, y, settings = {}){
 	if(settings.time === undefined){ settings.time = false; }
 	if(settings.resolution === undefined){ settings.resolution = false; }
-	const gl = gr._renderer.GL; // glからdrawingBufferWidthとdrawingBufferHeight取り出せばいいんだわ
+	//const gl = gr._renderer.GL; // glからdrawingBufferWidthとdrawingBufferHeight取り出せばいいんだわ
+  const _size = _node.getDrawingBufferSize();
   _node.use(programName, "board");
   if(settings.time){
     const currentTime = _Timer.getDeltaSecond("uTime");
     _node.setUniform("uTime", currentTime);
   }
   if(settings.resolution){
-    _node.setUniform("uResolution", [gl.drawingBufferWidth, gl.drawingBufferHeight]);
+    _node.setUniform("uResolution", [_size.w, _size.h]);
   }
   _node.drawArrays("triangle_strip");
   image(gr, x, y);

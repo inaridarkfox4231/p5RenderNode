@@ -93,6 +93,7 @@ const p5wgex = (function(){
   // 簡単なタイマー的な何か
   // 単純に経過ミリ秒を返す...
   // たとえば適当なタイミングで"draw"とかしてgetDeltaでdrawって呼ぶとそこまでの差が出るから
+  // deltaでなんかしたいなら個別にやってください...まあでもそのうち何か作るよ。deltaのhistory...要望があれば。
   class Timer{
     constructor(){
       this.stumps = {};
@@ -114,6 +115,12 @@ const p5wgex = (function(){
       const delta = this.getDelta(keyName);
       if(delta === null){ return null; }
       return delta / 1000; // 1000で割ってミリ秒にする
+    }
+    getDeltaFPS(keyName){
+      // fpsの割合を返してくれる。ざっくりいうと1に近いほど遅い。別の方法で可視化したい場合もあるでしょうから。
+      const delta = this.getDelta(keyName);
+      if(delta === null){ return null; }
+      return (delta * fps / 1000); // 1000/fpsで割る。
     }
     getDeltaFPStext(keyName, fps = 60, digits = 3){
       // fpsのテキストを返してくれる。ざっくりいうと1に近いほど遅い。
@@ -830,6 +837,10 @@ const p5wgex = (function(){
       // 通常のクリア。対象はスクリーンバッファ、もしくはその時のフレームバッファ
       this.gl.clear(this.gl.COLOR_BUFFER_BIT);
       return this;
+    }
+    getDrawingBufferSize(){
+      // drawingBufferのsizeを取得する関数
+      return {w:this.gl.drawingBufferWidth, h:this.gl.drawingBufferHeight};
     }
     enable(name){
       // 有効化指定(cull_face, depth_test, blendなど)

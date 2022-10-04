@@ -29,6 +29,14 @@
 
 // フレームバッファ用意してfbmをまずそこに落として、それ使って雲表示するシェーダを書くのどうかなって。
 
+// 20221004
+// fpsがきちんと計測されるようにちょっといじりました
+// なるほど
+// これが本来の計測方法ですね...こうしないとだめなんだ
+// あれ全部書き換えないとだめだな...わぁお...大変じゃ...
+// これからは！気を付けてね！！
+// ちなみにスマホだと激重です。死んでます。
+
 // -------global------- //
 const ex = p5wgex;
 let gr0, gr1;
@@ -210,12 +218,15 @@ function setup(){
   info.textSize(16);
   info.textAlign(LEFT, TOP);
   infoTex = new p5.Texture(gr0._renderer, info);
+
+	_timer.set("fps"); // 最初に1回だけ
 }
 
 // -------draw------- //
 function draw(){
   const currentTime = _timer.getDeltaSecond("slot0");
-  _timer.set("fps");
+  const fps = _timer.getDeltaFPStext("fps");
+	_timer.set("fps");
 
   background(0);
   _node0.bindFBO(null)
@@ -237,9 +248,9 @@ function draw(){
 
   image(gr0, 0, 0);
 
-  const fps = _timer.getDeltaFPStext("fps");
   info.clear();
-  info.text(fps, 5, 5);
+  info.text("fpsRate:" + fps, 5, 5);
+  info.text("frameRate:" + frameRate().toFixed(2), 5, 25);
   infoTex.update();
 }
 
@@ -262,62 +273,3 @@ function prepareRandomTable(node){
       .drawArrays("points")
       .unbind();
 }
-
-/*
-"float snoise3(vec3 st){" +
-"  vec3 p = st + (st.x + st.y + st.z) / 3.0;" +
-"  vec3 f = fract(p);" +
-"  vec3 i = floor(p);" +
-"  vec3 g0, g1, g2, g3;" +
-"  vec4 wt;" +
-"  g0 = i;" +
-"  g3 = i + u_111;" +
-"  if(f.x >= f.y && f.x >= f.z){" +
-"    g1 = i + u_100;" +
-"    g2 = i + (f.y >= f.z ? u_110 : u_101);" +
-"    wt = (f.y >= f.z ? vec4(1.0 - f.x, f.x - f.y, f.y - f.z, f.z) : vec4(1.0 - f.x, f.x - f.z, f.z - f.y, f.y));" +
-"  }else if(f.y >= f.x && f.y >= f.z){" +
-"    g1 = i + u_010;" +
-"    g2 = i + (f.x >= f.z ? u_110 : u_011);" +
-"    wt = (f.x >= f.z ? vec4(1.0 - f.y, f.y - f.x, f.x - f.z, f.z) : vec4(1.0 - f.y, f.y - f.z, f.z - f.x, f.x));" +
-"  }else{" +
-"    g1 = i + u_001;" +
-"    g2 = i + (f.x >= f.y ? u_101 : u_011);" +
-"    wt = (f.x >= f.y ? vec4(1.0 - f.z, f.z - f.x, f.x - f.y, f.y) : vec4(1.0 - f.z, f.z - f.y, f.y - f.x, f.x));" +
-"  }" +
-"  float value = 0.0;" +
-"  wt = wt * wt * wt * (wt * (wt * 6.0 - 15.0) + 10.0);" +
-"  value += wt.x * dot(p - g0, random3(g0));" +
-"  value += wt.y * dot(p - g1, random3(g1));" +
-"  value += wt.z * dot(p - g2, random3(g2));" +
-"  value += wt.w * dot(p - g3, random3(g3));" +
-"  return value;" +
-"}" +
-// fbm
-"float fbm(vec3 st){" +
-"  float value = 0.0;" +
-"  float amplitude = 0.5;" +
-"  for(int i = 0; i < octaves; i++){" +
-"    value += amplitude * snoise3(st);" +
-"    st *= 2.0;" +
-"    amplitude *= 0.5;" +
-"  }" +
-"  return value;" +
-"}" +
-// hsbで書かれた(0.0～1.0)の数値vec3をrgbに変換する魔法のコード
-"vec3 getHSB(float r, float g, float b){" +
-"    vec3 c = vec3(r, g, b);" +
-"    vec3 rgb = clamp(abs(mod(c.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);" +
-"    rgb = rgb * rgb * (3.0 - 2.0 * rgb);" +
-"    return c.z * mix(vec3(1.0), rgb, c.y);" +
-"}" +
-"void main(void){" +
-"  vec2 st = gl_FragCoord.xy * 0.5 / min(u_resolution.x, u_resolution.y);" +
-"  vec2 p = (st + vec2(0.05, 0.09) * u_time) * 3.0;" +
-"  float n = 0.5 + 0.5 * fbm(vec3(p, u_time * 0.05));" + // ノイズ計算
-"  vec3 cloudColor = vec3(1.0);" +
-"  vec3 skyColor = getHSB(0.08, sqrt(st.y * (2.0 - st.y)), 1.0);" +
-"  vec3 finalColor = skyColor + (cloudColor - skyColor) * smoothstep(0.44, 0.56, n);" +
-"  gl_FragColor = vec4(finalColor, 1.0);" +
-"}";
-*/

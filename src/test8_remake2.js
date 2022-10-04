@@ -19,11 +19,18 @@
 // とはいえ今までのやり方が間違ってたわけじゃないけどね。動的更新のとか。あれはあれで正しかった。
 // きちんと評価することが大事なのです。焦ってご破算とかやめてね。
 
+// というわけでfbmを分解しましょう。doubleにして足していきます～
+// できたけどこれほんとにfbmか？？
+
+// スマホの方あんま変化なくてがっかり。まあいいや。速いのはそのまんま。何で速いんだろうね...
+
 // ----global---- //
 const ex = p5wgex;
 let _node;
 let _timer = new ex.Timer();
 let info, infoTex;
+
+const OCTAVE = 6;
 
 // ----shaders---- //
 // フレームバッファにfloat32の値を格納する
@@ -38,29 +45,36 @@ void main(){
 }
 `;
 
-// R32Fに出力してみたいんだけど。
-const dataFrag =
+// clearにしよう。単色塗りつぶし。
+const clearFrag =
 `#version 300 es
 precision highp float;
 in vec2 vUv;
-out float fragValue; // この書き方が通ってるということでよいのか...？
+out float fragValue;
+uniform float uValue; // 一つの数で全部塗る。0とか。
 void main(){
-  vec2 pos = vUv;
-  pos *= 16.0;
-  pos = floor(pos);
-  if(mod(pos.x + pos.y, 2.0) == 0.0){ fragValue = 0.0; }
-  else{ fragValue = 0.5; }
+  fragValue = uValue; // varyingは使わなくてもOKなのです。
 }
 `; // 出力にfloat使ってるの変な感じ～
 
 // fbmFragでござい！できるかな...
-const fbmFrag =
+// pを作るところは一緒。これを用いてstを作る。そこに...
+// 1.0, 2.0, 4.0, 8.0, 16.0, 32.0 という数(uFactor)と、
+// 0.5, 0.5/2, 0.5/4, ...というuAmplitudeから計算されるsnoise(uFactor * st) * uAmplitudeを
+// 取得したvalueに加える処理を行なう。これを6回やるってわけ。それでfbmになるわけ。0.5とかはいい。あっちでやる。
+const fbmIterFrag =
 `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform float uTime;
 uniform sampler2D uRandom;
 out float fragValue;
+
+// fbm用
+uniform float uFactor;
+uniform float uAmplitude;
+uniform sampler2D uTex; // readのbuffer.
+
 // 単位ベクトル群
 const vec3 u_100 = vec3(1.0, 0.0, 0.0);
 const vec3 u_010 = vec3(0.0, 1.0, 0.0);
@@ -69,8 +83,7 @@ const vec3 u_110 = vec3(1.0, 1.0, 0.0);
 const vec3 u_101 = vec3(1.0, 0.0, 1.0);
 const vec3 u_011 = vec3(0.0, 1.0, 1.0);
 const vec3 u_111 = vec3(1.0, 1.0, 1.0);
-// オクターブ
-const int octaves = 6;
+
 // random3. 周期性ありで。-1～1の値を返す。
 vec3 random3(vec3 v){
   // vは整数3つなのでこれを...
@@ -109,17 +122,6 @@ float snoise3(vec3 st){
   value += wt.w * dot(p - g3, random3(g3));
   return value;
 }
-// いわゆるfbm
-float fbm(vec3 st){
-  float value = 0.0;
-  float amplitude = 0.5;
-  for(int i = 0; i < octaves; i++){
-    value += amplitude * snoise3(st);
-    st *= 2.0;
-    amplitude *= 0.5;
-  }
-  return value;
-}
 // getRGB(HSBをRGBに変換する関数)
 vec3 getRGB(float h, float s, float b){
   vec3 c = vec3(h, s, b);
@@ -129,8 +131,10 @@ vec3 getRGB(float h, float s, float b){
 }
 // ようやくメインコード
 void main(){
+  float value = texture(uTex, vUv).r;
   vec2 p = (vUv + vec2(0.05, 0.09) * uTime) * 3.0; // 平行移動ずらし
-  fragValue = 0.5 + 0.5 * fbm(vec3(p, uTime * 0.05)); // fbm計算
+  value += uAmplitude * snoise3(uFactor * vec3(p, uTime * 0.05)); // fbm計算
+  fragValue = value; // 出力
 }
 `; // fbmの出力部分を分けました。
 
@@ -189,10 +193,7 @@ vec3 getRGB(float h, float s, float b){
 }
 void main(){
   float value = texture(uValue, vUv).r; // .rってやるとOKなのか？そうなのか？？
-  // 調べたら.gや.bってやると真っ黒、つまるところ0が入ってるようですね...
-  // そういうわけで.rで取り出せばOKのようです！やったね！
-  // さて、今回このvalueにはfbm値が入っています。
-  // あとの計算はこんな感じ...ですが...
+  value = 0.5 + 0.5 * value; // これ忘れてたわ
   vec2 pos = vUv;
   pos.y = 1.0 - pos.y;
   vec3 cloudColor = vec3(1.0);
@@ -243,13 +244,14 @@ function setup(){
   _timer.set("slot0");
   _node = new ex.RenderNode(this._renderer.GL);
 
-  _node.registPainter("data", dataVert, dataFrag);
-  _node.registPainter("fbm", dataVert, fbmFrag);
+  _node.registPainter("clear", dataVert, clearFrag); // 初期化用
+  _node.registPainter("fbmIter", dataVert, fbmIterFrag);
   _node.registPainter("color", colorVert, colorFrag);
   _node.registPainter("copy", copyVert, copyFrag);
   _node.registFigure("board", [{name:"aPosition", size:2, data:[-1,-1,1,-1,-1,1,1,1]}]);
 
-  _node.registFBO("data", {w:640, h:640, textureInternalFormat:"r32f", textureFormat:"red", textureType:"float"});
+  // ダブルにする
+  _node.registDoubleFBO("data", {w:640, h:640, textureInternalFormat:"r32f", textureFormat:"red", textureType:"float"});
   _node.clearColor(0,0,0,1);
 
   prepareRandomTable(_node);
@@ -270,12 +272,27 @@ function draw(){
 	_timer.set("fps"); // ここから上のあそこまで、ってやってみたわけ。うん。なるほど...んー...
 	// でもよく考えたらfpsなんだからこうするのが正解よね...
 
+  // 0でクリア
   _node.bindFBO("data")
-       .use("fbm", "board")
-       .setFBOtexture2D("uRandom", "rdm")
-       .setUniform("uTime", currentTime)
+       .use("clear", "board")
+       .setUniform("uValue", 0)
        .drawArrays("triangle_strip")
+       .swapFBO("data")
        .unbind();
+
+  // fbm計算
+  for(let o=0; o<OCTAVE; o++){
+    _node.bindFBO("data")
+         .use("fbmIter", "board")
+         .setFBOtexture2D("uRandom", "rdm")
+         .setFBOtexture2D("uTex", "data")
+         .setUniform("uTime", currentTime)
+         .setUniform("uAmplitude", 0.5 * Math.pow(0.5, o))
+         .setUniform("uFactor", Math.pow(2, o))
+         .drawArrays("triangle_strip")
+         .swapFBO("data")
+         .unbind();
+  }
 
   // おかしいな。nullのとこ"null"って書いてた。あれれ～
   // まあいいや...エラー処理充実したし。
