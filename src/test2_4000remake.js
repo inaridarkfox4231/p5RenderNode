@@ -1,16 +1,22 @@
-// 立体とライティング
+// 4000box.
+// 元ネタ：@incre_ment さんの https://twitter.com/incre_ment/status/1574569987196350464
 
-// webgl2で書き直し。ちょっとやりたいことができたのです。
-// これ：https://twitter.com/incre_ment/status/1574569987196350464
+// 今回バーテックスステージでモデル変換するのでモデル行列要らないですね...というかそのまま渡しちゃってOKです。
 
-// とはいえまあとりあえずこれはこれで。
+// 20221005
+// カリング。あと同じサイズのバッファに法線と明るさぶち込んで
+// それ使ってピクセルごとにちょうど1回だけ色決めするように改良する
+// それでだめならもうええわ！！
 
-// カリング理解しました。なるほど。
-// そういうことみたいです。法線計算が、結局あれほぼp5jsのコピペですけど、時計回り定義に、つまり
-// BACK指定に対応してて。それで法線の向きが逆になっちゃってたらしいです。それを修正しました。
-// なのでちゃんと背面カリングした場合に反時計回りに指定すれば前面だけ描画されます。よかった！
-// 信じられないなぁ...
-// なのでこれからはちゃんと反時計回り、お願いしますね...
+// カリングしたら速くなった...けど、なんだ、これ...
+// ディレクショナルライトの計算のところがおかしい？あるいは法線計算か。なんか変だ。何だろう...
+// おそらくだけど法線、もしくは、どっちかが間違ってる。
+
+// 法線計算が時計回り前提でした。まじか～
+// 直したよ、これでいいはず。速いね...こんな速くなるんだね...すげ。
+// まあこれからさらに速くするんだけどね。
+
+// スマホの方死んでた。OK. 知ってた。
 
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
@@ -20,15 +26,62 @@ let _node; // RenderNode.
 
 let tf, cam;
 let _timer = new ex.Timer();
+let _time = 0;
+
+let info, infoTex;
 
 // ------------------------------------------------------------------------------------------------------------ //
 // shaders.
+
+// calc用のシェーダー
+// vertは一緒だわね...
+const calcVert =
+`#version 300 es
+in vec2 aPosition;
+out vec2 vUv;
+void main(){
+  vUv = aPosition * 0.5 + 0.5;
+  vUv.y = 1.0 - vUv.y;
+  gl_Position = vec4(aPosition, 0.0, 1.0);
+}
+`;
+
+// calcFragはxの方を200.0倍してfloor,yの方を20倍してfloorして、
+// その整数に対して何か計算してvec4こしらえて出力する。
+const calcFrag =
+`#version 300 es
+precision highp float;
+
+in vec2 vUv;
+out vec4 fragData;
+
+uniform vec2 uSize;  // 今回は200x20.
+uniform float uTime; // 時間。0.01ずつふやすんだとか。んー...
+
+const float TAU = 6.28318;
+
+void main(){
+  vec2 indices = floor(vUv * uSize);
+  float a = indices.x * 0.005;  // 0.005の0倍～199倍
+  float i = indices.y + 1.0;    // 1～20
+  float k = 20.0;
+  float w = 600.0;
+  float t = uTime;
+  float p = (i+5.0*t)/k;
+  float r = pow(1.0-p, 3.0);
+  float _x = 4.0*r*w*sin(TAU*a);
+  float _y = 500.0 - 2.0*w*p*p*p*p + 50.0*sin(TAU*(3.0*(p+a)+t));
+  float _z = 4.0*r*w*cos(TAU*a) - 200.0;
+  float blightness = p*w/255.0;
+  fragData = vec4(_x, _y, _z, blightness); // 出力！
+}
+`;
 
 // 現時点でのライティング。
 const lightVert =
 `#version 300 es
 in vec3 aPosition;
-in vec3 aVertexColor;
+in vec3 aVertexColor; // 今回は不使用
 in vec3 aNormal;
 in vec2 aTexCoord;
 
@@ -38,23 +91,47 @@ uniform mat4 uModelViewMatrix;
 uniform mat4 uProjectionMatrix;
 uniform mat3 uNormalMatrix; // あーこれまだ作ってない...な...uMVの逆転置行列だそうです。
 
+uniform sampler2D uData;
+
 out vec3 vVertexColor;
 out vec3 vNormal;
 out vec3 vViewPosition;
 out vec3 vAmbientColor;
 out vec2 vTexCoord;
 
+const float TAU = 6.28318;
+
 void main(void){
   // 場合によってはaPositionをいじる（頂点位置）
   // 場合によってはaNormalもここで計算するかもしれない
-  vec4 viewModelPosition = uModelViewMatrix * vec4(aPosition, 1.0);
+  vec3 pos = aPosition;
+  // さていじりますか。
+  // スケール変換は済ませておく。
+
+  // 変換データをテクスチャより取得
+  float id = floor(float(gl_VertexID) / 8.0);
+  vec2 dataPos = vec2(mod(id, 200.0) + 0.5, floor(id / 200.0) + 0.5) / vec2(200.0, 20.0); // あっ忘れてた
+  vec4 data = texture(uData, dataPos);
+
+  // 位置調整
+  pos += vec3(data.x, data.y, data.z);
+
+  // 次に色の調整をしますね
+  vec3 color = vec3(0.5, 0.75, 1.0);
+  // 遠くに行くほど暗くなる変化を加えているのでそれを考慮
+  color *= data.w;
+
+  // 以上ですね。
+
+  vec4 viewModelPosition = uModelViewMatrix * vec4(pos, 1.0);
 
   // Pass varyings to fragment shader
   vViewPosition = viewModelPosition.xyz;
   gl_Position = uProjectionMatrix * viewModelPosition;
 
   vNormal = uNormalMatrix * aNormal;
-  vVertexColor = aVertexColor;
+  // ここですね。
+  vVertexColor = color;
   vTexCoord = aTexCoord;
 
   vAmbientColor = uAmbientColor;
@@ -157,12 +234,40 @@ void main(void){
 }
 `;
 
+// info用
+let copyVert =
+`#version 300 es
+
+in vec2 aPosition;
+out vec2 vUv; // vertexStageのvaryingはoutで、
+
+void main(void){
+  vUv = aPosition * 0.5 + 0.5;
+  vUv.y = 1.0 - vUv.y;
+  gl_Position = vec4(aPosition, 0.0, 1.0);
+}`;
+
+let copyFrag =
+`#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+in vec2 vUv; // fragmentStageのinと呼応するシステム。vertexStageのinはattributeなので
+uniform sampler2D uTex;
+out vec4 fragColor;
+
+void main(void){
+  fragColor = texture(uTex, vUv); // なんとtextureでいいらしい...！
+}
+`;
+
 // ------------------------------------------------------------------------------------------------------------ //
 // main code.
 
 function setup(){
   createCanvas(800, 640, WEBGL);
-  _timer.set("slot0");
+  // frameRate==30をなくしました。ちょっと速くなったかも...？
+
   const gl = this._renderer.GL;
   _node = new ex.RenderNode(gl);
   tf = new ex.TransformEx();
@@ -171,9 +276,8 @@ function setup(){
   // lightingShader.
   _node.registPainter("light", lightVert, lightFrag);
 
-
-  // キューブメッシュ（頂点のインデックスはbackにならって上から見て時計回り）
-  // こういうの作ると便利よ。テクスチャ貼るのも楽になるし。
+  // キューブメッシュ（頂点のインデックスは反時計回りだよ！間違えてるよ！）
+  // あとテクスチャは個別じゃないと使えないよ！
   //       4 --- 5
   //       │     │
   // 4 --- 0 --- 1 --- 5 --- 4
@@ -181,29 +285,73 @@ function setup(){
   // 7 --- 3 --- 2 --- 6 --- 7
   //       │     │
   //       7 --- 6
+
   meshData = [];
+
   let vData = [-1,-1,1,  1,-1,1,  1,1,1,  -1,1,1,
                -1,-1,-1, 1,-1,-1, 1,1,-1, -1,1,-1];
-  meshData.push({name:"aPosition", size:3, data:vData});
-  let cData = [];
+  // 正規化. 今回は仕様の関係で0.5サイズとさせていただきます。つまり辺の長さが1ということ。
+  // 0.5って字が書くのめんどくさいのでこの方がいいですね。
+  // 先に計算してしまう。
   for(let i=0; i<8; i++){
-    if(i<4){ cData.push(1, 1, 1); }else{ cData.push(0, 0.5, 1); }
+    vData[3*i] *= 0.5 * 9;
+    vData[3*i+1] *= 0.5 * 600;
+    vData[3*i+2] *= 0.5 * 9;
   }
-  meshData.push({name:"aVertexColor", size:3, data:cData});
+  // これを4000個複製する
+  let positions = [];
+  for(let i=0; i<4000; i++){
+    positions.push(...vData);
+  }
+  meshData.push({name:"aPosition", size:3, data:positions});
+
+  // 高さで色付けしましょうか
+  // 反時計回りになってなかったので修正
   let fData = [0,3,2, 0,2,1, 4,0,1, 4,1,5, 3,7,6, 3,6,2, 4,7,3, 4,3,0, 1,2,6, 1,6,5, 5,6,7, 5,7,4];
   let nData = ex.getNormals(vData, fData);
-  meshData.push({name:"aNormal", size:3, data:nData});
-
+  // nDataを4000個複製
+  let normals = [];
+  for(let i=0; i<4000; i++){
+    normals.push(...nData);
+  }
+  meshData.push({name:"aNormal", size:3, data:normals});
+  // お疲れさまでした。
   _node.registFigure("cube", meshData);
-  _node.registIBO("cubeIBO", {data:fData});
 
-  // こんな感じ？
+  // faceIndicesも4000個複製。ただしインデックスの値を8ずつ増やしていくので注意。
+  let faceIndices = [];
+  for(let i=0; i<4000; i++){
+    for(let index of fData){
+      faceIndices.push(i*8 + index);
+    }
+  }
+  _node.registIBO("cubeIBO", {data:faceIndices});
+
+  // データ計算用
+  _node.registPainter("calc", calcVert, calcFrag);
+  // vec4のfloatのframebuffer.
+  _node.registFBO("param", {w:200, h:20, textureType:"float"})
+
+  // こんな感じ？ですね。次。
 
   _node.clearColor(0, 0, 0, 1);
 
-  // ちょっとカリング有効にしますね
+  // info用
+  _node.registPainter("copy", copyVert, copyFrag);
+  _node.registFigure("board", [{name:"aPosition", size:2, data:[-1,-1,1,-1,-1,1,1,1]}]);
+
+  info = createGraphics(width, height);
+  info.fill(255);
+  info.noStroke();
+  info.textSize(16);
+  info.textAlign(LEFT, TOP);
+  infoTex = new p5.Texture(this._renderer, info);
+
+	_timer.set("fps"); // 最初に1回だけ
+
+  // カリング有効化
   _node.enable("cull_face");
-  // 理解しました。
+  _node.cullFace("back");
 }
 
 // やること
@@ -215,6 +363,22 @@ function setup(){
 function draw(){
   _node.clear();
 
+  const fps = _timer.getDeltaFPStext("fps", frameRate());
+	_timer.set("fps"); // ここから上のあそこまで、ってやってみたわけ。うん。なるほど...んー...
+
+  _time += 0.01;
+  if(_time > 1){ _time -= 1; }
+
+  // データ計算.
+  _node.bindFBO("param")
+       .use("calc", "board")
+       .setUniform("uTime", _time)
+       .setUniform("uSize", [200, 20])
+       .drawArrays("triangle_strip")
+       .unbind();
+  // bindを切る
+  _node.bindFBO(null);
+
   // ライティングシェーダ、オン！
   _node.usePainter("light");
 
@@ -222,23 +386,38 @@ function draw(){
   const projMat = cam.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
 
-  // ライティングユニフォーム
+  // ライティングユニフォーム（今回はpointLightで）
   _node.setUniform("uAmbientColor", [0.25, 0.25, 0.25]);
   _node.setUniform("uUseDirectionalLight", true);
-  _node.setUniform("uLightingDirection", [0, 0, -1]); // ここは、合ってるんですよ。
+  _node.setUniform("uLightingDirection", [0, 0, -1]); // -1でOKです。
   _node.setUniform("uDirectionalDiffuseColor", [1, 1, 1]);
 
   // 彩色方法指定（頂点色）
   _node.setUniform("uUseColorFlag", 0);
+  //_node.setUniform("uTime", _time); // カスタムパラメータ
 
   // キューブ（動かす、属性バインド、IBOバインド、ドローコール）
   moveCube();
   _node.drawFigure("cube");
+  _node.setFBOtexture2D("uData", "param"); // paramを参照
   _node.bindIBO("cubeIBO");
   _node.drawElements("triangles");
-
   _node.unbind();
-  _node.flush();
+
+  _node.enable("blend")
+       .blendFunc("one", "one_minus_src_alpha");
+
+  _node.use("copy", "board")
+       .setTexture2D("uTex", infoTex.glTex)
+       .drawArrays("triangle_strip")
+       .unbind()
+       .flush()
+       .disable("blend");
+
+  info.clear();
+  info.text("fpsRate:" + fps, 5, 5);
+  info.text("frameRate:" + frameRate().toFixed(2), 5, 25);
+  infoTex.update();
 }
 
 // 行列関連はまとめとこうか
@@ -256,10 +435,6 @@ function setModelView(){
 // これも同じことで、この場合特定の場所で重心を中心に回転させたいわけだが、点集合で考えれば
 // 回転してから然るべくtranslate,となるから、それを逆回ししただけ。さらにスケール変換...？これ最後なのでは...？
 function moveCube(){
-  const currentTime = _timer.getDeltaSecond("slot0");
-  tf.initialize()
-    .rotateZ(Math.PI*currentTime)
-    .rotateX(Math.PI*currentTime)
-    .scale(50, 50, 50); // うん。最後だわ。ごめーん。
+  tf.initialize();
   setModelView();
 }

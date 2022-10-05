@@ -695,6 +695,11 @@ const p5wgex = (function(){
   // verticesは3つずつ頂点座標が入ってて
   // indicesは3つずつ三角形の頂点のインデックスが入ってるわけね
 
+  // これ頂点が時計回りに定義されてることが前提っぽいね...
+  // まあ普通に考えたらx軸、右、y軸下だから、時計回りの方が自然ではあるんよね。でも背面カリングで消えちゃうのは
+  // 厳然たる事実だからやっぱまずいでしょうよ。frontは反時計回りですって公式が言ってるんだから。正規化デバイスだって
+  // 反時計回りだし。だったら合わせないとまずいでしょ。逆にしよう。
+
   // indicesの3*i,3*i+1,3*i+2それぞれに対して
   // たとえばk=indices[3*i]に対して
   // verticesの3*k,3*k+1,3*k+2番目の成分を取り出してベクトルを作る
@@ -722,9 +727,10 @@ const p5wgex = (function(){
       const w0 = p5.Vector.sub(v1, v0);
       const w1 = p5.Vector.sub(v2, v0);
       const w2 = p5.Vector.sub(v2, v1);
-      const u0 = p5.Vector.cross(w0, w1);
-      const u1 = p5.Vector.cross(w0, w2);
-      const u2 = p5.Vector.cross(w1, w2);
+      // ここ時計回り前提の計算になってるので逆にしますね。
+      const u0 = p5.Vector.cross(w1, w0);
+      const u1 = p5.Vector.cross(w2, w0);
+      const u2 = p5.Vector.cross(w2, w1);
       const m0 = w0.mag();
       const m1 = w1.mag();
       const m2 = w2.mag();
@@ -750,11 +756,7 @@ const p5wgex = (function(){
   // ---------------------------------------------------------------------------------------------- //
   // Meshes.
   // まあ、メッシュいろいろテンプレート、あると便利だし。難しいけどね。
-  // 簡単なテスト用に用意しておくのは無駄じゃないと思う。難しいけどね。
-
-  // 何が難しいかっていうとたとえば頂点に色付けたいな～ってなったら構築部分直接いじる必要は当然出てくるし
-  // そんな感じであれしたいこれしたいでどんどんいろいろ、ね、まあそういうこと。複雑なものは扱えない。
-  // ある程度は、やるけどね。それ以上は難しいかも。
+  // 気を付けてください、反時計回りでないとカリングが使えないので。反時計回り、よろしく！
 
   // 長方形（z軸正方向に垂直なもの、横と縦の幅だけ指定）
   // info:
@@ -835,7 +837,8 @@ const p5wgex = (function(){
     }
     clear(){
       // 通常のクリア。対象はスクリーンバッファ、もしくはその時のフレームバッファ
-      this.gl.clear(this.gl.COLOR_BUFFER_BIT);
+      // カスタムできた方がいいのかどうかはまだよくわからないが...
+      this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
       return this;
     }
     getDrawingBufferSize(){
@@ -843,11 +846,19 @@ const p5wgex = (function(){
       return {w:this.gl.drawingBufferWidth, h:this.gl.drawingBufferHeight};
     }
     enable(name){
+      if(this.dict[name] === undefined){
+        window.alert("enable failured: invalid name.");
+        return;
+      }
       // 有効化指定(cull_face, depth_test, blendなど)
       this.gl.enable(this.dict[name]);
       return this;
     }
     cullFace(mode){
+      if(this.dict[mode] === undefined){
+        window.alert("cullFace failured: invalid mode name.");
+        return;
+      }
       // デフォルトはBACK（上から見て反時計回り）
       this.gl.cullFace(this.dict[mode]); // default: back.
       return this;
@@ -858,6 +869,10 @@ const p5wgex = (function(){
       return this;
     }
     disable(name){
+      if(this.dict[name] === undefined){
+        window.alert("disable failured: invalid name.");
+        return;
+      }
       // 非有効化(cull_face, depth_test, blend)
       this.gl.disable(this.dict[name]);
       return this;

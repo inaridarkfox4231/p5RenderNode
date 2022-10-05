@@ -3,15 +3,45 @@
 
 // 今回バーテックスステージでモデル変換するのでモデル行列要らないですね...というかそのまま渡しちゃってOKです。
 
-// まず
-// 1.スケール変換は一律なので先にやっておく
-// 2.translate(_x,_y,_z)と色に掛けるfactorが個別なのでこれをvec4-floatのframebuffer(20x200)で計算する
-// 3.結果をインデックスを元に取得してそれを使って諸々計算しよう。
+// 20221005
+// カリング。あと同じサイズのバッファに法線と明るさぶち込んで
+// それ使ってピクセルごとにちょうど1回だけ色決めするように改良する
+// それでだめならもうええわ！！
 
-// ドローコールの方を先にした方が速いのかな...そこちょっと気になってるのよ。
+// カリングしたら速くなった...けど、なんだ、これ...
+// ディレクショナルライトの計算のところがおかしい？あるいは法線計算か。なんか変だ。何だろう...
+// おそらくだけど法線、もしくは、どっちかが間違ってる。
 
-// 結論。駄目！
-// こっちはもういいよ。捨てよう。遅いし。
+// 法線計算が時計回り前提でした。まじか～
+// 直したよ、これでいいはず。速いね...こんな速くなるんだね...すげ。
+// まあこれからさらに速くするんだけどね。
+
+// スマホの方死んでた。OK. 知ってた。
+
+// まずdrawingbufferのサイズのフレームバッファを用意する。vec4. で、法線情報と明るさを格納する。
+
+// preLightでnormalとblightnessを計算。
+// 次に板ポリ芸で、ピクセルごとに、gl_FragCoordを使ってアクセス。この際にresolutionを使って...って思ったけど
+// vUvで良さそうやね。
+// uniformとかはすべてfragmentの方で受け取る形。そもそもvで受け取ってfに送るの冷静に考えたら
+// おかしいでしょ。vじゃ使わないのに。テクスチャ座標じゃないんだから。
+
+// あーしまった、pointLightってモデルビューのポジション情報が要るのか...カメラからの位置。んー。
+// MRT使えばできるんだろうけど今回は無視しましょう。
+
+// 複数の...ってなるとデプスとかも使う必要が出てきそう。重なりとか考慮するとそうなるし。んー。
+// 全部一つのFigureに出来るわけじゃないからねぇ。その都度深さを考慮して法線とか更新していく感じなんかね...色とか。
+// でもそれはレンダーバッファに深さの情報が入ってれば勝手にやってくれるから必要ないのか。なるほど。そうやって使われる感じなのね。多分。
+
+// 現時点での
+// ...
+
+// レンダリング自体はできてるんですけど、おかしいですね...すぐ真っ黒になってしまうのです。ん？？
+
+// できました。あの、depthをクリアしてなかったんですね。本家の方は明示的にdepthClear(1)にしてますけどそこまではいいかなって。
+// できた！frameRate130でも動く爆速のバケモノ誕生...でもまあ60でいいですとりあえず。
+// MRTマスターすれば色とかついてても大丈夫になるはず。pointLightとか、viewPositionが必要なのについても、
+// それ用にバッファ用意すればいけるかも。
 
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
@@ -67,20 +97,19 @@ void main(){
   float _x = 4.0*r*w*sin(TAU*a);
   float _y = 500.0 - 2.0*w*p*p*p*p + 50.0*sin(TAU*(3.0*(p+a)+t));
   float _z = 4.0*r*w*cos(TAU*a) - 200.0;
-  float blightness = p*w/255.0;
-  fragData = vec4(_x, _y, _z, blightness); // 出力！
+  float brightness = p*w/255.0;
+  fragData = vec4(_x, _y, _z, brightness); // 出力！
 }
 `;
 
-// 現時点でのライティング。
-const lightVert =
+// MRTで色とか扱えるようになればテクスチャとか単色とか普通に頂点色とかでも
+// できるようになるはず。それを記録すればいいだけなので。
+// さらにビューポジションも記録できるようになればpointLightの計算も出来るようになる。
+// バッファの数が増えるが...恩恵は大きいよ。
+const preLightVert =
 `#version 300 es
 in vec3 aPosition;
-in vec3 aVertexColor; // 今回は不使用
 in vec3 aNormal;
-in vec2 aTexCoord;
-
-uniform vec3 uAmbientColor;
 
 uniform mat4 uModelViewMatrix;
 uniform mat4 uProjectionMatrix;
@@ -88,13 +117,8 @@ uniform mat3 uNormalMatrix; // あーこれまだ作ってない...な...uMVの�
 
 uniform sampler2D uData;
 
-out vec3 vVertexColor;
 out vec3 vNormal;
-out vec3 vViewPosition;
-out vec3 vAmbientColor;
-out vec2 vTexCoord;
-
-const float TAU = 6.28318;
+out float vBrightness;
 
 void main(void){
   // 場合によってはaPositionをいじる（頂点位置）
@@ -114,59 +138,58 @@ void main(void){
   // 次に色の調整をしますね
   vec3 color = vec3(0.5, 0.75, 1.0);
   // 遠くに行くほど暗くなる変化を加えているのでそれを考慮
-  color *= data.w;
+  vBrightness = data.w;
 
   // 以上ですね。
 
   vec4 viewModelPosition = uModelViewMatrix * vec4(pos, 1.0);
 
-  // Pass varyings to fragment shader
-  vViewPosition = viewModelPosition.xyz;
   gl_Position = uProjectionMatrix * viewModelPosition;
 
   vNormal = uNormalMatrix * aNormal;
-  // ここですね。
-  vVertexColor = color;
-  vTexCoord = aTexCoord;
-
-  vAmbientColor = uAmbientColor;
 }
 `;
 
-// なんかね、lightFragはmediumpにしないといけない...？
-// 富士山に雪降らせるやつでlightのやつhighpにしたらおかしくなった。
-// 何でもかんでもhighpにすればいいってわけじゃないみたいです。
-// って思ったけどレイマのライティングはいいんよね...んー。まあ臨機応変で...
-// とりまmediumpで。
+// normalと、色に掛けるfactorだけ。放り込む。
+// 色が必要な場合はここで決めるのでフラグとかはこっちで...って感じになるな。まあそもそも
+// これが本来のあるべき姿なんだろうね
+// ってわけでもない、か、半透明とかできないし...まあとりあえず。
+const preLightFrag =
+`#version 300 es
+precision mediump float;
+
+in vec3 vNormal;
+in float vBrightness;
+
+out vec4 normalData; // 出力。
+
+// メインコード
+void main(void){
+  normalData = vec4(vNormal, vBrightness); // こんだけ...
+}
+`;
+
+// ここはただの板ポリアクセスになる...？まあそうなるわな。となると要らないな...copyVertでいい。
+// uniform受け取るのとかも全部fragmentShaderがやってくれる。
+
+// vUvとuNormalDataから法線と明るさの情報を取得
+
+// directionalLight前提の限定的なシェーダでとりあえず実験
 const lightFrag =
 `#version 300 es
 precision mediump float;
 // ビュー行列
 uniform mat4 uViewMatrix;
 // directionalLight関連
+uniform vec3 uAmbientColor; // AmbientColorはuniformで取得。
 uniform vec3 uLightingDirection;
 uniform vec3 uDirectionalDiffuseColor;
-uniform vec3 uPointLightLocation;
-uniform vec3 uPointLightDiffuseColor;
-uniform vec3 uAttenuation; // デフォルトは1,0,0.
-// pointLight関連
-uniform bool uUseDirectionalLight; // デフォルトはfalse.
-uniform bool uUsePointLight; // デフォルトはfalse;
-// 描画フラグ各種
+
+uniform sampler2D uNormalData; // 法線と明るさの入ったテクスチャ
+
 const float diffuseFactor = 0.73;
-const int USE_VERTEX_COLOR = 0;
-const int USE_MONO_COLOR = 1;
-const int USE_UV_COLOR = 2; // そのうち。
 
-uniform int uUseColorFlag; // 0:vertex. 1:mono. 2:UV
-uniform vec3 uMonoColor; // monoColorの場合
-uniform sampler2D uTex; // uvColorの場合
-
-in vec3 vVertexColor;
-in vec3 vNormal;
-in vec3 vViewPosition;
-in vec3 vAmbientColor;
-in vec2 vTexCoord; // テクスチャ
+in vec2 vUv; // テクスチャアクセス用
 
 out vec4 fragColor; // 出力。
 
@@ -178,29 +201,13 @@ vec3 getDirectionalLightDiffuseColor(vec3 normal){
   float diffuse = max(0.0, dot(-lightDir, normal));
   return diffuse * lightColor;
 }
-// PointLight項の計算。attenuationも考慮。
-vec3 getPointLightDiffuseColor(vec3 modelPosition, vec3 normal){
-  vec3 lightPosition = (uViewMatrix * vec4(uPointLightLocation, 1.0)).xyz;
-  vec3 lightVector = modelPosition - lightPosition;
-  vec3 lightDir = normalize(lightVector);
-  float lightDistance = length(lightVector);
-  float d = lightDistance;
-  float lightFallOff = 1.0 / dot(uAttenuation, vec3(1.0, d, d*d));
-  vec3 lightColor = lightFallOff * uPointLightDiffuseColor;
-  float diffuse = max(0.0, dot(-lightDir, normal));
-  return diffuse * lightColor;
-}
+
 // _lightはこれで。
-vec3 totalLight(vec3 modelPosition, vec3 normal){
+vec3 totalLight(vec3 normal){
   vec3 result = vec3(0.0); // 0.0で初期化
-// directionalLightの影響を加味する
-  if(uUseDirectionalLight){
-    result += getDirectionalLightDiffuseColor(normal);
-  }
-// pointLightの影響を加味する
-  if(uUsePointLight){
-    result += getPointLightDiffuseColor(modelPosition, normal);
-  }
+  // directionalLightの影響を加味する
+  result += getDirectionalLightDiffuseColor(normal);
+
   result *= diffuseFactor;
   return result;
 }
@@ -208,23 +215,21 @@ vec3 totalLight(vec3 modelPosition, vec3 normal){
 
 // メインコード
 void main(void){
-  vec3 diffuse = totalLight(vViewPosition, normalize(vNormal));
-  vec4 col = vec4(1.0);
+  // 法線と明るさの情報を取得
+  vec2 texCoord = vUv;
+  // どうも上下が逆になってるっぽい...yを戻さないとアクセスできない。
+  texCoord.y = 1.0 - texCoord.y;
+  vec4 data = texture(uNormalData, texCoord);
+  vec3 normal = data.xyz;
+  float brightness = data.w;
+  // data.wには描画しないところは0が入ってるから大丈夫ぽいね。discardの方が安全だけど...
 
-  if(uUseColorFlag == USE_VERTEX_COLOR){
-    col.rgb = vVertexColor; // 頂点色
-  }
-  if(uUseColorFlag == USE_MONO_COLOR) {
-    col.rgb = uMonoColor;  // uMonoColor単色
-  }
-  if(uUseColorFlag == USE_UV_COLOR){
-    vec2 tex = vTexCoord;
-    tex.y = 1.0 - tex.y;
-    col = texture(uTex, tex);
-    if(col.a < 0.1){ discard; }
-  }
+  vec3 diffuse = totalLight(normalize(normal)); // normalを使って陰影計算
+  vec4 col = vec4(0.5, 0.75, 1.0, 1.0); // 原色
+  col.rgb *= brightness; // 明るさ考慮
+
   // diffuseの分にambient成分を足してrgbに掛けて色を出してspecular成分を足して完成みたいな（？？）
-  col.rgb *= (diffuse + vAmbientColor);
+  col.rgb *= (diffuse + uAmbientColor);
   fragColor = col;
 }
 `;
@@ -261,7 +266,9 @@ void main(void){
 
 function setup(){
   createCanvas(800, 640, WEBGL);
-  frameRate(30); // 今回はframeRate=30の方がいいみたいです。重いので。
+  // frameRate==30をなくしました。ちょっと速くなったかも...？
+  // 1秒周期なのでこれで！
+  _timer.set("cur");
 
   const gl = this._renderer.GL;
   _node = new ex.RenderNode(gl);
@@ -269,10 +276,11 @@ function setup(){
   cam = new ex.CameraEx(width, height);
 
   // lightingShader.
-  _node.registPainter("light", lightVert, lightFrag);
+  _node.registPainter("preLight", preLightVert, preLightFrag);
+  _node.registPainter("light", copyVert, lightFrag);
 
-  // キューブメッシュ（頂点のインデックスはbackにならって上から見て時計回り）
-  // こういうの作ると便利よ。テクスチャ貼るのも楽になるし。
+  // キューブメッシュ（頂点のインデックスは反時計回りだよ！間違えてるよ！）
+  // あとテクスチャは個別じゃないと使えないよ！
   //       4 --- 5
   //       │     │
   // 4 --- 0 --- 1 --- 5 --- 4
@@ -280,6 +288,7 @@ function setup(){
   // 7 --- 3 --- 2 --- 6 --- 7
   //       │     │
   //       7 --- 6
+
   meshData = [];
 
   let vData = [-1,-1,1,  1,-1,1,  1,1,1,  -1,1,1,
@@ -300,8 +309,8 @@ function setup(){
   meshData.push({name:"aPosition", size:3, data:positions});
 
   // 高さで色付けしましょうか
-
-  let fData = [0,1,2,  0,2,3,  1,5,6,  1,6,2,  5,4,7,  5,7,6,  4,0,3,  4,3,7,  3,2,6,  3,6,7,  4,5,1,  4,1,0];
+  // 反時計回りになってなかったので修正
+  let fData = [0,3,2, 0,2,1, 4,0,1, 4,1,5, 3,7,6, 3,6,2, 4,7,3, 4,3,0, 1,2,6, 1,6,5, 5,6,7, 5,7,4];
   let nData = ex.getNormals(vData, fData);
   // nDataを4000個複製
   let normals = [];
@@ -328,8 +337,6 @@ function setup(){
 
   // こんな感じ？ですね。次。
 
-  _node.clearColor(0, 0, 0, 1);
-
   // info用
   _node.registPainter("copy", copyVert, copyFrag);
   _node.registFigure("board", [{name:"aPosition", size:2, data:[-1,-1,1,-1,-1,1,1,1]}]);
@@ -342,6 +349,15 @@ function setup(){
   infoTex = new p5.Texture(this._renderer, info);
 
 	_timer.set("fps"); // 最初に1回だけ
+
+  // カリング有効化
+  _node.enable("cull_face");
+  _node.cullFace("back");
+
+  // 同じサイズのフレームバッファを用意
+  // MRT見てみたけど難しくなさそう。近いうちに挑戦してみる。
+  const _size = _node.getDrawingBufferSize();
+  _node.registFBO("pre", {w:_size.w, h:_size.h, textureType:"float"}); // ここに法線と明るさを落とす...
 }
 
 // やること
@@ -351,48 +367,60 @@ function setup(){
 // ドローコール
 // おわり。サクサク行こう。
 function draw(){
-  _node.clear();
+  _node.clearColor(0, 0, 0, 1).clear();
 
   const fps = _timer.getDeltaFPStext("fps", frameRate());
 	_timer.set("fps"); // ここから上のあそこまで、ってやってみたわけ。うん。なるほど...んー...
 
-  _time += 0.01;
-  if(_time > 1){ _time -= 1; }
+  // 時間のとこいじろうかなって
+  // ロジック見たら1秒周期だった
+  const currentTime = _timer.getDeltaSecond("cur") * 0.6;
 
   // データ計算.
   _node.bindFBO("param")
        .use("calc", "board")
-       .setUniform("uTime", _time)
+       .setUniform("uTime", currentTime - Math.floor(currentTime))
        .setUniform("uSize", [200, 20])
        .drawArrays("triangle_strip")
        .unbind();
-  // bindを切る
-  _node.bindFBO(null);
 
-  // ライティングシェーダ、オン！
-  _node.usePainter("light");
-
+  // 先に...法線の情報を書き込む。
+  _node.bindFBO("pre");
+  _node.clearColor(0, 0, 0, 0).clear(); // 0にしてるんだけど...
+  // ああそうか。なるほど。デプスが残っちゃってるのか。...出来た！爆速！！
+  _node.use("preLight", "cube");
+  // 各種行列
+  const modelMat = tf.getModelMat().m;
+  const viewMat = cam.getViewMat().m;
+  const modelViewMat = ex.getMult4x4(modelMat, viewMat);
+  const normalMat = ex.getNormalMat(modelViewMat);
+  _node.setUniform("uModelViewMatrix", modelViewMat);
+  _node.setUniform("uNormalMatrix", normalMat);
   // 射影
   const projMat = cam.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
-
-  // ライティングユニフォーム（今回はpointLightで）
-  _node.setUniform("uAmbientColor", [0.25, 0.25, 0.25]);
-  _node.setUniform("uUsePointLight", true);
-  _node.setUniform("uPointLightLocation", [0,100,200]);
-  _node.setUniform("uPointLightDiffuseColor", [0.6,0.8,1]);
-  _node.setUniform("uAttenuation", [1,0,0]);
-
-  // 彩色方法指定（頂点色）
-  _node.setUniform("uUseColorFlag", 0);
-  //_node.setUniform("uTime", _time); // カスタムパラメータ
-
-  // キューブ（動かす、属性バインド、IBOバインド、ドローコール）
-  moveCube();
-  _node.drawFigure("cube");
-  _node.setFBOtexture2D("uData", "param"); // paramを参照
+  // param
+  _node.setFBOtexture2D("uData", "param");
   _node.bindIBO("cubeIBO");
   _node.drawElements("triangles");
+  _node.unbind();
+
+  // 本番（板ポリ）
+  _node.bindFBO(null);
+
+  // ライティングシェーダ、オン！
+  _node.use("light", "board");
+
+  // ライティングユニフォーム（directionalLightで）
+  _node.setUniform("uAmbientColor", [0.25, 0.25, 0.25]);
+  //_node.setUniform("uUseDirectionalLight", true);
+  _node.setUniform("uLightingDirection", [0, 0, -1]); // -1でOKです！
+  _node.setUniform("uDirectionalDiffuseColor", [1, 1, 1]);
+  // ビュー行列
+  _node.setUniform("uViewMatrix", viewMat);
+  // テクスチャでデータを送り込む
+  _node.setFBOtexture2D("uNormalData", "pre");
+  _node.drawArrays("triangle_strip");
   _node.unbind();
 
   _node.enable("blend")
@@ -409,23 +437,4 @@ function draw(){
   info.text("fpsRate:" + fps, 5, 5);
   info.text("frameRate:" + frameRate().toFixed(2), 5, 25);
   infoTex.update();
-}
-
-// 行列関連はまとめとこうか
-function setModelView(){
-  const modelMat = tf.getModelMat().m;
-  const viewMat = cam.getViewMat().m;
-  const modelViewMat = ex.getMult4x4(modelMat, viewMat);
-  const normalMat = ex.getNormalMat(modelViewMat);
-  _node.setUniform("uViewMatrix", viewMat);
-  _node.setUniform("uModelViewMatrix", modelViewMat);
-  _node.setUniform("uNormalMatrix", normalMat);
-}
-
-// キューブのtf
-// これも同じことで、この場合特定の場所で重心を中心に回転させたいわけだが、点集合で考えれば
-// 回転してから然るべくtranslate,となるから、それを逆回ししただけ。さらにスケール変換...？これ最後なのでは...？
-function moveCube(){
-  tf.initialize();
-  setModelView();
 }

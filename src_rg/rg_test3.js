@@ -67,18 +67,20 @@ void main(){
 // pixelDensityの影響で各ピクセルの値の変化がどうしても同期しない、そこら辺が原因でちらついてしまうということ。
 // 1にすれば何の問題も無いです。
 // ...どうせpixelDensityに左右されないコード書いてるし，いいんじゃないかな...
-/*
-#version 300 es
+const frag1 =
+`#version 300 es
 precision highp float;
 precision highp int;
 out vec4 fragColor;
-uniform float u_time;
-uniform vec2 u_resolution;
-ivec2 channel;
+in vec2 vUv;
+ivec2 channel; // ivec2初登場。
+uniform float uTime; // 時間！でてきた。
 
 const uint UINT_MAX = 0xffffffffu;
 uvec3 k = uvec3(0x456789abu, 0x6789ab45u, 0x89ab4567u);
-uvec3 u = uvec3(1, 2, 3);
+uvec3 u = uvec3(1, 2, 3); // uvec3も初登場。uintのvec3のことらしい。iを省略してuvec2.クールだね。
+
+// 以降、ハッシュ関数が延々と続く。詳しくは原書を見てください。
 uvec2 uhash22(uvec2 n){
     n ^= (n.yx << u.xy);
     n ^= (n.yx >> u.xy);
@@ -113,73 +115,139 @@ float hash31(vec3 p){
     //nesting approach
     //return float(uhash11(n.x+uhash11(n.y+uhash11(n.z))) / float(UINT_MAX)
 }
-
-void main()
-{
-    float time = floor(60.* u_time);
-    vec2 pos = gl_FragCoord.xy + time;
-    channel = ivec2(gl_FragCoord.xy * 2.0 / u_resolution.xy);
-    if (channel[0] == 0){ //left
-        if (channel[1] == 0){
-            fragColor.rgb = vec3(hash21(pos));
-        } else {
-            fragColor.rgb = vec3(hash22(pos), 1.0);
-        }
-    } else {    //right
-        if (channel[1] == 0){
-            fragColor.rgb = vec3(hash31(vec3(pos, time)));
-        } else {
-            fragColor.rgb = hash33(vec3(pos, time));
-        }
-    }
-    fragColor.a = 1.0;
-}
-*/
-const frag1 =
-`#version 300 es
-precision highp float;
-out vec4 fragColor;
-in vec2 vUv;
-int channel; // いきなりグローバル？
-uniform float uTime; // 時間！でてきた。
-uniform vec2 uResolution; // 仕方ないか。通常のwidth,heightだとまずいのよね。
-const float TAU = 6.28318; // じゃあTAU欲しいです
-// sin(x)に1000を掛けてfract.
-float fractSin11(float x){
-  return fract(1000.0 * sin(x));
-}
-// よくあるやつですね...スマホだと... あれ。普通に見れるの...ね？
-float fractSin21(vec2 xy){
-  return fract(sin(dot(xy, vec2(12.9898, 78.233))) * 43758.5453123);
-}
-// どうしようかな。まあ仕方ないな。gl_FragCoord使うかー
+// メインコード
 void main(){
-  vec2 coord = gl_FragCoord.xy; // どうもこれvec3らしいのでxyってしないとエラーを吐く。
-  // おそらく深度値です。まだやってない内容です。
-  channel = int(vUv.x * 2.0); // 左で0で右で1になるやつ。
-  coord += floor(60.0 * uTime);
-  vec3 col;
-  if(channel == 0){
-    col = vec3(fractSin11(coord.x));
-  }else{
-    // uResolutionで割りました。これでいいね。
-    col = vec3(fractSin21(coord / uResolution));
-  }
-  fragColor = vec4(col, 1.0);
+  float time = floor(60.0 * uTime);
+  vec2 pos = gl_FragCoord.xy + time;
+  channel = ivec2(vUv * 2.0); // ここはvUvでいいと思う
+  // チャンネルで画面を4分割してるわけ。if文面倒だな。
+  float flag0 = (channel.x == 0 && channel.y == 0 ? 1.0 : 0.0);
+  float flag1 = (channel.x == 0 && channel.y == 1 ? 1.0 : 0.0);
+  float flag2 = (channel.x == 1 && channel.y == 0 ? 1.0 : 0.0);
+  float flag3 = (channel.x == 1 && channel.y == 1 ? 1.0 : 0.0);
+  vec3 result = vec3(0.0);
+  result += flag0 * vec3(hash21(pos)); // 出力はfloat
+  result += flag1 * vec3(hash22(pos), 1.0); // 出力はvec2でそれと1.0で色
+  result += flag2 * vec3(hash31(vec3(pos, time))); // いわゆる砂嵐？
+  result += flag3 * hash33(vec3(pos, time));
+  fragColor = vec4(result, 1.0);
 }
 `;
 
-// 2_1: binary. ちょっとビットの話を...ということらしい。
-// https://blog.oimo.io/2022/03/27/glsl-types/
-// uintは32bit符号なし整数型ですね。jsでも(1<<31)ってやると負のめちゃでかい数になるからそこら辺。
-// 32bit符号なし整数なので整数しか扱えないみたいです。さて...
-// そういうわけで、((1<<n)<<(31-n)) >> 31が-1になるかどうかでnの桁があるかどうかわかるということですね。
-// 足して31にすることで左右が逆になるのと相殺させているということで。
-// 34個とか35個ずらすとループして2とか3と同じ挙動になると。<<3と<<35は同じ挙動なのです。それで大体わかるかと。
-// でvec3(-1)これはclampされて0扱いです。uintで-1だとなんかばかでかい数字になって1にクランプされるようですね。
-// 分ける必要あるんかな。uintでしょ？floatで使う...あ、そうか。
-// マウスのインタラクションで数いじったりとかしたら面白そうじゃない？
-// では参りましょう。
+// 3_0: v_noise
+// これ以降はコピペするだけじゃ勉強にならなさそう。
+// コピペするだけじゃ勉強にならないのは当たり前
+/*
+#version 300 es
+precision highp float;
+precision highp int;
+out vec4 fragColor;
+uniform float u_time;
+uniform vec2 u_resolution;
+int channel;
+
+//start hash
+uvec3 k = uvec3(0x456789abu, 0x6789ab45u, 0x89ab4567u);
+uvec3 u = uvec3(1, 2, 3);
+const uint UINT_MAX = 0xffffffffu;
+
+uint uhash11(uint n){
+  n ^= (n << u.x);
+  n ^= (n >> u.x);
+  n *= k.x;
+  n ^= (n << u.x);
+  return n * k.x;
+}
+
+uvec2 uhash22(uvec2 n){
+  n ^= (n.yx << u.xy);
+  n ^= (n.yx >> u.xy);
+  n *= k.xy;
+  n ^= (n.yx << u.xy);
+  return n * k.xy;
+}
+
+uvec3 uhash33(uvec3 n){
+  n ^= (n.yzx << u);
+  n ^= (n.yzx >> u);
+  n *= k;
+  n ^= (n.yzx << u);
+  return n * k;
+}
+
+float hash11(float p){
+  uint n = floatBitsToUint(p);
+  return float(uhash11(n)) / float(UINT_MAX);
+}
+
+float hash21(vec2 p){
+  uvec2 n = floatBitsToUint(p);
+  return float(uhash22(n).x) / float(UINT_MAX);
+}
+
+float hash31(vec3 p){
+  uvec3 n = floatBitsToUint(p);
+  return float(uhash33(n).x) / float(UINT_MAX);
+}
+
+vec2 hash22(vec2 p){
+  uvec2 n = floatBitsToUint(p);
+  return vec2(uhash22(n)) / vec2(UINT_MAX);
+}
+
+vec3 hash33(vec3 p){
+  uvec3 n = floatBitsToUint(p);
+  return vec3(uhash33(n)) / vec3(UINT_MAX);
+}
+//end hash
+
+float vnoise21(vec2 p){
+  vec2 n = floor(p);
+  float[4] v;
+  for (int j = 0; j < 2; j ++){
+    for (int i = 0; i < 2; i++){
+      v[i+2*j] = hash21(n + vec2(i, j));
+    }
+  }
+  vec2 f = fract(p);
+  if (channel == 1){
+    f = f * f * (3.0 -2.0 * f); // Hermite interpolation
+  }
+  return mix(mix(v[0], v[1], f[0]), mix(v[2], v[3], f[0]), f[1]);
+}
+
+float vnoise31(vec3 p){
+  vec3 n = floor(p);
+  float[8] v;
+  for (int k = 0; k < 2; k++ ){
+    for (int j = 0; j < 2; j++ ){
+      for (int i = 0; i < 2; i++){
+        v[i+2*j+4*k] = hash31(n + vec3(i, j, k));
+      }
+
+    }
+  }
+  vec3 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f); // Hermite interpolation
+  float[2] w;
+  for (int i = 0; i < 2; i++){
+    w[i] = mix(mix(v[4*i], v[4*i+1], f[0]), mix(v[4*i+2], v[4*i+3], f[0]), f[1]);
+  }
+  return mix(w[0], w[1], f[2]);
+}
+
+void main(){
+  vec2 pos = gl_FragCoord.xy/min(u_resolution.x, u_resolution.y);
+  channel = int(gl_FragCoord.x * 3.0 / u_resolution.x);
+  pos = 10.0 * pos + u_time;
+  if (channel < 2){
+    fragColor = vec4(vnoise21(pos));  // left/center
+  } else {
+    fragColor = vec4(vnoise31(vec3(pos, u_time)));  // right
+  }
+  fragColor.a = 1.0;
+}
+*/
 const frag2 =
 `#version 300 es
 precision highp float;
@@ -188,46 +256,7 @@ out vec4 fragColor;
 in vec2 vUv;
 uniform float uTime; // 今回は時間だけ
 void main(){
-  vec2 pos = vUv;
-  pos.y = 1.0 - pos.y; // 今回は上から下へ。これで大丈夫です。
-  pos *= vec2(32.0, 9.0); // 横32分割、縦9分割
-  uint[9] uintArray = uint[](
-    // わかりにくいので上からこの順に並べましょうかね。分かりにくい。何でそうしてないの...
-    uint(uTime), // 時間のuint表現、uint取ってるので実質floor取った整数値をuintにしている。
-    0xbu, // 0xbが要するに11でそのuint表現
-    9u, // 9のuint表現
-    0xbu ^ 9u, // 11と9のuint表現のビット排他的論理和。1011と1001だから10、つまり2.
-    0xffffffffu, // uintの最大値。
-    0xffffffffu + uint(uTime), // uintの最大値はこの場合-1のようにふるまう。足し算の理屈。で、後は同じ。
-    floatBitsToUint(floor(uTime)), // uTimeの整数切り詰めはfloatなわけだがそのfloat表示のままにuintの値として扱うということ
-    floatBitsToUint(-floor(uTime)), // するとどうなるかというとfloatで用いられているビット表記をuintの手法で取り出して可視化できる
-    floatBitsToUint(11.5625)
-    // 11.5625 = 2^3 + 2^1 + 2^0 + 2^(-1) + 2^(-4)
-    //         = 2^3(1 + 2^(-2) + 2^(-3) + 2^(-4) + 2^(-7))
-    // 2^3=2^(130-127)で130 = 2^7 + 2^1 だから7,6,5,4,3,2,1,0のうち7と2が点灯する
-    // うしろの-2,-3,-4,-7に該当する...-1,-2,-3,...と並んでるから、2,3,4,7番が点灯する。そういうことです。
-  );
-  if(fract(pos.x) < 0.1){ // 縦線を引いているところ。
-    if(floor(pos.x) == 1.0){
-      fragColor = vec4(1, 0, 0, 1); // 符号部（赤）
-    }else if(floor(pos.x) == 9.0){
-      fragColor = vec4(0, 1, 0, 1); // 指数部（緑）
-    }else{
-      fragColor = vec4(vec3(0.5), 1); // 通常の敷居。あ、そうそう、1とか普通に1.0にキャストされるっぽいよ。webgl2すげぇ。
-    }
-  }else if(fract(pos.y) < 0.1){ // 横線を引いているところ
-    fragColor = vec4(vec3(0.5), 1);
-  }else{
-    // ここでビットごとの値を決めてるんだけどサンプルが逆順なので逆にした。うまくいくはず...できましたね。
-    uint u = uintArray[int(pos.y)];
-    // ここは何をしてるかというとたとえばuint(pos.x)が7だった場合に下から24番目のビットが1であれば7だけビットをずらして
-    // 桁あふれで一番先頭が1になってそれを...-2^31ですね。これになるので、>>31で-1になると。で、uintだから0xffffffffuになると。
-    // それを最終的に色にぶちこんでる。ちなみに6以下でも8以上でも最後の>>31で0になります。理由はビットずらしの周期性。
-    // 32は0と同じ、戻るということ...上手くできてる。個人的には2のべきとの&の方が分かりやすいかと...
-    u = (u << uint(pos.x)) >> 31;
-    vec3 col = (u != 0u ? vec3(fract(pos.y), 0.5 + 0.5 * fract(pos.y), 1.0) : vec3(0.0));
-    fragColor = vec4(col, 1.0);
-  }
+
 }
 `;
 
@@ -309,7 +338,7 @@ function setup(){
 function draw(){
   background(0);
   showProgram("frag0", 0, 0, {time:true});
-  //showProgram("frag1", 320, 0, {time:true, resolution:true});
+  showProgram("frag1", 320, 0, {time:true});
   //showProgram("frag2", 0, 320, {time:true});
   //showProgram("frag3", 320, 320);
   _node.unbind().flush();
