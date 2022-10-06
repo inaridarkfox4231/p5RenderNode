@@ -1417,6 +1417,19 @@ const p5wgex = (function(){
       const data = [x0, y0, z0, 0, x1, y1, z1, 0, x2, y2, z2, 0, -this.eyeX, -this.eyeY, -this.eyeZ, 1];
       this.viewMat.set(data);
     }
+    getViewData(){
+      // topベクトル、sideベクトル、upベクトルを取得する。
+      // topベクトルは視点から中心と逆向きに突き出すz軸相当、
+      // sideベクトルはキャンバスの右方向、upベクトルはキャンバスの下方向。つまりローカルをそのまま移植する形。
+      // eyeの位置もついでに取得。
+      const m = this.viewMat.m;
+      return {
+        side: {x:m[0], y:m[4], z:m[8]},
+        up: {x:m[1], y:m[5], z:m[9]},
+        top: {x:m[2], y:m[6], z:m[10]},
+        eyePos: {x:-m[12], y:-m[13], z:-m[14]}
+      }
+    }
     setPersepective(info){
       if(info.fov !== undefined){ this.fov = info.fov; }
       if(info.aspect !== undefined){ this.aspect = info.aspect; }
@@ -1436,6 +1449,9 @@ const p5wgex = (function(){
       const c14 = 2 * this.near * this.far / (this.near - this.far);
       const data = [c0, 0, 0, 0, 0, c5, 0, 0, 0, 0, c10, c11, 0, 0, c14, 0];
       this.projMat.set(data);
+    }
+    getPerseParam(){
+      return {fov:this.fov, aspect:this.aspect, near:this.near, far:this.far};
     }
     setOrtho(info){
       if(info.right !== undefined){ this.right = info.right; }
@@ -1461,6 +1477,9 @@ const p5wgex = (function(){
       const c15 = 1;
       const data = [c0, 0, 0, c3, 0, c5, 0, c7, 0, 0, c10, c11, 0, 0, 0, c15];
       this.projMat.set(data);
+    }
+    getOrthoParam(){
+      return {left:this.left, right:this.right, top:this.top, far:this.far};
     }
   }
 
