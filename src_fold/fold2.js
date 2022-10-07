@@ -1,30 +1,30 @@
-// foldシリーズはじまり～
-// レイマでfoldを作る、もしくはその様子をポリゴン描画で可視化するとかそんなやつらだ。よろしくな。
+// とりあえず3次元の回転の前に2次元の回転で腕試し
 
-// まずレイマ
+// カメラ正面でxy平面内で。できるはず。
 
-// あの、普通にやろう。で、
-// こんなもんですかね...
-// パフォーマンス表示追加しますね
+// だめですね...視点によっては消える。原因は、不明...
+// じゃねぇよ。距離計算が不連続関数になってるから...しかも場合によっては距離になってなくて当たるのに
+// すっとんでっちゃってるんだよ。間違えて当然。ちょっと待ってな。
 
-// んー。
-// 座標でy軸左z軸上で構築しちゃったせいで直感的に操作しづらくなってるな...って当然か。
-// まあとりあえずいいか。
+// なるほど。隣接する点を使うのか。これならいけるかな...いけるのかな...んー。
+// というわけで実験しなければなるまい。
 
-// スマホだとレート半分ですね...動かすのは難しそう。まあとりあえずいいや。
-// これもMRTで色と法線...で、すると、いいのかも？
+// まあナイーブにあの3つで...
 
-// 背景はテクスチャパスを別に用意して読み込ませた方がいいと思う
-// 魚眼レンズ...レイベクトルを中心からの距離に応じて後ろに若干ずらすことで
-// 視界を丸くする技術。これレイキャスティングでやりたいなぁ...
+// foldA3Rotateこれでいいっぽいな...負荷が大きいけど（パソコンから変な音出た）
+// 負荷が大きいのは仕方ないとして計算は合ってるっぽいです。やっぱ隣接取らないと駄目なんだな。
 
-// それはさておき、x軸右、y軸上、z軸手前の形式にしよう。で、z軸正方向からレイを飛ばそう。中心が原点。この場合
-// あまり意味をなさないけれど...
-// それと射影行列いじってy軸が上になるようにする。
+// 球でうまくいったのはいいけど平面の方はダメダメですね。んー。
+// やっぱ連続関数になるように並べないといけないんだけどアイデアが無い。
+// まずは同じことを...あっちでやってみないと、だめね。
 
-// y軸上にしました。なのでもうupベクトルの符号いじる必要ないです。ご苦労さま。
+// foldA3Rotate機能してるっぽいので、BC3とH3でもやってみて、あれを当てはめられるかどうか見る感じ...んー
+// でも境界を共有してれば出来ると思うんだけどおかしいね。
 
-// フレームバッファ使う方法一旦やめようか。パフォーマンス逆に落ちてる。撤退。
+// できた！
+// つまり平面とかでああいうの作る場合、全部必要とは限らないということ...ああ難しいわ！
+// 計算通りだけど...洗練させる必要しか感じないわ...まあ、この調子でBC3とH3のfoldRotateもよろしくね...
+// てかその前にBC3とH3作ってや。その前にカメラ仕様変更。
 
 // ----global---- //
 const ex = p5wgex;
@@ -58,6 +58,8 @@ uniform vec3 uUp; // 画面下方向で、マイナスで使う
 uniform vec3 uTop; // 画面手前方向...マイナスで使う。
 uniform vec3 uLightDirection; // 光を使う場合。光の進む向き。マイナスで使って法線と内積を取る。
 
+uniform float uTime; // じか～ん
+
 in vec2 vUv;
 
 const float MAX_DIST = 20.0;   // 限界距離。これ越えたら無いとみなす。
@@ -67,19 +69,116 @@ const vec2 EPS = vec2(0.0001, 0.0); // 法線計算用
 
 out vec4 fragColor;
 
-// 簡単な距離関数
-float sphere(vec3 p, float r){
-  return length(p) - r;
+vec3 uniqueQ; // グローバル～基本領域のどっか
+
+// fold用const.
+// ミラーベクトル
+vec3 na = vec3(1.0, 0.0, 0.0);
+vec3 nb = vec3(0.0, 1.0, 0.0);
+vec3 nc = vec3(-0.5, -0.5, 0.7071);
+// 基本領域の境界点（境界線と領域の交点）で、サイズを掛けて使う。
+vec3 qab = vec3(0.0, 0.0, 0.7071);
+vec3 qbc = vec3(0.3333, 0.0, 0.2357);
+vec3 qca = vec3(0.0, 1.0, 0.7071);
+// na,nb,ncの外積でできる領域面の境界の法線ベクトル。これで平面を作り、fold立体の面を作る。
+vec3 pab = vec3(0.0, 0.0, 1.0);
+vec3 pbc = vec3(0.8165, 0.0, 0.5773);
+vec3 pca = vec3(0.0, 0.8165, 0.5773);
+
+// foldA3用
+vec3 ma = vec3(1.0, 0.0, 0.0);
+vec3 mb = vec3(-0.5, -0.5, 0.7071);
+vec3 mc = vec3(-0.5, 0.5, 0.7071);
+vec3 md = vec3(0.5, -0.5, 0.7071);
+
+// foldA3の基本領域用
+vec3 q0 = vec3(0.0, -1.0, 0.7071);
+vec3 q1 = vec3(0.3333, 0.0, 0.2357);
+vec3 q2 = vec3(0.0, 1.0, 0.7071);
+
+//vec3 l0 = normalize(vec3(sqrt(0.5), -sqrt(2.0)/3.0, -1.0));
+//vec3 l1 = normalize(vec3(5.0*sqrt(2.0)/6.0, sqrt(2.0)/3.0, -1.0/3.0));
+//vec3 l2 = normalize(vec3(-sqrt(2.0), 0.0, 2.0));
+vec3 l0, l1, l2;
+
+// 折り畳み処理。A3の場合は3回。具体的にはna, nb, ncのそれぞれについてそれと反対にあるときだけ面で鏡写しにする。
+void foldA3(inout vec3 p){
+  for(int i = 0; i < 3; i++){
+    p -= 2.0 * min(0.0, dot(p, na)) * na;
+    p -= 2.0 * min(0.0, dot(p, nb)) * nb;
+    p -= 2.0 * min(0.0, dot(p, nc)) * nc;
+  }
 }
-float cube(vec3 p, float r){
-  return max(max(abs(p.x), abs(p.y)), abs(p.z)) - r;
+
+bool check(vec3 p){
+  if(dot(p, ma) < 0.0){ return true; }
+  if(dot(p, mb) < 0.0){ return true; }
+  if(dot(p, mc) < 0.0){ return true; }
+  return false;
 }
+
+void foldA3Rotate(inout vec3 p){
+  if(p.y < 0.0){
+    p -= 2.0*dot(p,na)*na; p -= 2.0*dot(p,nb)*nb;
+  }
+  for(int i=0; i<3; i++){
+    if(dot(p, ma) < 0.0 || dot(p, md) < 0.0){
+      p -= 2.0*dot(p,nc)*nc; p -= 2.0*dot(p,na)*na;
+    }
+  }
+  for(int i=0; i<3; i++){
+    if(dot(p, ma) < 0.0 || dot(p, mb) < 0.0 || dot(p, mc) < 0.0){
+      p -= 2.0*dot(p,nb)*nb; p -= 2.0*dot(p,nc)*nc;
+    }
+  }
+}
+
+// 距離関数
+// 簡単なものでいいです。qは計算済みとする。qは基本領域のどっか。
+float foldA3RotateTest_0(vec3 p){
+
+  //vec3 q = p;
+  //foldA3(q);
+  //float t = dot(q-qca*0.8, pbc);
+
+  foldA3Rotate(p);
+  vec3 p0 = p - 2.0*dot(p,na)*na;
+  p0 -= 2.0*dot(p0,nb)*nb;
+  vec3 p1 = p - 2.0*dot(p,nb)*nb;
+  p1 -= 2.0*dot(p1,nc)*nc;
+  vec3 p2 = p - 2.0*dot(p,nc)*nc;
+  p2 -= 2.0*dot(p2,nb)*nb;
+
+
+  //t = min(t, length(p - uniqueQ) - 0.05);
+  // 隣接を取ってそれに対しても計算してmin取る感じで
+  //t = min(t, length(p0 - uniqueQ) - 0.05);
+  //t = min(t, length(p1 - uniqueQ) - 0.05);
+  //t = min(t, length(p2 - uniqueQ) - 0.05);
+
+  l0 = normalize(cross(q0-uniqueQ, q1-uniqueQ));
+  l1 = normalize(cross(q1-uniqueQ, q2-uniqueQ));
+  l2 = normalize(cross(q2-uniqueQ, q0-uniqueQ));
+
+  vec3 _q = uniqueQ*0.3;
+
+  float t = max(max(dot(p-_q, l0), dot(p-_q, l1)), dot(p-_q, l2));
+  //t = min(t, max(max(dot(p0-_q, l0), dot(p0-_q, l1)), dot(p0-_q, l2))); // これ要らなかったわ、まじか...
+  t = min(t, max(max(dot(p1-_q, l0), dot(p1-_q, l1)), dot(p1-_q, l2)));
+  t = min(t, max(max(dot(p2-_q, l0), dot(p2-_q, l1)), dot(p2-_q, l2)));
+
+  // これで計算通り！お疲れさまでした...
+  // p0が不要だったということですね。ああ、難しい...
+
+  return t;
+}
+
+// いいやとりあえず、うん。
+
 // 総合距離関数、map. 色も返せる。今回はテストなので半径0.3の球で。
 vec4 map(vec3 p){
-  float t = sphere(p, 0.3);
   vec3 col = vec3(1.0);
-  float t1 = cube(p - vec3(0.5, 0.0, 0.0), 0.1);
-  if(t1 < t){ t = t1; col = vec3(0.5, 0.75, 1.0); }
+  float t = foldA3RotateTest_0(p);
   return vec4(col, t);
 }
 // 法線ベクトルの取得
@@ -113,6 +212,14 @@ float march(vec3 ray, vec3 eye){
 }
 // メイン
 void main(){
+
+  // uniqueQの計算
+  vec3 coeff = vec3(2.0 + 1.5 * sin(uTime * 6.28 * 0.25), 2.0 + 1.5 * cos(uTime * 6.28 * 0.25), 1.0);
+  uniqueQ = (coeff.x * q0 + coeff.y * q1 + coeff.z * q2) / (coeff.x + coeff.y + coeff.z);
+  uniqueQ *= 0.8;
+
+  uniqueQ = vec3(1.0, -1.0, 1.414);
+
   // 背景色
   vec3 color = vec3(0.0);
   // rayを計算する
@@ -129,7 +236,7 @@ void main(){
     vec3 pos = uEye + t * ray; // 到達位置
     vec3 n = calcNormal(pos); // 法線
     // 明るさ。内積の値に応じて0.3を最小とし1.0まで動かす。
-    float diff = clamp((dot(n, -uLightDirection) + 0.5) * 0.7, 0.3, 1.0);
+    float diff = clamp((dot(n, -uLightDirection) + 0.5) * 0.75, 0.3, 1.0);
     vec3 baseColor = map(pos).xyz; // bodyColor取得。
     baseColor *= diff;
     // 遠くでフェードアウトするように調整する
@@ -211,24 +318,23 @@ function draw(){
   _node.use("rayM", "board")
 
   // カメラ設定
-  moveCamera();
+  moveCamera(currentTime);
   setCameraParameter();
 
   // 光の設定、レンダリング
-  _node.setUniform("uLightDirection", [-1, -1, -1])
-       .drawArrays("triangle_strip")
+  _node.setUniform("uTime", currentTime);
+  _node.drawArrays("triangle_strip")
        .unbind();
 
   // for info.
   showPerformance(fps);
 }
 
-function moveCamera(){
+function moveCamera(time){
   // 動かしてみる。マウスで動かしてもいいと思う。
-  const curTime = _timer.getDeltaSecond("cur");
-  const _x = Math.sqrt(3) * Math.cos(curTime * Math.PI*2 * 0.5);
-  const _y = 0.7 * Math.sin(curTime * Math.PI*2 * 0.4);
-  const _z = Math.sqrt(3) * Math.sin(curTime * Math.PI*2 * 0.5);
+  const _x = Math.sqrt(3) * Math.cos(time * Math.PI*2 * 0.15);
+  const _y = 1.0 * Math.sin(time * Math.PI*2 * 0.14);
+  const _z = Math.sqrt(3) * Math.sin(time * Math.PI*2 * 0.15);
   cam.setView({eye:{x:_x, y:_y, z:_z}});
 }
 
@@ -249,7 +355,8 @@ function setCameraParameter(){
        .setUniform("uAspect", aspect)
        .setUniform("uSide", [side.x, side.y, side.z])
        .setUniform("uUp", [up.x, up.y, up.z])
-       .setUniform("uTop", [top.x, top.y, top.z]);
+       .setUniform("uTop", [top.x, top.y, top.z])
+       .setUniform("uLightDirection", [-top.x, -top.y, -top.z]); // 面倒なので見る方向の後方から光を当てよう
 }
 
 function showPerformance(fps){

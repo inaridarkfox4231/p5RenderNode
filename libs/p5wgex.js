@@ -695,10 +695,8 @@ const p5wgex = (function(){
   // verticesは3つずつ頂点座標が入ってて
   // indicesは3つずつ三角形の頂点のインデックスが入ってるわけね
 
-  // これ頂点が時計回りに定義されてることが前提っぽいね...
-  // まあ普通に考えたらx軸、右、y軸下だから、時計回りの方が自然ではあるんよね。でも背面カリングで消えちゃうのは
-  // 厳然たる事実だからやっぱまずいでしょうよ。frontは反時計回りですって公式が言ってるんだから。正規化デバイスだって
-  // 反時計回りだし。だったら合わせないとまずいでしょ。逆にしよう。
+  // y軸が上の右手系にしました（射影行列いじった）
+  // その関係でu0,u1,u2取得部分は元に戻します。以上です。
 
   // indicesの3*i,3*i+1,3*i+2それぞれに対して
   // たとえばk=indices[3*i]に対して
@@ -727,10 +725,10 @@ const p5wgex = (function(){
       const w0 = p5.Vector.sub(v1, v0);
       const w1 = p5.Vector.sub(v2, v0);
       const w2 = p5.Vector.sub(v2, v1);
-      // ここ時計回り前提の計算になってるので逆にしますね。
-      const u0 = p5.Vector.cross(w1, w0);
-      const u1 = p5.Vector.cross(w2, w0);
-      const u2 = p5.Vector.cross(w2, w1);
+      // 今y軸を上にしました。その関係でここは元に戻すことになりました。
+      const u0 = p5.Vector.cross(w0, w1);
+      const u1 = p5.Vector.cross(w0, w2);
+      const u2 = p5.Vector.cross(w1, w2);
       const m0 = w0.mag();
       const m1 = w1.mag();
       const m2 = w2.mag();
@@ -756,32 +754,7 @@ const p5wgex = (function(){
   // ---------------------------------------------------------------------------------------------- //
   // Meshes.
   // まあ、メッシュいろいろテンプレート、あると便利だし。難しいけどね。
-  // 気を付けてください、反時計回りでないとカリングが使えないので。反時計回り、よろしく！
-
-  // 長方形（z軸正方向に垂直なもの、横と縦の幅だけ指定）
-  // info:
-  // 必須：横幅wと縦幅hです。
-  function getPlane(info){
-    let {w, h} = info;
-    if(w === undefined){ w = 100; }
-    if(h === undefined){ h = w; } // 正方形
-    const v = [-w/2, -h/2, 0, w/2, -h/2, 0, -w/2, h/2, 0, w/2, h/2, 0];
-    const f = [0, 1, 2, 2, 1, 3];
-    const n = getNormals(v, f);
-    const uv = [0, 1, 1, 1, 0, 0, 1, 0];
-    return {v:v, f:f, n:n, uv:uv};
-  }
-
-  // 直方体（a,b,cで横、縦、高さの指定を行う。原点中心）
-  // info:
-  // 必須：a,b,cでよこ、たて、高さ。bが未指定の場合a=b=cで、cが未指定の場合b=cとする。
-  function getBox(info){
-    let {a, b, c} = info;
-    if(a === undefined){ a = 100; }
-    if(b === undefined){ b = a; } // 立方体
-    if(c === undefined){ c = b; } // 正方形角柱。
-    // under construction. テスト優先。はい。
-  }
+  // 落ち着いてから。
 
   // fboとiboはクラス化しない方向で。iboはMAXを取るのがコストなのでlargeかどうか事前に指定しようね。
   // ていうかそれだけだと判断できない場合もあるからね。
@@ -1352,11 +1325,15 @@ const p5wgex = (function(){
       this.upZ = 0;
       this.near = this.eyeZ * 0.1;
       this.far = this.eyeZ * 10;
-      // ortho用。画面内においてはtopの方が下になるので注意する。bottom側が上に来る。
-      this.left = 0;
-      this.right = 0;
-      this.top = 0;
-      this.bottom = 0;
+      // ortho用。一応説明。
+      // 想定ではleftが左でrightが右、中心原点。left<right.
+      // bottomが上でtopが下、中心原点。（いずれ直す）bottom<top.
+      // 最後にnearとfarは視点から中心への垂直線の近い方と遠い方。この直方体内部に対して適用される。
+      // なお大小関係をいじると逆になったりしておかしなことになるので注意しましょう。
+      this.left = -w/2;
+      this.right = w/2;
+      this.bottom = -h/2;
+      this.top = h/2;
 
       this.setViewMat();
       this.setPerspectiveMat();
@@ -1405,6 +1382,7 @@ const p5wgex = (function(){
       x1 /= xLen;
       x2 /= xLen;
       // topベクトルとsideベクトルで外積を取って正規化する。念のため正規化する。これが新しいy軸。
+      // 仕様変更によりupベクトルは上を向くようになりました。
       let y0 = z1 * x2 - z2 * x1;
       let y1 = z2 * x0 - z0 * x2;
       let y2 = z0 * x1 - z1 * x0;
@@ -1427,10 +1405,10 @@ const p5wgex = (function(){
         side: {x:m[0], y:m[4], z:m[8]},
         up: {x:m[1], y:m[5], z:m[9]},
         top: {x:m[2], y:m[6], z:m[10]},
-        eyePos: {x:-m[12], y:-m[13], z:-m[14]}
+        eye: {x:-m[12], y:-m[13], z:-m[14]}
       }
     }
-    setPersepective(info){
+    setPersepective(info = {}){
       if(info.fov !== undefined){ this.fov = info.fov; }
       if(info.aspect !== undefined){ this.aspect = info.aspect; }
       if(info.near !== undefined){ this.near = info.near; }
@@ -1443,7 +1421,7 @@ const p5wgex = (function(){
       // 理屈はめんどくさいので結果だけ。
       const factor = 1.0 / Math.tan(this.fov/2);
       const c0 = factor / this.aspect;
-      const c5 = -factor;
+      const c5 = factor; // 符号反転！
       const c10 = (this.near + this.far) / (this.near - this.far);
       const c11 = -1;
       const c14 = 2 * this.near * this.far / (this.near - this.far);
@@ -1453,11 +1431,11 @@ const p5wgex = (function(){
     getPerseParam(){
       return {fov:this.fov, aspect:this.aspect, near:this.near, far:this.far};
     }
-    setOrtho(info){
+    setOrtho(info = {}){
       if(info.right !== undefined){ this.right = info.right; }
       if(info.left !== undefined){ this.left = info.left; }
-      if(info.top !== undefined){ this.top = info.top; }
       if(info.bottom !== undefined){ this.bottom = info.bottom; }
+      if(info.top !== undefined){ this.top = info.top; }
       if(info.near !== undefined){ this.near = info.near; }
       if(info.far !== undefined){ this.far = info.far; }
       this.projType = "ortho";
@@ -1468,14 +1446,15 @@ const p5wgex = (function(){
       // 理屈は簡単で、要はleftとrightを-1～1に、top～bottom（ただしupベクトルが示す正方向がtopという形）
       // を-1～1に、near～farを-1～1にマッピングするわけ。行列の掛け算も2次の逆行列でちょちょいっと。
       // でもまあ結果だけ。
+      // ごめん間違えた...中で掛ける行列そのまま使っちゃった。
       const c0 = 2 / (this.right - this.left);
-      const c3 = -(this.right + this.left) / (this.right - this.left);
-      const c5 = -2 / (this.top - this.bottom);
-      const c7 = -(this.top + this.bottom) / (this.top - this.bottom);
+      const c5 = 2 / (this.top - this.bottom); // 符号反転！
       const c10 = -2 / (this.far - this.near);
-      const c11 = -(this.far + this.near) / (this.far - this.near);
+      const c12 = -(this.right + this.left) / (this.right - this.left);
+      const c13 = -(this.top + this.bottom) / (this.top - this.bottom);
+      const c14 = -(this.far + this.near) / (this.far - this.near);
       const c15 = 1;
-      const data = [c0, 0, 0, c3, 0, c5, 0, c7, 0, 0, c10, c11, 0, 0, 0, c15];
+      const data = [c0, 0, 0, 0, 0, c5, 0, 0, 0, 0, c10, 0, c12, c13, c14, c15];
       this.projMat.set(data);
     }
     getOrthoParam(){

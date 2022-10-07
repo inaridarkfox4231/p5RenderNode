@@ -17,6 +17,11 @@
 // カリングもOK. ただ平面の場合裏側になった時見えなくなるんでね。
 // 使い分けよろしくね。
 
+// はい。
+
+// 今、y軸を上方向にしました。なので反時計回りにする場合の頂点の番号の付け方がいっせいに逆転します。はい。
+// 大変ですね...
+
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
 
@@ -170,9 +175,10 @@ function setup(){
   meshData.push({name:"aPosition", size:3, data:vData});
   let cData = [1,1,1, 1,0,0, 0,1,0, 0,0,1];
   meshData.push({name:"aVertexColor", size:3, data:cData});
+  // あ、こっちの法線...なるほど。
   let nData = [0,0,1, 0,0,1, 0,0,1, 0,0,1];
   meshData.push({name:"aNormal", size:3, data:nData});
-  let fData = [0,2,1, 0,3,2];
+  let fData = [0,1,2, 0,2,3];
 
   _node.registFigure("plane", meshData);
   _node.registPainter("light", lightVert, lightFrag);
@@ -185,8 +191,8 @@ function setup(){
   meshData.push({name:"aPosition", size:3, data:vData});
   cData = [1,1,1, 1,0,0, 0,1,0, 0,0,1, 1,1,1, 1,0,0, 0,1,0, 0,0,1];
   meshData.push({name:"aVertexColor", size:3, data:cData});
-  //fData = [0,1,2,  0,2,3,  1,5,6,  1,6,2,  5,4,7,  5,7,6,  4,0,3,  4,3,7,  3,2,6,  3,6,7,  4,5,1,  4,1,0];
-  fData = [0,2,1,  0,3,2,  1,6,5,  1,2,6,  5,7,4,  5,6,7,  4,3,0,  4,7,3,  3,6,2,  3,7,6,  4,1,5,  4,0,1];
+  fData = [0,1,2,  0,2,3,  1,5,6,  1,6,2,  5,4,7,  5,7,6,  4,0,3,  4,3,7,  3,2,6,  3,6,7,  4,5,1,  4,1,0];
+  //fData = [0,2,1,  0,3,2,  1,6,5,  1,2,6,  5,7,4,  5,6,7,  4,3,0,  4,7,3,  3,6,2,  3,7,6,  4,1,5,  4,0,1];
   nData = ex.getNormals(vData, fData);
   meshData.push({name:"aNormal", size:3, data:nData});
 
@@ -199,6 +205,8 @@ function setup(){
 
   // カリングしますね
   _node.enable("cull_face");
+
+  //cam.setOrtho({near:0, far:1000}); // きちんと例作らないと...
 }
 
 // やること

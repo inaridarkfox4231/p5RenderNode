@@ -1,30 +1,36 @@
-// foldシリーズはじまり～
-// レイマでfoldを作る、もしくはその様子をポリゴン描画で可視化するとかそんなやつらだ。よろしくな。
+// foldやってみようか。
+// とりまA3.
 
-// まずレイマ
+// na=(1,0,0);
+// nb=(0,1,0);
+// nc=(-0.5,-0.5,1/sqrt(2));
+// qab=(0,0,1/sqrt(2))*size;
+// qbc=(1/3,0,1/(3*sqrt(2)))*size;
+// qca=(0,1,1/sqrt(2))*size;
+// これらの正規化pab,pbc,pcaは有するa,b,cのnと直交する。たとえばpabはna,nbに直交する。
+// 基本領域はqab,qbc,qcaで反時計回り、それにより表現されるところの三角形。
+// qbcがzx平面にべったり、正四面体の頂点をあらわしてる。
 
-// あの、普通にやろう。で、
-// こんなもんですかね...
-// パフォーマンス表示追加しますね
+// qab,qbc,qcaの線形結合でuPを取り、uPを通りpab,pbc,pcaを法線ベクトルとする3枚の平面でMAXを取る（いわゆる凸結合）。
+// これだけで相当な数の星形多面体を得ることができる。それを得るにはna,nb,nc対称を取ればいい。なぜならたとえば
+// pabに直交するということはその平面はna,nbに平行だからuPを通りna,nbに平行な直線を伸ばせば鏡移しで別の頂点と
+// つながるでしょ。それにより辺が形成される、辺を集めると多面体ができるわけ。そういうカラクリ。
 
-// んー。
-// 座標でy軸左z軸上で構築しちゃったせいで直感的に操作しづらくなってるな...って当然か。
-// まあとりあえずいいか。
+// (1, 0, 0) で正八面体（ややでかい）
+// (0, 1, 0) で小さな正四面体
+// (0, 0, 1) で大きな正四面体
+// (1, 1, 0) で切頂四面体
+// (2, 3, 1) で切頂八面体
 
-// スマホだとレート半分ですね...動かすのは難しそう。まあとりあえずいいや。
-// これもMRTで色と法線...で、すると、いいのかも？
+// 応用編。
 
-// 背景はテクスチャパスを別に用意して読み込ませた方がいいと思う
-// 魚眼レンズ...レイベクトルを中心からの距離に応じて後ろに若干ずらすことで
-// 視界を丸くする技術。これレイキャスティングでやりたいなぁ...
-
-// それはさておき、x軸右、y軸上、z軸手前の形式にしよう。で、z軸正方向からレイを飛ばそう。中心が原点。この場合
-// あまり意味をなさないけれど...
-// それと射影行列いじってy軸が上になるようにする。
-
-// y軸上にしました。なのでもうupベクトルの符号いじる必要ないです。ご苦労さま。
-
-// フレームバッファ使う方法一旦やめようか。パフォーマンス逆に落ちてる。撤退。
+// 回転について.
+// na,nbの合成による回転はyz平面でのくるりん180°
+// これはz軸による180°回転である。
+// 同様にnb,ncだとこれが基本領域を含む面の重心の周りの120°回転、
+// nc,naも似たような軸の周りの120°回転。
+// いつ回転させるかを規定したうえで、それによりすべての2倍領域が
+// 基本領域（2倍サイズ）に落ちることを計算で確かめればいい。
 
 // ----global---- //
 const ex = p5wgex;
@@ -67,19 +73,45 @@ const vec2 EPS = vec2(0.0001, 0.0); // 法線計算用
 
 out vec4 fragColor;
 
-// 簡単な距離関数
-float sphere(vec3 p, float r){
-  return length(p) - r;
+vec3 uniqueQ; // グローバル～基本領域のどっか
+
+// fold用const.
+// ミラーベクトル
+vec3 na = vec3(1.0, 0.0, 0.0);
+vec3 nb = vec3(0.0, 1.0, 0.0);
+vec3 nc = vec3(-0.5, -0.5, 0.7071);
+// 基本領域の境界点（境界線と領域の交点）で、サイズを掛けて使う。
+vec3 qab = vec3(0.0, 0.0, 0.7071);
+vec3 qbc = vec3(0.3333, 0.0, 0.2357);
+vec3 qca = vec3(0.0, 1.0, 0.7071);
+// na,nb,ncの外積でできる領域面の境界の法線ベクトル。これで平面を作り、fold立体の面を作る。
+vec3 pab = vec3(0.0, 0.0, 1.0);
+vec3 pbc = vec3(0.8165, 0.0, 0.5773);
+vec3 pca = vec3(0.0, 0.8165, 0.5773);
+
+// 折り畳み処理。A3の場合は3回。具体的にはna, nb, ncのそれぞれについてそれと反対にあるときだけ面で鏡写しにする。
+void foldA3(inout vec3 p){
+  for(int i = 0; i < 3; i++){
+    p -= 2.0 * min(0.0, dot(p, na)) * na;
+    p -= 2.0 * min(0.0, dot(p, nb)) * nb;
+    p -= 2.0 * min(0.0, dot(p, nc)) * nc;
+  }
 }
-float cube(vec3 p, float r){
-  return max(max(abs(p.x), abs(p.y)), abs(p.z)) - r;
+
+// 距離関数
+// 簡単なものでいいです。qは計算済みとする。qは基本領域のどっか。
+float foldA3DefaultPolygon(vec3 p, vec3 q){
+  foldA3(p);
+  float t = dot(p - q, pab);
+  t = max(t, dot(p - q, pbc));
+  t = max(t, dot(p - q, pca));
+  return t;
 }
+
 // 総合距離関数、map. 色も返せる。今回はテストなので半径0.3の球で。
 vec4 map(vec3 p){
-  float t = sphere(p, 0.3);
   vec3 col = vec3(1.0);
-  float t1 = cube(p - vec3(0.5, 0.0, 0.0), 0.1);
-  if(t1 < t){ t = t1; col = vec3(0.5, 0.75, 1.0); }
+  float t = foldA3DefaultPolygon(p, uniqueQ);
   return vec4(col, t);
 }
 // 法線ベクトルの取得
@@ -113,6 +145,11 @@ float march(vec3 ray, vec3 eye){
 }
 // メイン
 void main(){
+
+  // uniqueQの計算
+  vec3 co = vec3(2.0, 3.0, 1.0) / 6.0;
+  uniqueQ = (co.x * qab + co.y * qbc + co.z * qca) * 0.6;
+
   // 背景色
   vec3 color = vec3(0.0);
   // rayを計算する
@@ -129,7 +166,7 @@ void main(){
     vec3 pos = uEye + t * ray; // 到達位置
     vec3 n = calcNormal(pos); // 法線
     // 明るさ。内積の値に応じて0.3を最小とし1.0まで動かす。
-    float diff = clamp((dot(n, -uLightDirection) + 0.5) * 0.7, 0.3, 1.0);
+    float diff = clamp((dot(n, -uLightDirection) + 0.5) * 0.75, 0.3, 1.0);
     vec3 baseColor = map(pos).xyz; // bodyColor取得。
     baseColor *= diff;
     // 遠くでフェードアウトするように調整する
@@ -215,8 +252,8 @@ function draw(){
   setCameraParameter();
 
   // 光の設定、レンダリング
-  _node.setUniform("uLightDirection", [-1, -1, -1])
-       .drawArrays("triangle_strip")
+  //_node.setUniform("uLightDirection", [-1, -1, -1]);
+  _node.drawArrays("triangle_strip")
        .unbind();
 
   // for info.
@@ -249,7 +286,8 @@ function setCameraParameter(){
        .setUniform("uAspect", aspect)
        .setUniform("uSide", [side.x, side.y, side.z])
        .setUniform("uUp", [up.x, up.y, up.z])
-       .setUniform("uTop", [top.x, top.y, top.z]);
+       .setUniform("uTop", [top.x, top.y, top.z])
+       .setUniform("uLightDirection", [-top.x, -top.y, -top.z]); // 面倒なので見る方向の後方から光を当てよう
 }
 
 function showPerformance(fps){

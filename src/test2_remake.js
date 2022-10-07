@@ -190,7 +190,7 @@ function setup(){
     if(i<4){ cData.push(1, 1, 1); }else{ cData.push(0, 0.5, 1); }
   }
   meshData.push({name:"aVertexColor", size:3, data:cData});
-  let fData = [0,3,2, 0,2,1, 4,0,1, 4,1,5, 3,7,6, 3,6,2, 4,7,3, 4,3,0, 1,2,6, 1,6,5, 5,6,7, 5,7,4];
+  let fData = [0,1,2,  0,2,3,  1,5,6,  1,6,2,  5,4,7,  5,7,6,  4,0,3,  4,3,7,  3,2,6,  3,6,7,  4,5,1,  4,1,0];
   let nData = ex.getNormals(vData, fData);
   meshData.push({name:"aNormal", size:3, data:nData});
 
