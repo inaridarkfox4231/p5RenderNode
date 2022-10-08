@@ -1,6 +1,9 @@
 // foldじゃないけど。
 // 変形立方体作ろう。
 
+// 参考：PDF:http://www.math.tohoku.ac.jp/~akama/SendaisugakuSeminarTakakukeiToKyumen.pdf
+// 出典は明記しないと。
+
 // N=(0,1/sqrt(2),1);  V=(1,1/sqrt(2),0);  V'=(-1,1/sqrt(2),0);  V''=(0,-1/sqrt(2),1);
 // NV', NV, NV''で右手系。
 // (a,b,c) = N + a*NV' + b*NV + c*NV''と書くとき、
@@ -13,6 +16,21 @@
 // 今現在原点の位置が3*sqrt(3)ですね。あっちもいじってこよう。
 
 // いじるのおわったです。さて頂点を用意するか。
+
+// できたけどエッジがわかりにくいな...どうするかな。
+
+// まあできたし、いいか。で、法線？
+
+// くっきりさせるには...例えば三角形をばらばらにしてテクスチャ貼り付ける。
+// あるいは線描画で線で区切る。線が見えないと分かりづらい。その場合のシェーダーは単に色を出すだけ。
+// 一応できたよ...
+
+// 法線ベクトルとしては、4,5,6,7の正方形と、
+// 1,7,21,  1,4,7,  1,0,4,  0,8,4,  4,8,5の三角形の法線ベクトル5本
+// 凸なのでこれらでMAX取ればいいと思う。BC3のrotateFoldでそれをやるとできる、はず。
+// 具体的には中でこれらに相当するベクトルを持ち出して差を取って外積取ってconsoleに上げればいい、はず。
+
+// その一方でBC3のfoldRotateを実行する。
 
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
@@ -63,10 +81,6 @@ void main(void){
 }
 `;
 
-// なんかね、lightFragはmediumpにしないといけない...？
-// 富士山に雪降らせるやつでlightのやつhighpにしたらおかしくなった。
-// 何でもかんでもhighpにすればいいってわけじゃないみたいです。
-// って思ったけどレイマのライティングはいいんよね...んー。まあ臨機応変で...
 // とりまmediumpで。
 const lightFrag =
 `#version 300 es
@@ -174,12 +188,13 @@ function setup(){
   _node.registPainter("light", lightVert, lightFrag);
 
   // Mesh.
-  registMesh();
+  //registMesh();
+  registMesh1();
 
   _node.clearColor(0, 0, 0, 1);
 
   // ちょっとカリング有効にしますね
-  _node.enable("cull_face");
+  //_node.enable("cull_face");
   // 理解しました。
 }
 
@@ -206,6 +221,74 @@ function registMesh(){
 
   _node.registFigure("test", meshData);
   _node.registIBO("testIBO", {data:fData});
+}
+
+function registMesh1(){
+  // さてと。
+  const k = 0.7071;
+  const n = createVector(0, k, 1);
+  const v0 = createVector(1, k, 0);
+  const v1 = createVector(-1, k, 0);
+  const v2 = createVector(0, -k, 1);
+  const nx = createVector(-1, 0, -1);
+  const ny = createVector(1, 0, -1);
+  const nz = createVector(0, -2*k, 0); // 3本は直交する
+  const u = 0.3522;
+  const v = 0.2281;
+  const getPos = (a, b, c) => {
+    return createVector(
+      n.x + a * nx.x + b * ny.x + c * nz.x,
+      n.y + a * nx.y + b * ny.y + c * nz.y,
+      n.z + a * nx.z + b * ny.z + c * nz.z,
+    );
+  }
+  // これらの位置をもとに構築する。pjとpkは上面の正方形内の小正方形の4つの頂点のうちの手前の2つ。なのでまず、
+  // 24個の頂点で6枚の傾いた正方形を作ってしまいましょう。それにはまずpjとpkを原点で対蹠点取ればもう2つは出ますし、
+  // あとはそれを回していくだけ...難しくないはず...
+  // というかuとvだけで手前3面の正方形内の座標はすべて出るからあとはそれを原点で対象移動するだけなんですよね。
+  // だからまず手前の12個をuとvで記述して...って感じですかね...
+  let posArray = [];
+  posArray.push(getPos(u,v,0), getPos(v,1-u,0), getPos(1-u,1-v,0), getPos(1-v,u,0),
+                getPos(0,u,v), getPos(0,v,1-u), getPos(0,1-u,1-v), getPos(0,1-v,u),
+                getPos(v,0,u), getPos(1-u,0,v), getPos(1-v,0,1-u), getPos(u,0,1-v));
+  let meshData = [];
+  let vData = [];
+  // 基本の12個
+  for(let pos of posArray){ vData.push(pos.x, pos.y, pos.z); }
+  // 始めの4つをxy反転、それ以降の8つをxz反転
+  for(let i=0; i<4; i++){
+    const pos = posArray[i];
+    vData.push(-pos.x, -pos.y, pos.z);
+  }
+  for(let i=4; i<12; i++){
+    const pos = posArray[i];
+    vData.push(-pos.x, pos.y, -pos.z);
+  }
+  meshData.push({name:"aPosition", size:3, data:vData});
+  let cData = [];
+  for(let i=0; i<24; i++){
+    cData.push(1,1,1);
+  }
+  meshData.push({name:"aVertexColor", size:3, data:cData});
+  // まず正方形6つの分
+  let fData = [0,1,2, 0,2,3, 4,5,6, 4,6,7, 8,9,10, 8,10,11, 12,13,14, 12,14,15, 16,17,18, 16,18,19, 20,21,22, 20,22,23];
+  // 次につなぎの三角形の分(32個)
+  fData.push(19,3,16, 16,3,2, 3,9,0, 0,9,8, 0,4,1, 1,4,7, 20,2,21, 21,2,1, // 上面周り8つ
+             5,12,6, 6,12,15, 13,18,14, 14,18,17, 12,11,13, 13,11,10, 22,15,23, 23,15,14, // 下面周り8つ
+             23,17,20, 20,17,16, 18,10,19, 19,10,9, 21,7,22, 22,7,6, 4,8,5, 5,8,11, // 側面8つ
+             0,8,4, 1,7,21, 2,20,16, 3,19,9, 6,15,22, 14,17,23, 13,10,18, 5,11,12); // 頂点の三角形8つ
+  let nData = ex.getNormals(vData, fData);
+  meshData.push({name:"aNormal", size:3, data:nData});
+
+  _node.registFigure("test1", meshData);
+  _node.registIBO("test1IBO", {data:fData});
+
+  let lineData = [0,1,1,2,2,3,3,4, 4,5,5,6,6,7,7,4, 8,9,9,10,10,11,11,8, // 正方形4x6=24本
+                  12,13,13,14,14,15,15,12, 16,17,17,18,18,19,19,16, 20,21,21,22,22,23,23,20,
+                  2,21,1,4,0,9,3,16, 15,23,14,18,13,11,12,6, 20,17,19,10,22,7,5,8,  // 辺のところ12本
+                  1,7,7,21,21,1, 0,8,8,4,4,0, 3,19,19,9,9,3, 20,16,16,2,2,20, // 三角形3x8=24本
+                  14,17,17,23,23,14, 13,10,10,18,18,13, 5,11,11,12,12,5, 6,15,15,22,22,6]; // 合計60本
+  _node.registIBO("test1Lines", {data:lineData});
 }
 
 function draw(){
@@ -240,11 +323,17 @@ function draw(){
 
   // レンダリング
   moveMesh();
-  _node.drawFigure("test");
-  _node.bindIBO("testIBO");
+  _node.drawFigure("test1");
+  _node.bindIBO("test1IBO");
   _node.drawElements("triangles");
 
+  _node.bindIBO("test1Lines")
+       .setUniform("uUseColorFlag", 1)
+       .setUniform("uMonoColor", [0,0.5,1])
+       .drawElements("lines");
+
   _node.unbind();
+
   _node.flush();
 }
 
@@ -262,7 +351,7 @@ function setModelView(){
 // 特に動かさない...
 function moveMesh(){
   const curTime = _timer.getDeltaSecond("currentTime");
-  tf.initialize();
+  tf.initialize().scale(2,2,2);
   setModelView();
 }
 

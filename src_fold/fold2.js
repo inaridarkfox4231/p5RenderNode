@@ -26,6 +26,16 @@
 // 計算通りだけど...洗練させる必要しか感じないわ...まあ、この調子でBC3とH3のfoldRotateもよろしくね...
 // てかその前にBC3とH3作ってや。その前にカメラ仕様変更。
 
+// その前に何をしたかまとめておくね！
+// qab,qbc,qcaがあると。で、qabに対してqcaの対蹠点を取ると。これとqbc,qcaで三角形。これが基本領域、のつもり。で、
+// これがq0,q1,q2です。で、その、q0を面に垂直に伸ばすわけ。pbc方向に。で、その頂点からq0,q1,q2に線を引いて面を作る。
+// これの法線ベクトルを使ってとげみたいなのを作ってfoldRotateで複製したいと。
+// そのためにまずこの三角形、を含む正四面体の一つの面に落としました。
+// 落としてからfoldRotateというかある鏡映の合成で3つにして。
+// これら3つに対してその「とげ」を描画したわけ。そしたら複製された。そういう感じです。
+// ほんとは隣接3つでやるかなって思ったんですけど同じ面のやつだけでよかったですね...というか、隣の面に複製した点使ったら
+// 見た目がおかしくなって気付くまでに1時間くらいかかった（うんざり...）
+
 // ----global---- //
 const ex = p5wgex;
 let _node;
@@ -99,7 +109,16 @@ vec3 q2 = vec3(0.0, 1.0, 0.7071);
 //vec3 l0 = normalize(vec3(sqrt(0.5), -sqrt(2.0)/3.0, -1.0));
 //vec3 l1 = normalize(vec3(5.0*sqrt(2.0)/6.0, sqrt(2.0)/3.0, -1.0/3.0));
 //vec3 l2 = normalize(vec3(-sqrt(2.0), 0.0, 2.0));
-vec3 l0, l1, l2;
+// 多分間違ってて、これが正解。↓ 計算方法は同じ...はずなんだけどな...
+// q0,q1,q2からpeak=(1,-1,sqrt(2))を引いて、出来るベクトルで外積01,12,20を取って正規化したもの。
+//0.4999074734576957 -0.49998510090621945 -0.7071827322926804
+//0.9036870120788201 0.3872919600908249 -0.18263275130452736
+//-0.577237695309607 0 0.8165761710420243
+
+vec3 l0 = vec3(0.5, -0.5, -0.7071);
+vec3 l1 = vec3(0.9037, 0.3873, -0.1826);
+vec3 l2 = vec3(-0.5772, 0.0, 0.8166);
+vec3 peak = vec3(1.0, -1.0, 1.414); // q0にpbcに平行な(1.0, 0.0, 0.7071)を足したもの。
 
 // 折り畳み処理。A3の場合は3回。具体的にはna, nb, ncのそれぞれについてそれと反対にあるときだけ面で鏡写しにする。
 void foldA3(inout vec3 p){
@@ -126,11 +145,13 @@ void foldA3Rotate(inout vec3 p){
       p -= 2.0*dot(p,nc)*nc; p -= 2.0*dot(p,na)*na;
     }
   }
-  for(int i=0; i<3; i++){
-    if(dot(p, ma) < 0.0 || dot(p, mb) < 0.0 || dot(p, mc) < 0.0){
-      p -= 2.0*dot(p,nb)*nb; p -= 2.0*dot(p,nc)*nc;
-    }
-  }
+  // ここのステップ要らないと思う。最後、正三角形内で回すから。
+  // 球とかだと失敗...しないか。
+  //for(int i=0; i<3; i++){
+  //  if(dot(p, ma) < 0.0 || dot(p, mb) < 0.0 || dot(p, mc) < 0.0){
+  //    p -= 2.0*dot(p,nb)*nb; p -= 2.0*dot(p,nc)*nc;
+  //  }
+  //}
 }
 
 // 距離関数
@@ -156,11 +177,7 @@ float foldA3RotateTest_0(vec3 p){
   //t = min(t, length(p1 - uniqueQ) - 0.05);
   //t = min(t, length(p2 - uniqueQ) - 0.05);
 
-  l0 = normalize(cross(q0-uniqueQ, q1-uniqueQ));
-  l1 = normalize(cross(q1-uniqueQ, q2-uniqueQ));
-  l2 = normalize(cross(q2-uniqueQ, q0-uniqueQ));
-
-  vec3 _q = uniqueQ*0.3;
+  vec3 _q = peak*0.8; // ここでサイズ調整。
 
   float t = max(max(dot(p-_q, l0), dot(p-_q, l1)), dot(p-_q, l2));
   //t = min(t, max(max(dot(p0-_q, l0), dot(p0-_q, l1)), dot(p0-_q, l2))); // これ要らなかったわ、まじか...
@@ -210,15 +227,17 @@ float march(vec3 ray, vec3 eye){
   if(t < MAX_DIST){ result = t; }
   return result;
 }
+
+// getRGB(HSBをRGBに変換する関数)
+vec3 getRGB(float h, float s, float b){
+  vec3 c = vec3(h, s, b);
+  vec3 rgb = clamp(abs(mod(c.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+  rgb = rgb * rgb * (3.0 - 2.0 * rgb);
+  return c.z * mix(vec3(1.0), rgb, c.y);
+}
+
 // メイン
 void main(){
-
-  // uniqueQの計算
-  vec3 coeff = vec3(2.0 + 1.5 * sin(uTime * 6.28 * 0.25), 2.0 + 1.5 * cos(uTime * 6.28 * 0.25), 1.0);
-  uniqueQ = (coeff.x * q0 + coeff.y * q1 + coeff.z * q2) / (coeff.x + coeff.y + coeff.z);
-
-  uniqueQ = vec3(1.0, -1.0, 1.414) * 2.0;
-
   // 背景色
   vec3 color = vec3(0.0);
   // rayを計算する
@@ -236,7 +255,8 @@ void main(){
     vec3 n = calcNormal(pos); // 法線
     // 明るさ。内積の値に応じて0.3を最小とし1.0まで動かす。
     float diff = clamp((dot(n, -uLightDirection) + 0.5) * 0.75, 0.3, 1.0);
-    vec3 baseColor = map(pos).xyz; // bodyColor取得。
+    //vec3 baseColor = map(pos).xyz; // bodyColor取得。
+    vec3 baseColor = getRGB(0.55, length(pos), 1.0);
     baseColor *= diff;
     // 遠くでフェードアウトするように調整する
     color = mix(baseColor, color, tanh(t * 0.02));

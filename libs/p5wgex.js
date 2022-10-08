@@ -1421,6 +1421,7 @@ const p5wgex = (function(){
       y0 /= yLen;
       y1 /= yLen;
       y2 /= yLen;
+      // ただしthis.upX,upY,upZはいじらない。理由はカメラ制御で使うので。
       // これらを縦に並べる。そこら辺の理屈を説明するのはまあ、大変です...
       const data = [x0, y0, z0, 0, x1, y1, z1, 0, x2, y2, z2, 0, 0, 0, 0, 1];
       this.viewMat.set(data);
@@ -1431,7 +1432,8 @@ const p5wgex = (function(){
     getViewData(){
       // topベクトル、sideベクトル、upベクトルを取得する。
       // topベクトルは視点から中心と逆向きに突き出すz軸相当、
-      // sideベクトルはキャンバスの右方向、upベクトルはキャンバスの下方向。つまりローカルをそのまま移植する形。
+      // sideベクトルはキャンバスの右方向、upベクトルは仕様変更で上方向になりました。
+      // 右手系です。わかりやすい！
       // eyeの位置もついでに取得。
       // ていうかああ、そうか、行列のあそこ、eyeの座標値じゃなかったわ、ほんと馬鹿...
       const m = this.viewMat.m;
@@ -1441,6 +1443,59 @@ const p5wgex = (function(){
         top: {x:m[2], y:m[6], z:m[10]},
         eye: {x:this.eyeX, y:this.eyeY, z:this.eyeZ}
       }
+    }
+    zoom(delta, sensitivity = 1){
+      // sensitivityは倍率。小さくすると感度も変わる。
+      delta *= sensitivity;
+      // やっぱzoomなのでdeltaが正の時近づくようにするか～
+      // ベクトル(z0,z1,z2)はtopで外向き方向。
+      let z0 = this.eyeX - this.centerX;
+      let z1 = this.eyeY - this.centerY;
+      let z2 = this.eyeZ - this.centerZ;
+      const zLen = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
+      z0 /= zLen;
+      z1 /= zLen;
+      z2 /= zLen;
+      if(zLen - delta < 0.001){ return; } // マイナス回避. deltaが正のとき近づくので。
+      // deltaが正の時近づく、を表現
+      this.eyeX -= delta * z0;
+      this.eyeY -= delta * z1;
+      this.eyeZ -= delta * z2;
+      this.setViewMat();
+      // そしてnearとfarはこれいじってないですね...つまり遠ざかりすぎると消えてしまう可能性（え）
+    }
+    slide(delta, sensitivity = 1){
+      // sensitivityは倍率。小さくすると感度も変わる。
+      delta *= sensitivity;
+      // deltaが正の時、中心に対して反時計回りに横移動する。eyeしか動かさない。deltaは角度。ラジアン。
+      const {side, top} = this.getViewData();
+      // center + top*Rcos(delta) + side*Rsin(delta) でeyeを上書きするだけ。
+      let z0 = this.eyeX - this.centerX;
+      let z1 = this.eyeY - this.centerY;
+      let z2 = this.eyeZ - this.centerZ;
+      const zLen = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
+      const _z = zLen * Math.cos(delta);
+      const _x = zLen * Math.sin(delta);
+      this.eyeX = this.centerX + _z * top.x + _x * side.x;
+      this.eyeY = this.centerY + _z * top.y + _x * side.y;
+      this.eyeZ = this.centerZ + _z * top.z + _x * side.z;
+      this.setViewMat();
+    }
+    arise(delta, sensitivity = 1){
+      // めんどくさいな...upベクトル方向に上昇、でいいんじゃない？
+      let u0 = this.upX;
+      let u1 = this.upY;
+      let u2 = this.upZ;
+      const uLen = Math.sqrt(u0*u0 + u1*u1 + u2*u2);
+      u0 /= uLen;
+      u1 /= uLen;
+      u2 /= uLen;
+      this.eyeX += delta * u0;
+      this.eyeY += delta * u1;
+      this.eyeZ += delta * u2;
+      this.setViewMat();
+      // だって角度算出するったってどのみち恣意的な部分を排除できないでしょ。
+      // 面白くない。だったら単純にup方向に移動してしまえばいいよ。そのあと近づけばいいじゃん。
     }
     setPerspective(info = {}){
       if(info.fov !== undefined){ this.fov = info.fov; }
