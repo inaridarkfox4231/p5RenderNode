@@ -8,6 +8,12 @@
 // u=0.3522011287, v=0.2281554937.
 // 立方体の表面の傾いた正方形の各座標はこれですべて得られる、はず。
 
+// サイズ小さいのいいね...これで自由だ。
+// レイマーチングと同期させたいのでそこら辺いじってきた。
+// 今現在原点の位置が3*sqrt(3)ですね。あっちもいじってこよう。
+
+// いじるのおわったです。さて頂点を用意するか。
+
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
 
@@ -173,7 +179,7 @@ function setup(){
   _node.clearColor(0, 0, 0, 1);
 
   // ちょっとカリング有効にしますね
-  //_node.enable("cull_face");
+  _node.enable("cull_face");
   // 理解しました。
 }
 
@@ -206,10 +212,14 @@ function draw(){
   // まずクリア
   _node.clear();
 
+  // 時間取得
+  const currentTime = _timer.getDeltaSecond("currentTime");
+
+  // ライティング
   _node.usePainter("light");
 
   // カメラの移動
-  moveCamera();
+  moveCamera(currentTime);
 
   // 視点方向から光が当たるようにしたいのでtopを取得
   const cameraData = cam.getViewData();
@@ -258,14 +268,14 @@ function moveMesh(){
 
 // カメラ. 対象物の周囲を周回するイメージ。
 // 周回してくれないです...というか中心いじってないのに中心から逸れてしまうバグが発生してる、なぜ...？？？
-function moveCamera(){
-  const curTime = _timer.getDeltaSecond("currentTime");
+// カメラの方修正しました。ごめんなさい。でもこれで自由だ。よっしゃ！
+function moveCamera(currentTime){
   const r = Math.sqrt(3)*3; // カメラと中心との距離
-  const theta = Math.PI*0.3 * Math.sin(curTime * Math.PI*2 * 0.2); // 縦方向の振れ幅
-  const phi = Math.PI*2 * curTime * 0.2; // 周回
+  const theta = Math.PI*0.3 * Math.sin(currentTime * Math.PI*2 * 0.2); // 縦方向の振れ幅
+  const phi = Math.PI*2 * currentTime * 0.2; // 周回
   const _x = r * sin(phi) * cos(theta);
   const _y = r * sin(theta);
   const _z = r * cos(phi) * cos(theta);
-  cam.setView({center:{x:0, y:0, z:0}, eye:{x:_x, y:_y, z:_z}});
+  cam.setView({eye:{x:_x, y:_y, z:_z}});
   cam.setPerspective({near:r*0.1, far:r*10});
 }

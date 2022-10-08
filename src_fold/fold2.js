@@ -216,9 +216,8 @@ void main(){
   // uniqueQの計算
   vec3 coeff = vec3(2.0 + 1.5 * sin(uTime * 6.28 * 0.25), 2.0 + 1.5 * cos(uTime * 6.28 * 0.25), 1.0);
   uniqueQ = (coeff.x * q0 + coeff.y * q1 + coeff.z * q2) / (coeff.x + coeff.y + coeff.z);
-  uniqueQ *= 0.8;
 
-  uniqueQ = vec3(1.0, -1.0, 1.414);
+  uniqueQ = vec3(1.0, -1.0, 1.414) * 2.0;
 
   // 背景色
   vec3 color = vec3(0.0);
@@ -277,13 +276,13 @@ void main(void){
 function setup(){
   createCanvas(800, 640, WEBGL);
   _node = new ex.RenderNode(this._renderer.GL);
+  _timer.set("currentTime");
 
   // for ray marching.
 
   const positions = [-1,-1,1,-1,-1,1,1,1];
   _node.registPainter("rayM", rayMVert, rayMFrag);
   _node.registFigure("board", [{name:"aPosition", size:2, data:positions}]);
-  _timer.set("cur");
 
   // for info.
   _node.registPainter("copy", copyVert, copyFrag);
@@ -303,14 +302,14 @@ function setup(){
 
   // カメラ
   cam = new ex.CameraEx(width, height);
-  cam.setView({eye:{x:0,y:0,z:1.732}, center:{x:0,y:0,z:0}, up:{x:0,y:1,z:0}});
 }
 
 // ----draw---- //
 function draw(){
-  const currentTime = _timer.getDeltaSecond("cur"); // そのうち
+  const currentTime = _timer.getDeltaSecond("currentTime"); // そのうち
   const fps = _timer.getDeltaFPStext("fps", frameRate());
 	_timer.set("fps");
+
   _node.bindFBO(null)
        .clear();
 
@@ -322,7 +321,7 @@ function draw(){
   setCameraParameter();
 
   // 光の設定、レンダリング
-  _node.setUniform("uTime", currentTime);
+  //_node.setUniform("uLightDirection", [-1, -1, -1]);
   _node.drawArrays("triangle_strip")
        .unbind();
 
@@ -330,14 +329,17 @@ function draw(){
   showPerformance(fps);
 }
 
-function moveCamera(time){
+function moveCamera(currentTime){
   // 動かしてみる。マウスで動かしてもいいと思う。
-  const _x = Math.sqrt(3) * Math.cos(time * Math.PI*2 * 0.15);
-  const _y = 1.0 * Math.sin(time * Math.PI*2 * 0.14);
-  const _z = Math.sqrt(3) * Math.sin(time * Math.PI*2 * 0.15);
+  const curTime = _timer.getDeltaSecond("currentTime");
+  const r = Math.sqrt(3)*2; // カメラと中心との距離
+  const theta = Math.PI*0.3 * Math.sin(currentTime * Math.PI*2 * 0.2); // 縦方向の振れ幅
+  const phi = Math.PI*2 * currentTime * 0.2; // 周回
+  const _x = r * sin(phi) * cos(theta);
+  const _y = r * sin(theta);
+  const _z = r * cos(phi) * cos(theta);
   cam.setView({eye:{x:_x, y:_y, z:_z}});
 }
-
 function setCameraParameter(){
   // 目の位置：z軸正方向√3
   // fovとaspectはいつもの。

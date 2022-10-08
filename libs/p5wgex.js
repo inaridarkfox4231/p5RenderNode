@@ -105,7 +105,7 @@ const p5wgex = (function(){
     getDelta(keyName){
       // 単純に経過ミリ秒を返す。
       if(this.stumps[keyName] === undefined){
-        window.alert("invalid name");
+        window.alert("getDelta failure: invalid name");
         return null;
       }
       return window.performance.now() - this.stumps[keyName];
@@ -1433,12 +1433,13 @@ const p5wgex = (function(){
       // topベクトルは視点から中心と逆向きに突き出すz軸相当、
       // sideベクトルはキャンバスの右方向、upベクトルはキャンバスの下方向。つまりローカルをそのまま移植する形。
       // eyeの位置もついでに取得。
+      // ていうかああ、そうか、行列のあそこ、eyeの座標値じゃなかったわ、ほんと馬鹿...
       const m = this.viewMat.m;
       return {
         side: {x:m[0], y:m[4], z:m[8]},
         up: {x:m[1], y:m[5], z:m[9]},
         top: {x:m[2], y:m[6], z:m[10]},
-        eye: {x:-m[12], y:-m[13], z:-m[14]}
+        eye: {x:this.eyeX, y:this.eyeY, z:this.eyeZ}
       }
     }
     setPerspective(info = {}){
