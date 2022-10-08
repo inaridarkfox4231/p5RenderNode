@@ -1074,6 +1074,7 @@ const p5wgex = (function(){
 
   // 4x4正方行列
   // イメージ的には行指定で0,1,2,3で最上段、以下下の段4,5,6,7,と続く。
+  // こっちにも例のメソッドを移植する
   class Mat4{
     constructor(data){
       this.m = new Array(16).fill(0);
@@ -1110,6 +1111,36 @@ const p5wgex = (function(){
       // 転置。
       const data = getTranspose4x4(this.m);
       this.set(data);
+    }
+    rotateX(t){
+      // x軸の周りにtラジアン回転の行列を掛ける
+      const data = getRotX(t);
+      this.mult(data);
+    }
+    rotateY(t){
+      // y軸の周りにtラジアン回転の行列を掛ける
+      const data = getRotY(t);
+      this.mult(data);
+    }
+    rotateZ(t){
+      // z軸の周りにtラジアン回転の行列を掛ける
+      const data = getRotZ(t);
+      this.mult(data);
+    }
+    rotate(t, a, b, c){
+      // 単位軸ベクトル(a, b, c)の周りにtラジアン回転の行列
+      const data = getRot(t, a, b, c);
+      this.mult(data);
+    }
+    translate(a, b, c){
+      // a, b, cの平行移動の行列を掛ける
+      const data = getTranslate(a, b, c);
+      this.mult(data);
+    }
+    scale(sx, sy, sz){
+      // sx, sy, sz倍の行列を掛ける
+      const data = getScale(sx, sy, sz);
+      this.mult(data);
     }
   }
 
@@ -1391,9 +1422,11 @@ const p5wgex = (function(){
       y1 /= yLen;
       y2 /= yLen;
       // これらを縦に並べる。そこら辺の理屈を説明するのはまあ、大変です...
-      // そしてeyeの分だけ平行移動しないといけないんですね...なるほど。eyeの位置が原点に来るように。
-      const data = [x0, y0, z0, 0, x1, y1, z1, 0, x2, y2, z2, 0, -this.eyeX, -this.eyeY, -this.eyeZ, 1];
+      const data = [x0, y0, z0, 0, x1, y1, z1, 0, x2, y2, z2, 0, 0, 0, 0, 1];
       this.viewMat.set(data);
+      // そしてeyeの分だけ平行移動しないといけないんですね...なるほど。eyeの位置が原点に来るように。
+      // そして成分間違ってましたね...馬鹿か...これでちゃんと中心を向いてくれます。お疲れさまでした。
+      this.viewMat.translate(-this.eyeX, -this.eyeY, -this.eyeZ);
     }
     getViewData(){
       // topベクトル、sideベクトル、upベクトルを取得する。
@@ -1408,7 +1441,7 @@ const p5wgex = (function(){
         eye: {x:-m[12], y:-m[13], z:-m[14]}
       }
     }
-    setPersepective(info = {}){
+    setPerspective(info = {}){
       if(info.fov !== undefined){ this.fov = info.fov; }
       if(info.aspect !== undefined){ this.aspect = info.aspect; }
       if(info.near !== undefined){ this.near = info.near; }
@@ -1481,38 +1514,44 @@ const p5wgex = (function(){
     }
     rotateX(t){
       // x軸の周りにtラジアン回転の行列を掛ける
-      const data = getRotX(t);
-      this.mat.mult(data);
+      this.mat.rotateX(t);
+      //const data = getRotX(t);
+      //this.mat.mult(data);
       return this;
     }
     rotateY(t){
       // y軸の周りにtラジアン回転の行列を掛ける
-      const data = getRotY(t);
-      this.mat.mult(data);
+      this.mat.rotateY(t);
+      //const data = getRotY(t);
+      //this.mat.mult(data);
       return this;
     }
     rotateZ(t){
       // z軸の周りにtラジアン回転の行列を掛ける
-      const data = getRotZ(t);
-      this.mat.mult(data);
+      this.mat.rotateZ(t);
+      //const data = getRotZ(t);
+      //this.mat.mult(data);
       return this;
     }
     rotate(t, a, b, c){
       // 単位軸ベクトル(a, b, c)の周りにtラジアン回転の行列
-      const data = getRot(t, a, b, c);
-      this.mat.mult(data);
+      this.mat.rotate(t, a, b, c);
+      //const data = getRot(t, a, b, c);
+      //this.mat.mult(data);
       return this;
     }
     translate(a, b, c){
       // a, b, cの平行移動の行列を掛ける
-      const data = getTranslate(a, b, c);
-      this.mat.mult(data);
+      this.mat.translate(a, b, c);
+      //const data = getTranslate(a, b, c);
+      //this.mat.mult(data);
       return this;
     }
     scale(sx, sy, sz){
       // sx, sy, sz倍の行列を掛ける
-      const data = getScale(sx, sy, sz);
-      this.mat.mult(data);
+      this.mat.scale(sx, sy, sz);
+      //const data = getScale(sx, sy, sz);
+      //this.mat.mult(data);
       return this;
     }
   }
