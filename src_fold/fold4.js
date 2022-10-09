@@ -24,6 +24,7 @@
 // くっきりさせるには...例えば三角形をばらばらにしてテクスチャ貼り付ける。
 // あるいは線描画で線で区切る。線が見えないと分かりづらい。その場合のシェーダーは単に色を出すだけ。
 // 一応できたよ...
+// 一番手っ取り早いのは正方形、辺三角形A, 辺三角形B, 頂点三角形をそれぞれ別メッシュにして...って一緒か
 
 // 法線ベクトルとしては、4,5,6,7の正方形と、
 // 1,7,21,  1,4,7,  1,0,4,  0,8,4,  4,8,5の三角形の法線ベクトル5本
@@ -31,6 +32,9 @@
 // 具体的には中でこれらに相当するベクトルを持ち出して差を取って外積取ってconsoleに上げればいい、はず。
 
 // その一方でBC3のfoldRotateを実行する。
+// やり方はまずxzの符号をいじって両方>=0となるようにし
+// そのうえで上と下の内積で然るべき領域に落とす。
+// 落とした後は複製したうえで然るべき平面で評価する。と、うまくいく、はず。
 
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
@@ -264,12 +268,15 @@ function registMesh1(){
     const pos = posArray[i];
     vData.push(-pos.x, pos.y, -pos.z);
   }
-  meshData.push({name:"aPosition", size:3, data:vData});
+  //meshData.push({name:"aPosition", size:3, data:vData});
+  /*
   let cData = [];
   for(let i=0; i<24; i++){
     cData.push(1,1,1);
   }
   meshData.push({name:"aVertexColor", size:3, data:cData});
+  */
+
   // まず正方形6つの分
   let fData = [0,1,2, 0,2,3, 4,5,6, 4,6,7, 8,9,10, 8,10,11, 12,13,14, 12,14,15, 16,17,18, 16,18,19, 20,21,22, 20,22,23];
   // 次につなぎの三角形の分(32個)
@@ -277,18 +284,91 @@ function registMesh1(){
              5,12,6, 6,12,15, 13,18,14, 14,18,17, 12,11,13, 13,11,10, 22,15,23, 23,15,14, // 下面周り8つ
              23,17,20, 20,17,16, 18,10,19, 19,10,9, 21,7,22, 22,7,6, 4,8,5, 5,8,11, // 側面8つ
              0,8,4, 1,7,21, 2,20,16, 3,19,9, 6,15,22, 14,17,23, 13,10,18, 5,11,12); // 頂点の三角形8つ
-  let nData = ex.getNormals(vData, fData);
+
+   // foldに必要なデータの出力
+   const getNormal = (i, j, k) => {
+     let v0 = createVector(vData[3*i], vData[3*i+1], vData[3*i+2]);
+     let v1 = createVector(vData[3*j], vData[3*j+1], vData[3*j+2]);
+     let v2 = createVector(vData[3*k], vData[3*k+1], vData[3*k+2]);
+     v1.sub(v0); v2.sub(v0);
+     const v012 = p5.Vector.cross(v1, v2).normalize();
+     return v012;
+   }
+
+  let newVData = [];
+  let newCData = [];
+  for(let i=0; i<fData.length/3; i++){
+    const f0 = fData[3*i];
+    const f1 = fData[3*i+1];
+    const f2 = fData[3*i+2];
+    const n = getNormal(f0, f1, f2);
+    // ついでに頂点も
+    //console.log("vec3 n" + i + " = vec3(" + (n.x).toFixed(4) + ", " + (n.y).toFixed(4) + ", " + (n.z).toFixed(4) + ");" );
+    console.log("vec3 g" + i + " = vec3(" + vData[3*f0].toFixed(4) + ", " + vData[3*f0+1].toFixed(4) + ", " + vData[3*f0+2].toFixed(4) + ");" );
+    newVData.push(vData[3*f0], vData[3*f0+1], vData[3*f0+2],
+                  vData[3*f1], vData[3*f1+1], vData[3*f1+2],
+                  vData[3*f2], vData[3*f2+1], vData[3*f2+2]);
+    let col;
+    if(i < 12){
+      col = ex.hsv2rgb(0.55, 0.2, 1);
+      newCData.push(col.r, col.g, col.b, col.r, col.g, col.b, col.r, col.g, col.b);
+    }else if(i < 20){
+      col = ex.hsv2rgb(0.55, 0.4, 1);
+      newCData.push(col.r, col.g, col.b, col.r, col.g, col.b, col.r, col.g, col.b);
+    }else if(i < 28){
+      col = ex.hsv2rgb(0.55, 0.6, 1);
+      newCData.push(col.r, col.g, col.b, col.r, col.g, col.b, col.r, col.g, col.b);
+    }else if(i < 36){
+      col = ex.hsv2rgb(0.55, 0.8, 1);
+      newCData.push(col.r, col.g, col.b, col.r, col.g, col.b, col.r, col.g, col.b);
+    }else{
+      col = ex.hsv2rgb(0.55, 1, 1);
+      newCData.push(col.r, col.g, col.b, col.r, col.g, col.b, col.r, col.g, col.b);
+    }
+  }
+  // 初めの36個が正方形、以下24個、24個、24個、24個。
+
+  meshData.push({name:"aPosition", size:3, data:newVData});
+  meshData.push({name:"aVertexColor", size:3, data:newCData});
+
+  let newFData = [];
+  for(let i=0; i<newVData.length/3; i++){
+    newFData.push(i);
+  }
+  let nData = ex.getNormals(newVData, newFData);
   meshData.push({name:"aNormal", size:3, data:nData});
 
   _node.registFigure("test1", meshData);
-  _node.registIBO("test1IBO", {data:fData});
 
-  let lineData = [0,1,1,2,2,3,3,4, 4,5,5,6,6,7,7,4, 8,9,9,10,10,11,11,8, // 正方形4x6=24本
-                  12,13,13,14,14,15,15,12, 16,17,17,18,18,19,19,16, 20,21,21,22,22,23,23,20,
-                  2,21,1,4,0,9,3,16, 15,23,14,18,13,11,12,6, 20,17,19,10,22,7,5,8,  // 辺のところ12本
-                  1,7,7,21,21,1, 0,8,8,4,4,0, 3,19,19,9,9,3, 20,16,16,2,2,20, // 三角形3x8=24本
-                  14,17,17,23,23,14, 13,10,10,18,18,13, 5,11,11,12,12,5, 6,15,15,22,22,6]; // 合計60本
-  _node.registIBO("test1Lines", {data:lineData});
+  // foldに必要なデータの出力
+  const showNormal = (i, j, k) => {
+    let v0 = createVector(vData[3*i], vData[3*i+1], vData[3*i+2]);
+    let v1 = createVector(vData[3*j], vData[3*j+1], vData[3*j+2]);
+    let v2 = createVector(vData[3*k], vData[3*k+1], vData[3*k+2]);
+    v1.sub(v0); v2.sub(v0);
+    const v012 = p5.Vector.cross(v1, v2).normalize();
+    console.log(v012.x, v012.y, v012.z);
+  }
+  const showNormals = indexArray => {
+    for(let i=0; i<indexArray.length/3; i++){
+      showNormal(indexArray[i*3], indexArray[i*3+1], indexArray[i*3+2]);
+    }
+  }
+  //showNormals([8,4,0, 8,5,4, 11,5,8, 11,12,5, 12,6,5, 5,6,7]);
+  // 0.0, 0.5773, 0.8165
+  // 0.1564, 0.1707, 0.9728
+  // -0.1564, -0.1707, 0.9728
+  // 0.0, -0.5773, 0.8165
+  // 0.4439, -0.5773, 0.6853
+  // 0.7071, 0.0, 0.7071
+  // この6本で...
+  // 1と4の座標ほしいです。
+  const showPoint = i => {
+    console.log(vData[3*i], vData[3*i+1], vData[3*i+2]);
+  }
+  //showPoint(4); // 0.3522, 0.3845, 0.6478
+  //showPoint(5); // 0.2281, -0.2090, 0.7719
+  // 4に対して8,4,0の法線を使い、5に対して残り5本を使う。
 }
 
 function draw(){
@@ -324,13 +404,7 @@ function draw(){
   // レンダリング
   moveMesh();
   _node.drawFigure("test1");
-  _node.bindIBO("test1IBO");
-  _node.drawElements("triangles");
-
-  _node.bindIBO("test1Lines")
-       .setUniform("uUseColorFlag", 1)
-       .setUniform("uMonoColor", [0,0.5,1])
-       .drawElements("lines");
+  _node.drawArrays("triangles");
 
   _node.unbind();
 
