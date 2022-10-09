@@ -386,6 +386,8 @@ function moveCamera(currentTime){
   const _y = r * sin(theta);
   const _z = r * cos(phi) * cos(theta);
   cam.setView({eye:{x:_x, y:_y, z:_z}});
+  // あ、これレイマーチングだから要らないのか...
+  //cam.setPerspective({near:r*0.1, far:r*10});
 }
 
 function setCameraParameter(){

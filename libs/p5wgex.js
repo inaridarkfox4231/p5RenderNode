@@ -1332,6 +1332,9 @@ const p5wgex = (function(){
   // まあ色々と雑だから何とかしたいよね...問題はp5jsみたく節操無く何でも用意した挙句使い方分かりません！使わない！
   // ってならないためにはどうすればいいかっていうね。
 
+  // eyeとcenterの距離は常に保持するようにしたうえで、それとの比率でnearとfarを決める感じで。
+  // near/farは射影の計算で使うからそのときに距離Rに掛け算してやればいい。
+  // だいたい常に同じスケールで議論するとは限らないのに定数で制御するのおかしいでしょうよ。
   class CameraEx{
     constructor(w, h){
       if(w === undefined){ w = window.innerWidth; }
@@ -1351,11 +1354,13 @@ const p5wgex = (function(){
       this.centerX = 0;
       this.centerY = 0;
       this.centerZ = 0;
+      this.distance = (h/2)/Math.tan(this.fov/2); // 視点と中心との距離で、視点や中心をいじるたびに更新する。
       this.upX = 0;
       this.upY = 1;
       this.upZ = 0;
-      this.near = this.eyeZ * 0.1;
-      this.far = this.eyeZ * 10;
+      this.near = 0.1; // nearで視点と中心との距離に対する視点からnearまでの距離の比率とする。
+      this.far = 10; // farで視点と中心との距離に対する視点からfarまでの距離の比率とする。
+      // perspectiveでしか用いられない。内部の計算もちょっといじる。
       // ortho用。一応説明。
       // 想定ではleftが左でrightが右、中心原点。left<right.
       // bottomが上でtopが下、中心原点。（いずれ直す）bottom<top.
@@ -1368,6 +1373,13 @@ const p5wgex = (function(){
 
       this.setViewMat();
       this.setPerspectiveMat();
+    }
+    calcDistance(){
+      // 視点と中心との距離をセットする
+      let z0 = this.eyeX - this.centerX;
+      let z1 = this.eyeY - this.centerY;
+      let z2 = this.eyeZ - this.centerZ;
+      this.distance = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
     }
     getViewMat(){
       return this.viewMat;
@@ -1392,6 +1404,7 @@ const p5wgex = (function(){
         this.upY = info.up.y;
         this.upZ = info.up.z;
       }
+      this.calcDistance(); // 距離を計算
       this.setViewMat();
     }
     setViewMat(){
@@ -1400,7 +1413,8 @@ const p5wgex = (function(){
       let z0 = this.eyeX - this.centerX;
       let z1 = this.eyeY - this.centerY;
       let z2 = this.eyeZ - this.centerZ;
-      const zLen = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
+      //const zLen = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
+      const zLen = this.distance; // 計算する必要ないわね。
       z0 /= zLen;
       z1 /= zLen;
       z2 /= zLen;
@@ -1449,20 +1463,24 @@ const p5wgex = (function(){
       delta *= sensitivity;
       // やっぱzoomなのでdeltaが正の時近づくようにするか～
       // ベクトル(z0,z1,z2)はtopで外向き方向。
-      let z0 = this.eyeX - this.centerX;
-      let z1 = this.eyeY - this.centerY;
-      let z2 = this.eyeZ - this.centerZ;
-      const zLen = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
-      z0 /= zLen;
-      z1 /= zLen;
-      z2 /= zLen;
-      if(zLen - delta < 0.001){ return; } // マイナス回避. deltaが正のとき近づくので。
+      const top = this.getViewData();
+      //let z0 = this.eyeX - this.centerX;
+      //let z1 = this.eyeY - this.centerY;
+      //let z2 = this.eyeZ - this.centerZ;
+      //const zLen = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
+      //z0 /= zLen;
+      //z1 /= zLen;
+      //z2 /= zLen;
+      if(this.distance - delta < 0.001){ return; } // マイナス回避. deltaが正のとき近づくので。
       // deltaが正の時近づく、を表現
-      this.eyeX -= delta * z0;
-      this.eyeY -= delta * z1;
-      this.eyeZ -= delta * z2;
+      this.eyeX -= delta * top.x;
+      this.eyeY -= delta * top.y;
+      this.eyeZ -= delta * top.z;
+      this.calcDistance();
       this.setViewMat();
-      // そしてnearとfarはこれいじってないですね...つまり遠ざかりすぎると消えてしまう可能性（え）
+      // nearとfarは中心との距離に対する比率にしたので、
+      // 視点が移動するにしたがってnearとfarも同じ比率で変化します。
+      // 中心も動けば当然変化しないが...中心を動かすメソッドで視点も一緒に動く感じで...また作るよ。
     }
     slide(delta, sensitivity = 1){
       // sensitivityは倍率。小さくすると感度も変わる。
@@ -1470,32 +1488,36 @@ const p5wgex = (function(){
       // deltaが正の時、中心に対して反時計回りに横移動する。eyeしか動かさない。deltaは角度。ラジアン。
       const {side, top} = this.getViewData();
       // center + top*Rcos(delta) + side*Rsin(delta) でeyeを上書きするだけ。
+      /*
       let z0 = this.eyeX - this.centerX;
       let z1 = this.eyeY - this.centerY;
       let z2 = this.eyeZ - this.centerZ;
       const zLen = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
-      const _z = zLen * Math.cos(delta);
-      const _x = zLen * Math.sin(delta);
+      */
+      const _z = this.distance * Math.cos(delta);
+      const _x = this.distance * Math.sin(delta);
       this.eyeX = this.centerX + _z * top.x + _x * side.x;
       this.eyeY = this.centerY + _z * top.y + _x * side.y;
       this.eyeZ = this.centerZ + _z * top.z + _x * side.z;
+      this.calcDistance(); // 念のためね
       this.setViewMat();
     }
     arise(delta, sensitivity = 1){
-      // めんどくさいな...upベクトル方向に上昇、でいいんじゃない？
-      let u0 = this.upX;
-      let u1 = this.upY;
-      let u2 = this.upZ;
-      const uLen = Math.sqrt(u0*u0 + u1*u1 + u2*u2);
-      u0 /= uLen;
-      u1 /= uLen;
-      u2 /= uLen;
-      this.eyeX += delta * u0;
-      this.eyeY += delta * u1;
-      this.eyeZ += delta * u2;
+      // upベクトルが傾いてる場合にも適用可能なようにしましょう。deltaが正の時上昇するんですが、
+      // 球面上を動きます。なので、使うのはupとtopですね。
+      // あー...なるほど。そうか。計算によれば...通り過ぎた場合でも問題ないのか。
+      // あの、結局side,up,topの構成が変わるし、upX,upY,upZもいじらないから、頂点付近でとどまる形になるんだわな。
+      // で、通り過ぎると今度は下げた場合反対側から見る形になるわけだ。それでいくかー。
+      const {up, top} = this.getViewData();
+      const _z = this.distance * Math.cos(delta);
+      const _y = this.distance * Math.sin(delta);
+      this.eyeX = this.centerX + _z * top.x + _y * up.x;
+      this.eyeY = this.centerY + _z * top.y + _y * up.y;
+      this.eyeZ = this.centerZ + _z * top.z + _y * up.z;
+      this.calcDistance();
       this.setViewMat();
-      // だって角度算出するったってどのみち恣意的な部分を排除できないでしょ。
-      // 面白くない。だったら単純にup方向に移動してしまえばいいよ。そのあと近づけばいいじゃん。
+      // upX,upY,upZはいじらないため、これにより通り過ぎた場合は背後から見る形となる。
+      // ...テストして確かめます...
     }
     setPerspective(info = {}){
       if(info.fov !== undefined){ this.fov = info.fov; }
@@ -1511,9 +1533,9 @@ const p5wgex = (function(){
       const factor = 1.0 / Math.tan(this.fov/2);
       const c0 = factor / this.aspect;
       const c5 = factor; // 符号反転！
-      const c10 = (this.near + this.far) / (this.near - this.far);
+      const c10 = (this.near + this.far) / (this.near - this.far); // ここは次元0なので比率そのままでOK
       const c11 = -1;
-      const c14 = 2 * this.near * this.far / (this.near - this.far);
+      const c14 = 2 * this.distance * this.near * this.far / (this.near - this.far); // 次元1なのでdistanceの1乗を掛ける
       const data = [c0, 0, 0, 0, 0, c5, 0, 0, 0, 0, c10, c11, 0, 0, c14, 0];
       this.projMat.set(data);
     }
@@ -1536,12 +1558,13 @@ const p5wgex = (function(){
       // を-1～1に、near～farを-1～1にマッピングするわけ。行列の掛け算も2次の逆行列でちょちょいっと。
       // でもまあ結果だけ。
       // ごめん間違えた...中で掛ける行列そのまま使っちゃった。
+      // nearとfarの定義が変更になったので微調整。これも使わないと変化がわかんないからテストしないといけないですね。
       const c0 = 2 / (this.right - this.left);
       const c5 = 2 / (this.top - this.bottom); // 符号反転！
-      const c10 = -2 / (this.far - this.near);
+      const c10 = -2 / (this.distance * (this.far - this.near)); // ここは掛け算して合わせないといけない。
       const c12 = -(this.right + this.left) / (this.right - this.left);
       const c13 = -(this.top + this.bottom) / (this.top - this.bottom);
-      const c14 = -(this.far + this.near) / (this.far - this.near);
+      const c14 = -(this.far + this.near) / (this.far - this.near); // ここは次元0なので無修正
       const c15 = 1;
       const data = [c0, 0, 0, 0, 0, c5, 0, 0, 0, 0, c10, 0, c12, c13, c14, c15];
       this.projMat.set(data);
@@ -1628,6 +1651,109 @@ const p5wgex = (function(){
   // プロジェも作ってモデルビューとプロジェと法線を送り込んで計算。
   // 現時点でTransformExの便利な書き方がないので困ったね～...（後回し）
 
+  // ----------------------------------------
+  // vec3.
+
+  // とりあえずこんなもんかな。まあ難しいよねぇ。
+  // CameraExのパラメータをベクトルで管理したいのですよね。でもp5.Vector使い勝手悪いので。自前で...
+
+  // xxとかyyとかyxyとかであれが出るのとか欲しいな～（だめ）
+  class Vec3{
+    constructor(x, y, z){
+      this.x = x;
+      this.y = y;
+      this.z = z;
+    }
+    add(a, b, c){
+      if(typeof(a) === "number"){
+        if(b === undefined){ b = a; }
+        if(c === undefined){ c = b; }
+        this.x += a;
+        this.y += b;
+        this.z += c;
+      }else{
+        this.x += a.x;
+        this.y += a.y;
+        this.z += a.z;
+      }
+    }
+    sub(a, b, c){
+      if(typeof(a) === "number"){
+        if(b === undefined){ b = a; }
+        if(c === undefined){ c = b; }
+        this.x -= a;
+        this.y -= b;
+        this.z -= c;
+      }else{
+        this.x -= a.x;
+        this.y -= a.y;
+        this.z -= a.z;
+      }
+    }
+    mult(a, b, c){
+      if(typeof(a) === "number"){
+        if(b === undefined){ b = a; }
+        if(c === undefined){ c = b; }
+        this.x *= a;
+        this.y *= b;
+        this.z *= c;
+      }else{
+        this.x *= a.x;
+        this.y *= a.y;
+        this.z *= a.z;
+      }
+    }
+    divide(a, b, c){
+      if(typeof(a) === "number"){
+        if(b === undefined){ b = a; }
+        if(c === undefined){ c = b; }
+        if(a === 0.0 || b === 0.0 || c === 0.0){
+          window.error("Vec3 divide: zero division error!");
+          return;
+        }
+        this.x /= a;
+        this.y /= b;
+        this.z /= c;
+      }else{
+        if(a.x == 0.0 || a.y == 0.0 || a.z == 0.0){
+          window.error("Vec3 divide: zero division error!");
+          return;
+        }
+        this.x /= a.x;
+        this.y /= a.y;
+        this.z /= a.z;
+      }
+    }
+    dot(v){
+      return this.x * v.x + this.y * v.y + this.z * v.z;
+    }
+    length(v){
+      return Math.sqrt(this.dot(this));
+    }
+    cross(v){
+      const {x:a, y:b, z:c} = this;
+      this.x = b * v.z - c * v.y;
+      this.y = c * v.x - a * v.z;
+      this.z = a * v.y - b * v.x;
+    }
+    normalize(){
+      const L = this.length();
+      if(L == 0.0){
+        window.error("Vec3 normalize: zero division error!");
+        return;
+      }
+      this.divide(L);
+    }
+    multMat(m){
+      // mは3x3行列を模した長さ9の配列、成分の並びは縦。つまり0,1,2で列ベクトル1で、3,4,5で列ベクトル2で、
+      // 6,7,8で列ベクトル3という、これを縦に並んだthis.x,this.y,this.zに掛け算するイメージ。です。
+      const {x:a, y:b, z:c} = this;
+      this.x = m[0] * a + m[3] * b + m[6] * c;
+      this.y = m[1] * a + m[4] * b + m[7] * c;
+      this.z = m[2] * a + m[5] * b + m[8] * c;
+    }
+  }
+
   const ex = {};
 
   // utility.
@@ -1645,6 +1771,7 @@ const p5wgex = (function(){
   ex.Mat4 = Mat4;
   ex.CameraEx = CameraEx;
   ex.TransformEx = TransformEx;
+  ex.Vec3 = Vec3;
 
   return ex;
 })();

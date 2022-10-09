@@ -183,8 +183,7 @@ void main(void){
 function setup(){
   createCanvas(800, 640, WEBGL);
   _timer.set("currentTime");
-  const gl = this._renderer.GL;
-  _node = new ex.RenderNode(gl);
+  _node = new ex.RenderNode(this._renderer.GL);
   tf = new ex.TransformEx();
   cam = new ex.CameraEx(width, height);
 
@@ -192,7 +191,7 @@ function setup(){
   _node.registPainter("light", lightVert, lightFrag);
 
   // Mesh.
-  //registMesh();
+  registMesh();
   registMesh1();
 
   _node.clearColor(0, 0, 0, 1);
@@ -225,6 +224,12 @@ function registMesh(){
 
   _node.registFigure("test", meshData);
   _node.registIBO("testIBO", {data:fData});
+
+  _node.registFigure("plane", [
+    {name:"aPosition", size:3, data:[-2, 0, -2, -2, 0, 2, 2, 0, -2, 2, 0, 2]},
+    {name:"aVertexColor", size:3, data:[0, 0.5, 1, 0, 0.5, 1, 1, 1, 1, 1, 1, 1]},
+    {name:"aNormal", size:3, data:[0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]}
+  ]);
 }
 
 function registMesh1(){
@@ -403,8 +408,10 @@ function draw(){
 
   // レンダリング
   moveMesh();
-  _node.drawFigure("test1");
-  _node.drawArrays("triangles");
+  _node.drawFigure("test1")
+       .drawArrays("triangles")
+       .drawFigure("plane")
+       .drawArrays("triangle_strip");
 
   _node.unbind();
 
@@ -425,7 +432,7 @@ function setModelView(){
 // 特に動かさない...
 function moveMesh(){
   const curTime = _timer.getDeltaSecond("currentTime");
-  tf.initialize().scale(2,2,2);
+  tf.initialize();
   setModelView();
 }
 
@@ -440,5 +447,5 @@ function moveCamera(currentTime){
   const _y = r * sin(theta);
   const _z = r * cos(phi) * cos(theta);
   cam.setView({eye:{x:_x, y:_y, z:_z}});
-  cam.setPerspective({near:r*0.1, far:r*10});
+  cam.setPerspective({near:0.1, far:10});
 }
