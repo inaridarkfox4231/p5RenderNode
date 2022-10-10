@@ -1348,6 +1348,216 @@ const p5wgex = (function(){
 
   // infoで初期化時に指定できるようにしよっかな
   // upX,upY,upZなんだけど定義時に正規化してくれると嬉しい...
+  // upではないです。topです。さて、仕様変更じゃ...
+
+  // 新カメラ。
+  // infoの指定の仕方、topは常に正規化、Vec3で統一、ローカル軸の名称変更、動かすメソッド追加, etc...
+  class CameraEx2{
+    constructor(info = {}){
+      this.eye = new Vec3();
+      this.center = new Vec3();
+      this.top = new Vec3();
+      this.side = new Vec3();
+      this.up = new Vec3();
+      this.front = new Vec3();
+      this.viewMat = new Mat4();
+      this.projMat = {pers:new Mat4(), ortho: new Mat4(), frustum: new Mat4()};
+      this.distance = 0; // 視点と中心との距離
+      // matはそれぞれのモードに持たせて変更する場合だけ再計算されるように
+      // 切り替えで計算する必要ないので
+      this.projData = {mode:"pers", pers:{}, ortho:{}, frustum:{}};
+      this.initialize(info);
+    }
+    initialize(info = {}){
+      // デフォルト設定用のwとhを用意。
+      let w, h;
+      if(info.w === undefined){ w = window.innerWidth; }else{ w = info.w; }
+      if(info.h === undefined){ h = window.innerHeight; }else{ h = info.h; }
+      // ------ view part ------ //
+      // まあ指定が無ければデフォルトで
+      // まずeyeはz軸正方向で。（見下ろしではなくレイマのイメージで横から）
+      if(info.eye === undefined){ this.eye.set(0, 0, Math.sqrt(3)*h*0.5); }else{ this.eye.set(info.eye); }
+      // centerは原点で
+      if(info.center === undefined){ this.center.set(0, 0, 0); }else{ this.center.set(info.center); }
+      // distanceの計算
+      this.distance = this.calcDistance();
+      // topは基本y軸正の方向。
+      if(info.top === undefined){ this.top.set(0, 1, 0); }else{ this.top.set(info.top); }
+      // topは正規化したいのよね
+      this.top.normalize();
+      // ここでviewMatを構成すると同時にside,up,frontを決定する。これらはカメラのローカル軸x,y,zを与えるもの。
+      // topとは概念が異なる。これらはtopに常に制約を受ける。具体的にはtopを越えることが許されない（ゆえに「top」）.
+      this.calcViewMat();
+      // ------ projection part ------ //
+      if(info.pers === undefined){
+        // 基本pers. nearとfarはdistanceに対する比率
+        this.projData.pers = {fov:Math.PI/3, aspect:w/h, near:0.1, far:10};
+      }else{
+        this.projData.pers = info.pers;
+      }
+      if(info.ortho === undefined){
+        // farは一応distanceの2倍としておく
+        this.projData.ortho = {left:-w/2, right:w/2, bottom:-h/2, top:h/2, near:0, far:this.distance*2};
+      }else{
+        this.projData.ortho = info.ortho;
+      }
+      if(info.frustum === undefined){
+        const n = this.distance * 0.1;
+        const h0 = Math.tan(Math.PI/6) * n;
+        const w0 = h0 * w/h;
+        this.projData.frustum = {left:-w0, right:w0, bottom:-h0, top:h0, near:0.1, far:10};
+      }else{
+        this.projData.frustum = info.frustum;
+      }
+      this.calcPersMat();
+      this.calcOrthoMat();
+      this.calcFrustumMat();
+    }
+    calcDistance(){
+      // メソッドに落とし込む。eyeとcenterの距離取るだけ。
+      return this.eye.dist(this.center);
+    }
+    calcViewMat(){
+      // eye,center,topが変更された場合に行列の再計算を行なうパート
+      // まずfrontを作る。center → eye, の単位ベクトル
+      this.front.set(this.center).sub(this.eye).normalize();
+      // sideはtopとfrontの外積で作る。ゆえに常にtopに直交するのでtopが動かない限りたとえば画面の揺れなどは起こらない
+      this.side.set(this.top).cross(this.front).normalize();
+      // upはfrontとsideの外積で作る。画面の上方向を向くベクトルとなる。
+      this.up.set(this.front).cross(this.side).normalize();
+      // side,up,frontからなる右手系がカメラ座標系となる
+      const data = [this.side.x, this.up.x, this.front.x, 0,
+                    this.side.y, this.up.y, this.front.y, 0,
+                    this.side.z, this.up.z, this.front.z, 0,
+                    0, 0, 0, 1];
+      this.viewMat.set(data);
+      // そしてeyeの分だけ平行移動しないといけないんですね...なるほど。eyeの位置が原点に来るように。
+      this.viewMat.translate(-this.eye.x, -this.eye.y, -this.eye.z);
+      // おつかれさま！
+    }
+    calcPersMat(){
+      // persデータを元に行列を構築する。
+      // fov, aspect, near, farから行列を計算してセットする。
+      // fovは視野角、aspectは横/縦の比。オーソドックスな指定方法。
+      const {far, aspect, near, far} = this.projData.pers;
+      const factor = 1 / Math.tan(fov/2);
+      const c0 = factor / aspect;
+      const c5 = factor; // 符号反転！
+      const c10 = (near + far) / (near - far); // ここは次元0なので比率そのままでOK
+      const c11 = -1;
+      const c14 = 2 * this.distance * near * far / (near - far); // 次元1なのでdistanceの1乗を掛ける
+      const data = [c0, 0, 0, 0, 0, c5, 0, 0, 0, 0, c10, c11, 0, 0, c14, 0];
+      this.projMat.pers.set(data);
+    }
+    calcOrthoMat(){
+      // orthoデータを元に行列を構築する。
+      // left,right,bottom,top,near,farを取得して...
+      // xをleft~right,yをbottom~top,zを-near~-farにおいて-1～1に落とすだけなのでラクチンです。
+      const {left, right, bottom, top, near, far} = this.projData.ortho;
+      const c0 = 2 / (right - left);
+      const c5 = 2 / (top - bottom); // 符号反転！
+      const c10 = -2 / (this.distance * (far - near)); // ここは掛け算して合わせないといけない。
+      const c12 = -(right + left) / (right - left);
+      const c13 = -(top + bottom) / (top - bottom);
+      const c14 = -(far + near) / (far - near); // ここは次元0なので無修正
+      const c15 = 1;
+      const data = [c0, 0, 0, 0, 0, c5, 0, 0, 0, 0, c10, 0, c12, c13, c14, c15];
+      this.projMat.ortho.set(data);
+    }
+    calcFrustumMat(){
+      // frustumデータの読み方。nearのところに無限平面を用意して、sideベクトルとupベクトルで張られるとし、
+      // そこにおけるleft~right,bottom~topの領域を切り取る。その4隅にeyeから稜線を伸ばすことでfrustumを形成し
+      // そこに落とす。persと違って矩形の重心がeyeからcenterへ向かう半直線と交わるとは限らないところと、
+      // 通常のカメラのように切り取る範囲を設定できるところが特徴です。
+      const {left, right, bottom, top, near, far} = this.projData.frustum;
+      const c0 = 2 * this.distance * near / (right - left);
+      const c5 = 2 * this.distance * near / (top - bottom);
+      const c8 = (right - left) / (right + left);
+      const c9 = (top + bottom) / (top - bottom);
+      const c10 = -(far + near) / (far - near);
+      const c11 = -1;
+      const c14 = -2 * this.distance * far * near / (far - near);
+      const data = [c0, 0, 0, 0, 0, c5, 0, 0, c8, c9, c10, c11, 0, 0, c14, 0];
+      this.projMat.frustum.set(data);
+      // ふぅ...（理屈はちゃんと確かめてますがテストするまでわかんねぇなこれ...）GUIで試したいね。ぐりぐりして。
+      // その際プリミティブがたくさん必要になるのでそういう関数も作らないと
+    }
+    setView(info = {}){
+      // eye,center,topの指定。配列で[0,1,0]のように書けるようになりました。
+      if(info.eye !== undefined){ this.eye.set(info.eye); }
+      if(info.center !== undefined){ this.center.set(info.center); }
+      if(info.top !== undefined){ this.top.set(info.top).normalize(); /* topは正規化しておく */ }
+      this.calcDistance();
+      this.calcViewMat();
+    }
+    setProjMode(mode){
+      // "pers", "ortho", "frustum".
+      // getProjMatでどんなMat4をいただくのか決める
+      if(this.projData[mode] === undefined){
+        window.error("setProjMode failure: invalid mode name.");
+        return;
+      }
+      this.projData.mode = mode;
+    }
+    setPerse(info = {}){
+      // fov, aspect, near, farの指定。nearとfarはview関係ないので切り離すべきなのです。
+      const projData = this.projMode.pers;
+      if(info.fov !== undefined){ projData.fov = info.fov; }
+      if(info.aspect !== undefined){ projData.aspect = info.aspect; }
+      if(info.near !== undefined){ projData.near = info.near; }
+      if(info.far !== undefined){ projData.far = info.far; }
+      this.calcPersMat();
+    }
+    setOrtho(info = {}){
+      const projData = this.projMode.ortho;
+      if(info.left !== undefined){ projData.left = info.left; }
+      if(info.right !== undefined){ projData.right = info.right; }
+      if(info.bottom !== undefined){ projData.bottom = info.bottom; }
+      if(info.top !== undefined){ projData.top = info.top; }
+      if(info.near !== undefined){ projData.near = info.near; }
+      if(info.far !== undefined){ projData.far = info.far; }
+      this.calcOrthoMat();
+    }
+    setFrustum(info = {}){
+      const projData = this.projMode.frustum;
+      if(info.left !== undefined){ projData.left = info.left; }
+      if(info.right !== undefined){ projData.right = info.right; }
+      if(info.bottom !== undefined){ projData.bottom = info.bottom; }
+      if(info.top !== undefined){ projData.top = info.top; }
+      if(info.near !== undefined){ projData.near = info.near; }
+      if(info.far !== undefined){ projData.far = info.far; }
+      this.calcFrustumMat();
+    }
+    getViewMat(){
+      return this.viewMat;
+    }
+    getProjMat(){
+      return this.projMat[this.projData.mode]; // モードごと、違う物を返す。
+    }
+    getViewData(){
+      // viewのdataであるVec3の取得
+      return {eye:this.eye, center:this.center, top:this.top};
+    }
+    getLocalAxis(){
+      // いわゆるカメラ座標系の3軸を取得
+      return {side:this.side, up:this.up, front:this.front};
+    }
+    getProjData(mode){
+      // modeごとの射影変換に使うdataの取得。あんま使いそうにないな。
+      return this.projData[this.projData.mode];
+    }
+    // 動かすのはテストが終わってからにしましょう。
+    // 実装予定：zoom（倍率を指定して矩形を拡縮）,spin（視点を中心の周りに横に回転）,arise（同、縦回転。ただしtopは越えない。）,
+    // pan（視点を中心の横にずらす、これも回転）,tilt（同、縦方向。ただしtopは越えない）,move（一緒にローカル軸で平行移動）
+    // moveはローカル軸ベースの移動。たとえばzを増やす場合は中心とともに逆方向に遠ざかる感じ...ローカル軸は固定。
+    // とはいえ中心が動くので行列は再計算されるわね。dolly:視点を中心に近づけたり離したりする。
+    // parallel:グローバル軸に対して視点と中心のセットを平行移動させる。需要があるかどうかは不明。
+    // lookAt: 中心だけ強制的に動かす。
+    // moveはあれなんですよね。一人称で、動きを同期させたりするのに...まあ、使うんかな...
+    // って思ったけど同期させるなら直接eyeとcenterいじった方が早い気がする((
+
+  }
+
   class CameraEx{
     constructor(w, h){
       if(w === undefined){ w = window.innerWidth; }
@@ -1682,117 +1892,106 @@ const p5wgex = (function(){
   // とりあえずこんなもんかな。まあ難しいよねぇ。
   // CameraExのパラメータをベクトルで管理したいのですよね。でもp5.Vector使い勝手悪いので。自前で...
 
+  // 汎用バリデーション関数
+  // aがnumberならb,cもそうだろうということでa,b,cで確定
+  // aがArrayなら適当に長さ3の配列をあてがってa[0],a[1],a[2]で確定
+  // それ以外ならa.x,a.y,a.zを割り当てる。最終的にオブジェクトで返す。
+  // なおdefaultはaがnumberだった場合に用いられるaのデフォルト値
+  function _getValidation(a, b, c, default = 0){
+    const r = {};
+    if(a === undefined){ a = default; }
+    if(typeof(a) === "number"){
+      if(b === undefined){ b = a; }
+      if(c === undefined){ c = b; }
+      r.x = a; r.y = b; r.z = c;
+    }else if(Array.isArray(a)){
+      if(a[0] === undefined){ a[0] = default; }
+      if(a[1] === undefined){ a[1] = a[0]; }
+      if(a[2] === undefined){ a[2] = a[1]; }
+      r.x = a[0]; r.y = a[1]; r.z = a[2];
+    }
+    if(r.x === undefined){ return r; }
+    return a; // aがベクトルとかの場合ね。.x,.y,.zを持ってる。
+  }
+
   // xxとかyyとかyxyとかであれが出るのとか欲しいな～（だめ）
   class Vec3{
     constructor(x, y, z){
-      if(x === undefined){ x = 0; }
-      if(y === undefined){ y = x; }
-      if(z === undefined){ z = y; }
-      this.x = x;
-      this.y = y;
-      this.z = z;
+      const r = _getValidation(x, y, z);
+      this.x = r.x;
+      this.y = r.y;
+      this.z = r.z;
     }
     set(a, b, c){
-      if(typeof(a) === "number"){
-        // たとえばset(0)ですべて0にできるね
-        if(b === undefined){ b = a; }
-        if(c === undefined){ c = b; }
-        this.x = a;
-        this.y = b;
-        this.z = c;
-      }else{
-        // ベクトルもセットできるよ（以下、このような記述が続く）
-        this.x = a.x;
-        this.y = a.y;
-        this.z = a.z;
-      }
+      const r = _getValidation(a, b, c);
+      this.x = r.x;
+      this.y = r.y;
+      this.z = r.z;
       return this;
     }
     toArray(){
       return [this.x, this.y, this.z];
     }
     add(a, b, c){
-      if(typeof(a) === "number"){
-        if(b === undefined){ b = a; }
-        if(c === undefined){ c = b; }
-        this.x += a;
-        this.y += b;
-        this.z += c;
-      }else{
-        this.x += a.x;
-        this.y += a.y;
-        this.z += a.z;
-      }
+      const r = _getValidation(a, b, c);
+      this.x += r.x;
+      this.y += r.y;
+      this.z += r.z;
       return this;
     }
     sub(a, b, c){
-      if(typeof(a) === "number"){
-        if(b === undefined){ b = a; }
-        if(c === undefined){ c = b; }
-        this.x -= a;
-        this.y -= b;
-        this.z -= c;
-      }else{
-        this.x -= a.x;
-        this.y -= a.y;
-        this.z -= a.z;
-      }
+      const r = _getValidation(a, b, c);
+      this.x -= r.x;
+      this.y -= r.y;
+      this.z -= r.z;
       return this;
     }
     mult(a, b, c){
-      if(typeof(a) === "number"){
-        if(b === undefined){ b = a; }
-        if(c === undefined){ c = b; }
-        this.x *= a;
-        this.y *= b;
-        this.z *= c;
-      }else{
-        this.x *= a.x;
-        this.y *= a.y;
-        this.z *= a.z;
-      }
+      const r = _getValidation(a, b, c, 1); // 掛け算のデフォは1でしょう
+      this.x *= r.x;
+      this.y *= r.y;
+      this.z *= r.z;
       return this;
     }
     divide(a, b, c){
-      if(typeof(a) === "number"){
-        if(b === undefined){ b = a; }
-        if(c === undefined){ c = b; }
-        if(a === 0.0 || b === 0.0 || c === 0.0){
-          window.error("Vec3 divide: zero division error!");
-          return;
-        }
-        this.x /= a;
-        this.y /= b;
-        this.z /= c;
-      }else{
-        if(a.x == 0.0 || a.y == 0.0 || a.z == 0.0){
-          window.error("Vec3 divide: zero division error!");
-          return;
-        }
-        this.x /= a.x;
-        this.y /= a.y;
-        this.z /= a.z;
+      const r = _getValidation(a, b, c, 1); // 割り算のデフォも1でしょう
+      if(r.x === 0.0 || r.y === 0.0 || r.z === 0.0){
+        window.error("Vec3 divide: zero division error!");
+        return;
       }
+      this.x /= r.x;
+      this.y /= r.y;
+      this.z /= r.z;
       return this;
     }
     dot(v){
       return this.x * v.x + this.y * v.y + this.z * v.z;
     }
     mag(v){
+      // いわゆる大きさ。自分の二乗のルート。
       return Math.sqrt(this.dot(this));
     }
-    cross(v){
-      const {x:a, y:b, z:c} = this;
-      this.x = b * v.z - c * v.y;
-      this.y = c * v.x - a * v.z;
-      this.z = a * v.y - b * v.x;
+    dist(v){
+      // vとの距離。
+      const dx = this.x - v.x;
+      const dy = this.y - v.y;
+      const dz = this.z - v.z;
+      return Math.sqrt(dx*dx + dy*dy + dz*dz);
+    }
+    cross(a, b, c){
+      // ベクトルでなくてもいいのかなぁ。んー。まあ3成分でもOKにするか。
+      const r = _getValidation(a, b, c);
+      const {x:x0, y:y0, z:z0} = this;
+      this.x = y0 * r.z - z0 * r.y;
+      this.y = z0 * r.x - x0 * r.z;
+      this.z = x0 * r.y - y0 * r.x;
       return this;
     }
     normalize(){
       const L = this.mag();
       if(L == 0.0){
         window.error("Vec3 normalize: zero division error!");
-        return;
+        return this;
       }
       this.divide(L);
       return this;
@@ -1800,6 +1999,13 @@ const p5wgex = (function(){
     multMat(m){
       // mは3x3行列を模した長さ9の配列、成分の並びは縦。つまり0,1,2で列ベクトル1で、3,4,5で列ベクトル2で、
       // 6,7,8で列ベクトル3という、これを縦に並んだthis.x,this.y,this.zに掛け算するイメージ。です。
+      if(m === undefined){
+        // 一応未定義の時のために単位行列おいとくか
+        m = new Array(9);
+        m[0] = 1; m[1] = 0; m[2] = 0;
+        m[3] = 0; m[4] = 1; m[5] = 0;
+        m[6] = 0; m[7] = 0; m[8] = 1;
+      }
       const {x:a, y:b, z:c} = this;
       this.x = m[0] * a + m[3] * b + m[6] * c;
       this.y = m[1] * a + m[4] * b + m[7] * c;
@@ -1808,7 +2014,8 @@ const p5wgex = (function(){
     }
   }
 
-  // あとは通常の
+  // ゆくゆくはVec4とかQuarternionやりたいけど必要が生じて明確な利用方法の目途が立ってからでないと駄目ね。
+  // 別に派手なことをしたいとかね、そういう話ではないので。基礎固め。地味な話です。
 
   const ex = {};
 
