@@ -235,7 +235,7 @@ function setup(){
     cubePosition[3*i] *= 0.5;
     cubePosition[3*i+1] *= 0.5;
     cubePosition[3*i+2] *= 0.5;
-    cubePosition[3*i+2] += 0.5; // z軸上にしよ～
+    cubePosition[3*i+2] += 0.501; // z軸上にしよ～
   }
   const cubeFaces = [0,1,2,  0,2,3,  1,5,6,  1,6,2,  5,4,7,  5,7,6,  4,0,3,  4,3,7,  3,2,6,  3,6,7,  4,5,1,  4,1,0];
   const cubeNormals = ex.getNormals(cubePosition, cubeFaces);
@@ -281,7 +281,8 @@ function draw(){
     一緒でいいなら要らないけれど。おわり。それもめんどくさいのよね...どうにかするか。
   */
 
-  moveCamera(currentTime);
+  //moveCamera(currentTime);
+  controlCamera();
   _node.usePainter("light");
 
   // 射影
@@ -289,7 +290,7 @@ function draw(){
   _node.setUniform("uProjectionMatrix", projMat);
 
   // ライティングユニフォーム
-  const {top} = cam.getViewData();
+  const {top} = cam.getViewData(); // 見る方向から光を当てたいならこうする
   _node.setUniform("uAmbientColor", [0.25, 0.5, 0.25]);
   _node.setUniform("uUseDirectionalLight", true);
   _node.setUniform("uLightingDirection", [-top.x, -top.y, -top.z]);
@@ -345,6 +346,13 @@ function moveCamera(currentTime){
   cam.setPerspective({near:0.1, far:10});
 }
 
-function zoomCamera(){
-  // カメラをzoomさせる。マウス位置でテスト。
+function controlCamera(){
+  // カメラをコントロール。
+  // 上下キーでズーム、左右キーでスライド、Wキーで上昇、Sキーで下降。できたね！！
+  if(keyIsDown(UP_ARROW)){ cam.zoom(0.1); }
+  if(keyIsDown(DOWN_ARROW)){ cam.zoom(-0.1); }
+  if(keyIsDown(RIGHT_ARROW)){ cam.slide(0.03); }
+  if(keyIsDown(LEFT_ARROW)){ cam.slide(-0.03); }
+  if(keyIsDown(87)){ cam.arise(0.031); }
+  if(keyIsDown(83)){ cam.arise(-0.031); }
 }

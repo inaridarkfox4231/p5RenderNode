@@ -309,7 +309,7 @@ function registMesh1(){
     const n = getNormal(f0, f1, f2);
     // ついでに頂点も
     //console.log("vec3 n" + i + " = vec3(" + (n.x).toFixed(4) + ", " + (n.y).toFixed(4) + ", " + (n.z).toFixed(4) + ");" );
-    console.log("vec3 g" + i + " = vec3(" + vData[3*f0].toFixed(4) + ", " + vData[3*f0+1].toFixed(4) + ", " + vData[3*f0+2].toFixed(4) + ");" );
+    //console.log("vec3 g" + i + " = vec3(" + vData[3*f0].toFixed(4) + ", " + vData[3*f0+1].toFixed(4) + ", " + vData[3*f0+2].toFixed(4) + ");" );
     newVData.push(vData[3*f0], vData[3*f0+1], vData[3*f0+2],
                   vData[3*f1], vData[3*f1+1], vData[3*f1+2],
                   vData[3*f2], vData[3*f2+1], vData[3*f2+2]);

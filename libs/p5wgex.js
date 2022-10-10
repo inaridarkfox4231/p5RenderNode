@@ -709,6 +709,16 @@ const p5wgex = (function(){
   // それぞれk番目のnormalsに加える
   // 終わったらnormalsをすべて正規化
   // あとは成分ごとにばらして終了
+
+  // あーなるほど...p5.jsのベクトル使ってるのね...
+  // 確かに、これVec3で書き換えたいわね。
+  // よく見るとこれ、Vec3なら一切createVector要らんな...全く必要ないわ。
+  // まあ新しいベクトル一切作らなくていいことがパフォーマンスにどう影響するかって言ったら
+  // 微々たるもんだろうけど。でも、しないにこしたことはないわよね。
+  // んー。でもそのためには...
+  // そうね。追加でverticesのベクトルをセットするVec3が3つ、要るかもだね。
+  // 最後のとこはcreateVector...本家でもaddって普通に足せるらしい...そうなんだ...
+  // まあそれでも実装するけど。
   function getNormals(vertices, indices){
     let normals = [];
     for(let i = 0; i < Math.floor(vertices.length / 3); i++){
@@ -1335,6 +1345,9 @@ const p5wgex = (function(){
   // eyeとcenterの距離は常に保持するようにしたうえで、それとの比率でnearとfarを決める感じで。
   // near/farは射影の計算で使うからそのときに距離Rに掛け算してやればいい。
   // だいたい常に同じスケールで議論するとは限らないのに定数で制御するのおかしいでしょうよ。
+
+  // infoで初期化時に指定できるようにしよっかな
+  // upX,upY,upZなんだけど定義時に正規化してくれると嬉しい...
   class CameraEx{
     constructor(w, h){
       if(w === undefined){ w = window.innerWidth; }
@@ -1343,18 +1356,29 @@ const p5wgex = (function(){
       this.projMat = new Mat4();
       this.initialize(w, h);
     }
-    initialize(w, h){
+    initialize(w, h, info = {}){
       this.projType = "perse";
       // デフォルトはこんな感じで。カメラの位置は真上、パースで、原点注視。
-      this.fov = Math.PI/3;
-      this.aspect = w/h;
-      this.eyeX = 0;
-      this.eyeY = 0;
-      this.eyeZ = (h/2)/Math.tan(this.fov/2);
-      this.centerX = 0;
-      this.centerY = 0;
-      this.centerZ = 0;
+      if(info.fov !== undefined){ this.fov = info.fov; }else{ this.fov = Math.PI/3; }
+      if(info.aspect !== undefined){ this.aspect = info.aspect; }else{ this.aspect = w/h; }
+      if(info.eye !== undefined){
+        this.eyeX = info.eye.x; this.eyeY = info.eye.y; this.eyeZ = info.eye.z;
+      }else{
+        this.eyeX = 0; this.eyeY = 0; this.eyeZ = (h/2)/Math.tan(this.fov/2);
+      }
+      if(info.center !== undefined){
+        this.centerX = info.center.x; this.centerY = info.center.y; this.centerZ = info.center.z;
+      }else{
+        this.centerX = 0; this.centerY = 0; this.centerZ = 0;
+      }
+
       this.distance = (h/2)/Math.tan(this.fov/2); // 視点と中心との距離で、視点や中心をいじるたびに更新する。
+
+      // デフォルトupベクトル。これはローカル軸のupとは別の概念で、これに基づいてカメラを上下させた場合の
+      // 限界が決まるようになっているのだ。
+      if(info.up !== undefined){
+
+      }
       this.upX = 0;
       this.upY = 1;
       this.upZ = 0;
@@ -1418,7 +1442,8 @@ const p5wgex = (function(){
       z0 /= zLen;
       z1 /= zLen;
       z2 /= zLen;
-      // upベクトルとtopベクトルで外積を取って正規化するとsideベクトルが出来る。新しいx軸になる。
+      // upデフォルトベクトルはこの処理で変化しないので注意
+      // upデフォルトベクトルとtopベクトルで外積を取って正規化するとsideベクトルが出来る。新しいx軸になる。
       let x0 = this.upY * z2 - this.upZ * z1;
       let x1 = this.upZ * z0 - this.upX * z2;
       let x2 = this.upX * z1 - this.upY * z0;
@@ -1463,7 +1488,7 @@ const p5wgex = (function(){
       delta *= sensitivity;
       // やっぱzoomなのでdeltaが正の時近づくようにするか～
       // ベクトル(z0,z1,z2)はtopで外向き方向。
-      const top = this.getViewData();
+      const {top} = this.getViewData();
       //let z0 = this.eyeX - this.centerX;
       //let z1 = this.eyeY - this.centerY;
       //let z2 = this.eyeZ - this.centerZ;
@@ -1660,9 +1685,31 @@ const p5wgex = (function(){
   // xxとかyyとかyxyとかであれが出るのとか欲しいな～（だめ）
   class Vec3{
     constructor(x, y, z){
+      if(x === undefined){ x = 0; }
+      if(y === undefined){ y = x; }
+      if(z === undefined){ z = y; }
       this.x = x;
       this.y = y;
       this.z = z;
+    }
+    set(a, b, c){
+      if(typeof(a) === "number"){
+        // たとえばset(0)ですべて0にできるね
+        if(b === undefined){ b = a; }
+        if(c === undefined){ c = b; }
+        this.x = a;
+        this.y = b;
+        this.z = c;
+      }else{
+        // ベクトルもセットできるよ（以下、このような記述が続く）
+        this.x = a.x;
+        this.y = a.y;
+        this.z = a.z;
+      }
+      return this;
+    }
+    toArray(){
+      return [this.x, this.y, this.z];
     }
     add(a, b, c){
       if(typeof(a) === "number"){
@@ -1676,6 +1723,7 @@ const p5wgex = (function(){
         this.y += a.y;
         this.z += a.z;
       }
+      return this;
     }
     sub(a, b, c){
       if(typeof(a) === "number"){
@@ -1689,6 +1737,7 @@ const p5wgex = (function(){
         this.y -= a.y;
         this.z -= a.z;
       }
+      return this;
     }
     mult(a, b, c){
       if(typeof(a) === "number"){
@@ -1702,6 +1751,7 @@ const p5wgex = (function(){
         this.y *= a.y;
         this.z *= a.z;
       }
+      return this;
     }
     divide(a, b, c){
       if(typeof(a) === "number"){
@@ -1723,11 +1773,12 @@ const p5wgex = (function(){
         this.y /= a.y;
         this.z /= a.z;
       }
+      return this;
     }
     dot(v){
       return this.x * v.x + this.y * v.y + this.z * v.z;
     }
-    length(v){
+    mag(v){
       return Math.sqrt(this.dot(this));
     }
     cross(v){
@@ -1735,14 +1786,16 @@ const p5wgex = (function(){
       this.x = b * v.z - c * v.y;
       this.y = c * v.x - a * v.z;
       this.z = a * v.y - b * v.x;
+      return this;
     }
     normalize(){
-      const L = this.length();
+      const L = this.mag();
       if(L == 0.0){
         window.error("Vec3 normalize: zero division error!");
         return;
       }
       this.divide(L);
+      return this;
     }
     multMat(m){
       // mは3x3行列を模した長さ9の配列、成分の並びは縦。つまり0,1,2で列ベクトル1で、3,4,5で列ベクトル2で、
@@ -1751,8 +1804,11 @@ const p5wgex = (function(){
       this.x = m[0] * a + m[3] * b + m[6] * c;
       this.y = m[1] * a + m[4] * b + m[7] * c;
       this.z = m[2] * a + m[5] * b + m[8] * c;
+      return this;
     }
   }
+
+  // あとは通常の
 
   const ex = {};
 
