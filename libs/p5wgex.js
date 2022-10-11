@@ -1644,6 +1644,40 @@ const p5wgex = (function(){
     tilt(delta, sensitivity = 1){
       // eyeからcenterに向かうベクトルを上に振る。t<0の場合は下に振る。これもtopベクトルに制限を受ける。
       // centerを答えにして色々計算して最後にeyeを足して答えとする。
+      const d = this.distance;
+      const t = delta * sensitivity;
+      // 答えを作る. -frontとupでtに対して計算する。
+      this.center.set(this.front).mult(-1 * d * Math.cos(t)).addScalar(this.up, d * Math.sin(t));
+      const tm = -tripleMultiple(this.top, this.center, this.side); // ここも逆だ...
+      if(tm < d * 0.001){
+        this.side.cross(this.top); // これは逆を向いてるのであとでマイナスをつける。
+        const dotSign = (this.top.dot(this.center) > 0 ? 1 : -1); // ここはcenterで。
+        this.center.set(this.top).mult(dotSign).addScalar(this.side, -0.001).normalize().mult(d);
+      }
+      this.center.add(this.eye);
+      this.calcDistance();
+      this.calcViewMat();
+    }
+    move(a, b, c){
+      const v = _getValidation(a, b, c);
+      // で、この分だけ全体を移動する。eyeとcenterをそれぞれ...side, up, front方向に。
+      // sideは要するに画面右方向へ平行移動、upは要するに画面上、傾いてる場合、斜めの移動になる。
+      // frontはこれdollyではないよ。centerも動いてるからね。
+      // ...たとえば地形がある場合、frontではなく前方向になるように補正がかかる...？
+      // zだけマイナスを掛けてるのは正の時に奥に行く方が自然だから。
+      this.eye.addScalar(this.side, v.x).addScalar(this.up, v.y).addScalar(this.front, -v.z);
+      this.center.addScalar(this.side, v.x).addScalar(this.up, v.y).addScalar(this.front, -v.z);
+      this.calcDistance();
+      this.calcViewMat();
+    }
+    lookAt(a, b, c){
+      const v = _getValidation(a, b, c);
+      // (a,b,c)にcenterを強制移動。topは動かさない。以上。デバッグ...？
+      // centerのtop方向にeyeがきちゃうのまずいよねって話。ただ、まあ、いいか...
+      this.center.set(v);
+      this.calcDistance();
+      const d = this.distance;
+      this.calcViewMat();
     }
   }
 
@@ -1810,8 +1844,9 @@ const p5wgex = (function(){
       this.z /= r.z;
       return this;
     }
-    dot(v){
-      return this.x * v.x + this.y * v.y + this.z * v.z;
+    dot(a, b, c){
+      const r = _getValidation(a, b, c);
+      return this.x * r.x + this.y * r.y + this.z * r.z;
     }
     mag(v){
       // いわゆる大きさ。自分の二乗のルート。

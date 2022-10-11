@@ -324,7 +324,19 @@ function draw(){
 
 function drawBG(){
   bg.image(img, 0, 0);
-  bg.text("Camera test!", 5, 5);
+  bg.text("UP_ARROW: zoom in", 5, 5);
+  bg.text("DOWN_ARROW: zoom out", 5, 30);
+  bg.text("RIGHT_ARROW: spin right", 5, 55);
+  bg.text("LEFT_ARROW: spin left", 5, 80);
+  bg.text("W key: arise up, S key: arise down", 5, 105);
+  bg.text("E key: dolly in, D key: dolly out", 5, 130);
+  bg.text("Z key: pan left, C key: pan right", 5, 155);
+  bg.text("Tkey: tilt up, G key: tilt down", 5, 180);
+  bg.text("TEN 4: move left, TEN 6: move right", 5, 205);
+  bg.text("TEN 8: move up, TEN 6: move down", 5, 230);
+  bg.text("TEN 5: move in, TEN 0: move out", 5, 255);
+  bg.text("L key: look At (0, 0, 0)", 5, 280);
+
   bgTex.update();
 
   _node.use("bg", "bg")
@@ -371,4 +383,17 @@ function controlCamera(){
   if(keyIsDown(68)){ cam2.dolly(-0.05); } // Dキー
   if(keyIsDown(67)){ cam2.pan(0.03); } // Cキー
   if(keyIsDown(90)){ cam2.pan(-0.03); } // Zキー
+  if(keyIsDown(84)){ cam2.tilt(0.04); } // Tキー
+  if(keyIsDown(71)){ cam2.tilt(-0.04); } // Gキー
+  // テンキーの4,6で左と右のmoveを実装
+  if(keyIsDown(100)){ cam2.move([-0.04, 0, 0]); } // テンキー4
+  if(keyIsDown(102)){ cam2.move([0.04, 0, 0]); } // テンキー6
+  // テンキーの8,2で上と下のmoveを実装
+  if(keyIsDown(104)){ cam2.move([0, 0.04, 0]); } // テンキー8
+  if(keyIsDown(98)){ cam2.move([0, -0.04, 0]); } // テンキー2
+  // テンキーの5と0で奥と手前のmoveを実装
+  if(keyIsDown(101)){ cam2.move([0, 0, 0.04]); } // テンキー5
+  if(keyIsDown(96)){ cam2.move([0, 0, -0.04]); } // テンキー0
+  // Lキーで中心を原点に戻します。
+  if(keyIsDown(76)){ cam2.lookAt(0, 0, 0); } // Lキー
 }
