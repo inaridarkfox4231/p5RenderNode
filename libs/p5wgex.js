@@ -609,6 +609,175 @@ const p5wgex = (function(){
   // あとはp5の2D,webgl画像からテクスチャを作るのとか用意したいね.
   // 登録しておいてそこから取り出して編集とか。そうね。それでもいいかも。bgManagerの後継機みたいな。さすがにクラスにしないと...
 
+  // ----------------------------------------
+  // Vec3. normalの計算でもこれ使おう。
+
+  // とりあえずこんなもんかな。まあ難しいよねぇ。
+  // CameraExのパラメータをベクトルで管理したいのですよね。でもp5.Vector使い勝手悪いので。自前で...
+
+  // xxとかyyとかyxyとかであれが出るのとか欲しいな～（だめ）
+  class Vec3{
+    constructor(x, y, z){
+      const r = _getValidation(x, y, z);
+      this.x = r.x;
+      this.y = r.y;
+      this.z = r.z;
+    }
+    set(a, b, c){
+      const r = _getValidation(a, b, c);
+      this.x = r.x;
+      this.y = r.y;
+      this.z = r.z;
+      return this;
+    }
+    toArray(){
+      return [this.x, this.y, this.z];
+    }
+    add(a, b, c){
+      const r = _getValidation(a, b, c);
+      this.x += r.x;
+      this.y += r.y;
+      this.z += r.z;
+      return this;
+    }
+    addScalar(v, s = 1){
+      // vはベクトル限定。vのs倍を足し算する処理。なぜ用意するのか？不便だから。
+      this.x += s * v.x;
+      this.y += s * v.y;
+      this.z += s * v.z;
+      return this;
+    }
+    sub(a, b, c){
+      const r = _getValidation(a, b, c);
+      this.x -= r.x;
+      this.y -= r.y;
+      this.z -= r.z;
+      return this;
+    }
+    mult(a, b, c){
+      const r = _getValidation(a, b, c, 1); // 掛け算のデフォは1でしょう
+      this.x *= r.x;
+      this.y *= r.y;
+      this.z *= r.z;
+      return this;
+    }
+    divide(a, b, c){
+      const r = _getValidation(a, b, c, 1); // 割り算のデフォも1でしょう
+      if(r.x === 0.0 || r.y === 0.0 || r.z === 0.0){
+        window.error("Vec3 divide: zero division error!");
+        return;
+      }
+      this.x /= r.x;
+      this.y /= r.y;
+      this.z /= r.z;
+      return this;
+    }
+    dot(a, b, c){
+      const r = _getValidation(a, b, c);
+      return this.x * r.x + this.y * r.y + this.z * r.z;
+    }
+    mag(v){
+      // いわゆる大きさ。自分の二乗のルート。
+      return Math.sqrt(this.dot(this));
+    }
+    dist(v){
+      // vとの距離。
+      const dx = this.x - v.x;
+      const dy = this.y - v.y;
+      const dz = this.z - v.z;
+      return Math.sqrt(dx*dx + dy*dy + dz*dz);
+    }
+    cross(a, b, c){
+      // ベクトルでなくてもいいのかなぁ。んー。まあ3成分でもOKにするか。
+      const r = _getValidation(a, b, c);
+      const {x:x0, y:y0, z:z0} = this;
+      this.x = y0 * r.z - z0 * r.y;
+      this.y = z0 * r.x - x0 * r.z;
+      this.z = x0 * r.y - y0 * r.x;
+      return this;
+    }
+    rotate(v, theta){
+      // ベクトルvの周りにtだけ回転させる処理。vはVec3ですがx,y,z...まあ、いいか。
+      const L = v.mag();
+      const a = v.x/L;
+      const b = v.y/L;
+      const c = v.z/L;
+      const s = 1 - Math.cos(theta);
+      const t = Math.cos(theta);
+      const u = Math.sin(theta);
+      this.multMat([
+        s*a*a + t,   s*a*b + u*c, s*a*c - u*b,
+        s*a*b - u*c, s*b*b + t,   s*b*c + u*a,
+        s*a*c + u*b, s*b*c - u*a, s*c*c + t
+      ]);
+      return this;
+      // OK??
+    }
+    normalize(){
+      const L = this.mag();
+      if(L == 0.0){
+        window.error("Vec3 normalize: zero division error!");
+        return this;
+      }
+      this.divide(L);
+      return this;
+    }
+    multMat(m){
+      // mは3x3行列を模した長さ9の配列、成分の並びは縦。つまり0,1,2で列ベクトル1で、3,4,5で列ベクトル2で、
+      // 6,7,8で列ベクトル3という、これを縦に並んだthis.x,this.y,this.zに掛け算するイメージ。です。
+      if(m === undefined){
+        // 一応未定義の時のために単位行列おいとくか
+        m = new Array(9);
+        m[0] = 1; m[1] = 0; m[2] = 0;
+        m[3] = 0; m[4] = 1; m[5] = 0;
+        m[6] = 0; m[7] = 0; m[8] = 1;
+      }
+      const {x:a, y:b, z:c} = this;
+      this.x = m[0] * a + m[3] * b + m[6] * c;
+      this.y = m[1] * a + m[4] * b + m[7] * c;
+      this.z = m[2] * a + m[5] * b + m[8] * c;
+      return this;
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------- //
+  // utility for Vec3.
+
+  // 汎用バリデーション関数
+  // aがnumberならb,cもそうだろうということでa,b,cで確定
+  // aがArrayなら適当に長さ3の配列をあてがってa[0],a[1],a[2]で確定
+  // それ以外ならa.x,a.y,a.zを割り当てる。最終的にオブジェクトで返す。
+  // なお_defaultはaがnumberだった場合に用いられるaのデフォルト値
+  // ...defaultは予約語なので_を付ける必要があるわね。
+  function _getValidation(a, b, c, _default = 0){
+    const r = {};
+    if(a === undefined){ a = _default; }
+    if(typeof(a) === "number"){
+      if(b === undefined){ b = a; }
+      if(c === undefined){ c = b; }
+      r.x = a; r.y = b; r.z = c;
+    }else if(Array.isArray(a)){
+      if(a[0] === undefined){ a[0] = _default; }
+      if(a[1] === undefined){ a[1] = a[0]; }
+      if(a[2] === undefined){ a[2] = a[1]; }
+      r.x = a[0]; r.y = a[1]; r.z = a[2];
+    }
+    if(r.x !== undefined){ return r; } // あ、===と!==間違えた...
+    return a; // aがベクトルとかの場合ね。.x,.y,.zを持ってる。
+  }
+
+  // utility for Vec3.
+  function _tripleMultiple(u, v, w){
+    let result = 0;
+    result += u.x * v.y * w.z;
+    result += u.y * v.z * w.x;
+    result += u.z * v.x * w.y;
+    result -= u.y * v.x * w.z;
+    result -= u.z * v.y * w.x;
+    result -= u.x * v.z * w.y;
+    return result;
+  }
+
   // ---------------------------------------------------------------------------------------------- //
   // Painter.
 
@@ -719,44 +888,49 @@ const p5wgex = (function(){
   // そうね。追加でverticesのベクトルをセットするVec3が3つ、要るかもだね。
   // 最後のとこはcreateVector...本家でもaddって普通に足せるらしい...そうなんだ...
   // まあそれでも実装するけど。
+
+  // おそらく合ってるはず. いいや。普通に成分だけで。
   function getNormals(vertices, indices){
-    let normals = [];
-    for(let i = 0; i < Math.floor(vertices.length / 3); i++){
-      normals.push(createVector(0, 0, 0));
+    const N = Math.floor(vertices.length / 3);
+    let normals = new Array(N);
+    for(let i = 0; i < N; i++){
+      normals[i] = new Vec3(0);
     }
-    let v0 = createVector();
-    let v1 = createVector();
-    let v2 = createVector();
+    let v0 = new Vec3(0);
+    let v1 = new Vec3(0);
+    let v2 = new Vec3(0);
+    let u0 = new Vec3(0);
+    let u1 = new Vec3(0);
+    let u2 = new Vec3(0);
+    let m0, m1, m2, angle0, angle1, angle2;
     for(let i = 0; i < Math.floor(indices.length / 3); i++){
       const id = [indices[3*i], indices[3*i+1], indices[3*i+2]];
       v0.set(vertices[3*id[0]], vertices[3*id[0]+1], vertices[3*id[0]+2]);
       v1.set(vertices[3*id[1]], vertices[3*id[1]+1], vertices[3*id[1]+2]);
       v2.set(vertices[3*id[2]], vertices[3*id[2]+1], vertices[3*id[2]+2]);
-      const w0 = p5.Vector.sub(v1, v0);
-      const w1 = p5.Vector.sub(v2, v0);
-      const w2 = p5.Vector.sub(v2, v1);
-      // 今y軸を上にしました。その関係でここは元に戻すことになりました。
-      const u0 = p5.Vector.cross(w0, w1);
-      const u1 = p5.Vector.cross(w0, w2);
-      const u2 = p5.Vector.cross(w1, w2);
-      const m0 = w0.mag();
-      const m1 = w1.mag();
-      const m2 = w2.mag();
-      const sin0 = u0.mag() / (m0 * m1);
-      const sin1 = u1.mag() / (m0 * m2);
-      const sin2 = u2.mag() / (m1 * m2);
-      const angle0 = asin(sin0);
-      const angle1 = asin(sin1);
-      const angle2 = asin(sin2);
-      const n = p5.Vector.normalize(u0);
-      normals[id[0]].add(createVector(n.x*angle0, n.y*angle0, n.z*angle0));
-      normals[id[1]].add(createVector(n.x*angle1, n.y*angle1, n.z*angle1));
-      normals[id[2]].add(createVector(n.x*angle2, n.y*angle2, n.z*angle2));
+      u0.set(v1).sub(v0);
+      u1.set(v2).sub(v0);
+      u2.set(v2).sub(v1);
+      m0 = u0.mag();
+      m1 = u1.mag();
+      m2 = u2.mag();
+      v0.set(u0).cross(u1);
+      v1.set(u0).cross(u2);
+      v2.set(u1).cross(u2);
+      angle0 = Math.asin(v0.mag() / (m0 * m1));
+      angle1 = Math.asin(v1.mag() / (m0 * m2));
+      angle2 = Math.asin(v2.mag() / (m1 * m2));
+      v0.normalize();
+      normals[id[0]].addScalar(v0, angle0);
+      normals[id[1]].addScalar(v0, angle1);
+      normals[id[2]].addScalar(v0, angle2);
     }
-    let result = [];
-    for(let n of normals){
-      n.normalize();
-      result.push(...n.array());
+    let result = new Array(N*3);
+    for(let i=0; i<N; i++){
+      normals[i].normalize();
+      result[3*i] = normals[i].x;
+      result[3*i+1] = normals[i].y;
+      result[3*i+2] = normals[i].z;
     }
     return result;
   }
@@ -1396,13 +1570,13 @@ const p5wgex = (function(){
         this.projData.pers = info.pers;
       }
       if(info.ortho === undefined){
-        // farは一応distanceの2倍としておく
-        this.projData.ortho = {left:-w/2, right:w/2, bottom:-h/2, top:h/2, near:0, far:this.distance*2};
+        // farは一応distanceの4倍くらいで。
+        this.projData.ortho = {left:-w/2, right:w/2, bottom:-h/2, top:h/2, near:0, far:4};
       }else{
         this.projData.ortho = info.ortho;
       }
       if(info.frustum === undefined){
-        const h0 = Math.tan(Math.PI/6) * 0.1; // nearの値に対する比率
+        const h0 = Math.tan(Math.PI/6) * 0.1; // distanceの値に対する比率
         const w0 = h0 * w/h; // そこにaspect比を掛ける
         this.projData.frustum = {left:-w0, right:w0, bottom:-h0, top:h0, near:0.1, far:10};
       }else{
@@ -1581,8 +1755,8 @@ const p5wgex = (function(){
           this.setOrtho({left:l0*ratio, right:r0*ratio, bottom:b0*ratio, top:t0*ratio});
           break;
         case "frustum":
-          const {left:l1, right:r1, bottom:b1, top:t1} = this.projData.ortho;
-          this.setOrtho({left:l1*ratio, right:r1*ratio, bottom:b1*ratio, top:t1*ratio});
+          const {left:l1, right:r1, bottom:b1, top:t1} = this.projData.frustum;
+          this.setFrustum({left:l1*ratio, right:r1*ratio, bottom:b1*ratio, top:t1*ratio});
           break;
       }
     }
@@ -1610,7 +1784,7 @@ const p5wgex = (function(){
       // あ、そうか、sinだけだとどっちだかわからん。内積で符号取らないと。
       // つまり上でBANするならこれでいいけど下でBANする場合は-topでないと失敗するんだわ。
       // ここは答えのeyeで。
-      const tm = tripleMultiple(this.top, this.eye, this.side);
+      const tm = _tripleMultiple(this.top, this.eye, this.side);
       if(tm < d * 0.001){
         this.side.cross(this.top); // あとで再計算するのでとりあえずsideを使わせてもらう。
         // topに直交するeye方向の単位ベクトルsideを使ってちょっとずらす感じ
@@ -1648,7 +1822,7 @@ const p5wgex = (function(){
       const t = delta * sensitivity;
       // 答えを作る. -frontとupでtに対して計算する。
       this.center.set(this.front).mult(-1 * d * Math.cos(t)).addScalar(this.up, d * Math.sin(t));
-      const tm = -tripleMultiple(this.top, this.center, this.side); // ここも逆だ...
+      const tm = -_tripleMultiple(this.top, this.center, this.side); // ここも逆だ...
       if(tm < d * 0.001){
         this.side.cross(this.top); // これは逆を向いてるのであとでマイナスをつける。
         const dotSign = (this.top.dot(this.center) > 0 ? 1 : -1); // ここはcenterで。
@@ -1757,172 +1931,6 @@ const p5wgex = (function(){
   // TransformExとCameraExを用意 → モデルとビューでモデルビュー作って法線も作って
   // プロジェも作ってモデルビューとプロジェと法線を送り込んで計算。
   // 現時点でTransformExの便利な書き方がないので困ったね～...（後回し）
-
-  // ----------------------------------------
-  // vec3.
-
-  // とりあえずこんなもんかな。まあ難しいよねぇ。
-  // CameraExのパラメータをベクトルで管理したいのですよね。でもp5.Vector使い勝手悪いので。自前で...
-
-  // 汎用バリデーション関数
-  // aがnumberならb,cもそうだろうということでa,b,cで確定
-  // aがArrayなら適当に長さ3の配列をあてがってa[0],a[1],a[2]で確定
-  // それ以外ならa.x,a.y,a.zを割り当てる。最終的にオブジェクトで返す。
-  // なお_defaultはaがnumberだった場合に用いられるaのデフォルト値
-  // ...defaultは予約語なので_を付ける必要があるわね。
-  function _getValidation(a, b, c, _default = 0){
-    const r = {};
-    if(a === undefined){ a = _default; }
-    if(typeof(a) === "number"){
-      if(b === undefined){ b = a; }
-      if(c === undefined){ c = b; }
-      r.x = a; r.y = b; r.z = c;
-    }else if(Array.isArray(a)){
-      if(a[0] === undefined){ a[0] = _default; }
-      if(a[1] === undefined){ a[1] = a[0]; }
-      if(a[2] === undefined){ a[2] = a[1]; }
-      r.x = a[0]; r.y = a[1]; r.z = a[2];
-    }
-    if(r.x !== undefined){ return r; } // あ、===と!==間違えた...
-    return a; // aがベクトルとかの場合ね。.x,.y,.zを持ってる。
-  }
-
-  // xxとかyyとかyxyとかであれが出るのとか欲しいな～（だめ）
-  class Vec3{
-    constructor(x, y, z){
-      const r = _getValidation(x, y, z);
-      this.x = r.x;
-      this.y = r.y;
-      this.z = r.z;
-    }
-    set(a, b, c){
-      const r = _getValidation(a, b, c);
-      this.x = r.x;
-      this.y = r.y;
-      this.z = r.z;
-      return this;
-    }
-    toArray(){
-      return [this.x, this.y, this.z];
-    }
-    add(a, b, c){
-      const r = _getValidation(a, b, c);
-      this.x += r.x;
-      this.y += r.y;
-      this.z += r.z;
-      return this;
-    }
-    addScalar(v, s = 1){
-      // vはベクトル限定。vのs倍を足し算する処理。なぜ用意するのか？不便だから。
-      this.x += s * v.x;
-      this.y += s * v.y;
-      this.z += s * v.z;
-      return this;
-    }
-    sub(a, b, c){
-      const r = _getValidation(a, b, c);
-      this.x -= r.x;
-      this.y -= r.y;
-      this.z -= r.z;
-      return this;
-    }
-    mult(a, b, c){
-      const r = _getValidation(a, b, c, 1); // 掛け算のデフォは1でしょう
-      this.x *= r.x;
-      this.y *= r.y;
-      this.z *= r.z;
-      return this;
-    }
-    divide(a, b, c){
-      const r = _getValidation(a, b, c, 1); // 割り算のデフォも1でしょう
-      if(r.x === 0.0 || r.y === 0.0 || r.z === 0.0){
-        window.error("Vec3 divide: zero division error!");
-        return;
-      }
-      this.x /= r.x;
-      this.y /= r.y;
-      this.z /= r.z;
-      return this;
-    }
-    dot(a, b, c){
-      const r = _getValidation(a, b, c);
-      return this.x * r.x + this.y * r.y + this.z * r.z;
-    }
-    mag(v){
-      // いわゆる大きさ。自分の二乗のルート。
-      return Math.sqrt(this.dot(this));
-    }
-    dist(v){
-      // vとの距離。
-      const dx = this.x - v.x;
-      const dy = this.y - v.y;
-      const dz = this.z - v.z;
-      return Math.sqrt(dx*dx + dy*dy + dz*dz);
-    }
-    cross(a, b, c){
-      // ベクトルでなくてもいいのかなぁ。んー。まあ3成分でもOKにするか。
-      const r = _getValidation(a, b, c);
-      const {x:x0, y:y0, z:z0} = this;
-      this.x = y0 * r.z - z0 * r.y;
-      this.y = z0 * r.x - x0 * r.z;
-      this.z = x0 * r.y - y0 * r.x;
-      return this;
-    }
-    rotate(v, theta){
-      // ベクトルvの周りにtだけ回転させる処理。vはVec3ですがx,y,z...まあ、いいか。
-      const L = v.mag();
-      const a = v.x/L;
-      const b = v.y/L;
-      const c = v.z/L;
-      const s = 1 - Math.cos(theta);
-      const t = Math.cos(theta);
-      const u = Math.sin(theta);
-      this.multMat([
-        s*a*a + t,   s*a*b + u*c, s*a*c - u*b,
-        s*a*b - u*c, s*b*b + t,   s*b*c + u*a,
-        s*a*c + u*b, s*b*c - u*a, s*c*c + t
-      ]);
-      return this;
-      // OK??
-    }
-    normalize(){
-      const L = this.mag();
-      if(L == 0.0){
-        window.error("Vec3 normalize: zero division error!");
-        return this;
-      }
-      this.divide(L);
-      return this;
-    }
-    multMat(m){
-      // mは3x3行列を模した長さ9の配列、成分の並びは縦。つまり0,1,2で列ベクトル1で、3,4,5で列ベクトル2で、
-      // 6,7,8で列ベクトル3という、これを縦に並んだthis.x,this.y,this.zに掛け算するイメージ。です。
-      if(m === undefined){
-        // 一応未定義の時のために単位行列おいとくか
-        m = new Array(9);
-        m[0] = 1; m[1] = 0; m[2] = 0;
-        m[3] = 0; m[4] = 1; m[5] = 0;
-        m[6] = 0; m[7] = 0; m[8] = 1;
-      }
-      const {x:a, y:b, z:c} = this;
-      this.x = m[0] * a + m[3] * b + m[6] * c;
-      this.y = m[1] * a + m[4] * b + m[7] * c;
-      this.z = m[2] * a + m[5] * b + m[8] * c;
-      return this;
-    }
-  }
-
-  // utility for Vec3.
-  function tripleMultiple(u, v, w){
-    let result = 0;
-    result += u.x * v.y * w.z;
-    result += u.y * v.z * w.x;
-    result += u.z * v.x * w.y;
-    result -= u.y * v.x * w.z;
-    result -= u.z * v.y * w.x;
-    result -= u.x * v.z * w.y;
-    return result;
-  }
 
   // ゆくゆくはVec4とかQuarternionやりたいけど必要が生じて明確な利用方法の目途が立ってからでないと駄目ね。
   // 別に派手なことをしたいとかね、そういう話ではないので。基礎固め。地味な話です。

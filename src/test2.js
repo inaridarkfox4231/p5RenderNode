@@ -209,7 +209,7 @@ function setup(){
   _node.enable("cull_face");
 
   //cam.setOrtho({near:0, far:1000}); // きちんと例作らないと...
-  cam2.setProjMode("frustum");
+  //cam2.setProjMode("frustum");
 }
 
 // やること

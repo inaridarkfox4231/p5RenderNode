@@ -202,9 +202,12 @@ function setup(){
   _timer.set("currentTime");
   _node = new ex.RenderNode(this._renderer.GL);
   tf = new ex.TransformEx();
-  //cam = new ex.CameraEx(width, height);
-  const r = Math.sqrt(3);
-  cam2 = new ex.CameraEx2({w:width, h:height, top:[0, 0, 1], eye:[r, 0, r*0.5]});
+  const r = Math.sqrt(3)*3; // デフォルトのカメラとの距離
+  // orthoは今回世界が小さいのでそれに合わせる形で。
+  cam2 = new ex.CameraEx2({
+    w:10, h:8, top:[0, 0, 1], eye:[r, 0, r*0.5],
+    proj:{near:0.1, far:10}, ortho:{left:-5, right:5, bottom:-4, top:4, near:0, far:4}
+  });
 
   // bg.
   bg = createGraphics(width, height);
@@ -260,9 +263,6 @@ function setup(){
 
   // 真っ黒クリア。カリングは無しで。
   _node.clearColor(0, 0, 0, 1);
-
-  // 最初の一手
-  moveCamera(0);
 }
 
 function draw(){
@@ -289,18 +289,15 @@ function draw(){
     一緒でいいなら要らないけれど。おわり。それもめんどくさいのよね...どうにかするか。
   */
 
-  //moveCamera(currentTime);
   controlCamera();
   _node.usePainter("light");
 
   // 射影
-  //const projMat = cam.getProjMat().m;
   const projMat = cam2.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
 
   // ライティングユニフォーム
-  //const {top} = cam.getViewData(); // 見る方向から光を当てたいならこうする
-  const {front} = cam2.getLocalAxes();
+  const {front} = cam2.getLocalAxes(); // frontから視線方向に光を当てる。
   _node.setUniform("uAmbientColor", [0.25, 0.5, 0.25]);
   _node.setUniform("uUseDirectionalLight", true);
   _node.setUniform("uLightingDirection", [-front.x, -front.y, -front.z]);
@@ -336,6 +333,9 @@ function drawBG(){
   bg.text("TEN 8: move up, TEN 6: move down", 5, 230);
   bg.text("TEN 5: move in, TEN 0: move out", 5, 255);
   bg.text("L key: look At (0, 0, 0)", 5, 280);
+  bg.text("P key: perspective", 5, 305);
+  bg.text("O key: ortho", 5, 330);
+  bg.text("F key: frustum", 5, 355);
 
   bgTex.update();
 
@@ -348,26 +348,12 @@ function drawBG(){
 // 行列関連はまとめとこうか
 function setModelView(){
   const modelMat = tf.getModelMat().m;
-  //const viewMat = cam.getViewMat().m;
   const viewMat = cam2.getViewMat().m;
   const modelViewMat = ex.getMult4x4(modelMat, viewMat);
   const normalMat = ex.getNormalMat(modelViewMat);
   _node.setUniform("uViewMatrix", viewMat);
   _node.setUniform("uModelViewMatrix", modelViewMat);
   _node.setUniform("uNormalMatrix", normalMat);
-}
-
-// カメラ. 対象物の周囲を周回するイメージ。
-// nearとfarおかしくなかったです。背景...
-function moveCamera(currentTime){
-  const r = Math.sqrt(3)*3; // カメラと中心との距離
-  const phi = Math.PI*2 * currentTime * 0.2; // 周回
-  const _x = r * cos(phi);
-  const _y = r * sin(phi);
-  const _z = r * 0.5;
-  cam2.setView({eye:[_x, _y, _z]});
-  //cam.setView({eye:{x:_x, y:_y, z:_z}, up:{x:0, y:0, z:1}});
-  //cam.setPerspective({near:0.1, far:10});
 }
 
 function controlCamera(){
@@ -396,4 +382,8 @@ function controlCamera(){
   if(keyIsDown(96)){ cam2.move([0, 0, -0.04]); } // テンキー0
   // Lキーで中心を原点に戻します。
   if(keyIsDown(76)){ cam2.lookAt(0, 0, 0); } // Lキー
+  // 射影モードの切り替え
+  if(keyIsDown(80)){ cam2.setPers(); }   // Pキー
+  if(keyIsDown(79)){ cam2.setOrtho(); }  // Oキー
+  if(keyIsDown(70)){ cam2.setFrustum(); } // Fキー
 }
