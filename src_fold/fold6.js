@@ -29,6 +29,7 @@ const ex = p5wgex; // alias.
 let _node; // RenderNode.
 
 let tf, cam;
+let cam2;
 // 手動で動かすのでタイマーは無しで。とりあえずズームとスライド。余裕があったらアライズ、
 // あとヨーイングローリングピッチング（おいおいおいおーーーい）
 let _timer = new ex.Timer();
@@ -201,7 +202,9 @@ function setup(){
   _timer.set("currentTime");
   _node = new ex.RenderNode(this._renderer.GL);
   tf = new ex.TransformEx();
-  cam = new ex.CameraEx(width, height);
+  //cam = new ex.CameraEx(width, height);
+  const r = Math.sqrt(3);
+  cam2 = new ex.CameraEx2({w:width, h:height, top:[0, 0, 1], eye:[r, 0, r*0.5]});
 
   // bg.
   bg = createGraphics(width, height);
@@ -291,14 +294,16 @@ function draw(){
   _node.usePainter("light");
 
   // 射影
-  const projMat = cam.getProjMat().m;
+  //const projMat = cam.getProjMat().m;
+  const projMat = cam2.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
 
   // ライティングユニフォーム
-  const {top} = cam.getViewData(); // 見る方向から光を当てたいならこうする
+  //const {top} = cam.getViewData(); // 見る方向から光を当てたいならこうする
+  const {front} = cam2.getLocalAxes();
   _node.setUniform("uAmbientColor", [0.25, 0.5, 0.25]);
   _node.setUniform("uUseDirectionalLight", true);
-  _node.setUniform("uLightingDirection", [-top.x, -top.y, -top.z]);
+  _node.setUniform("uLightingDirection", [-front.x, -front.y, -front.z]);
   _node.setUniform("uDirectionalDiffuseColor", [1, 1, 1]);
 
   // 彩色方法指定（頂点色）
@@ -331,7 +336,8 @@ function drawBG(){
 // 行列関連はまとめとこうか
 function setModelView(){
   const modelMat = tf.getModelMat().m;
-  const viewMat = cam.getViewMat().m;
+  //const viewMat = cam.getViewMat().m;
+  const viewMat = cam2.getViewMat().m;
   const modelViewMat = ex.getMult4x4(modelMat, viewMat);
   const normalMat = ex.getNormalMat(modelViewMat);
   _node.setUniform("uViewMatrix", viewMat);
@@ -347,17 +353,18 @@ function moveCamera(currentTime){
   const _x = r * cos(phi);
   const _y = r * sin(phi);
   const _z = r * 0.5;
-  cam.setView({eye:{x:_x, y:_y, z:_z}, up:{x:0, y:0, z:1}});
-  cam.setPerspective({near:0.1, far:10});
+  cam2.setView({eye:[_x, _y, _z]});
+  //cam.setView({eye:{x:_x, y:_y, z:_z}, up:{x:0, y:0, z:1}});
+  //cam.setPerspective({near:0.1, far:10});
 }
 
 function controlCamera(){
   // カメラをコントロール。
   // 上下キーでズーム、左右キーでスライド、Wキーで上昇、Sキーで下降。できたね！！
-  if(keyIsDown(UP_ARROW)){ cam.zoom(0.1); }
-  if(keyIsDown(DOWN_ARROW)){ cam.zoom(-0.1); }
-  if(keyIsDown(RIGHT_ARROW)){ cam.slide(0.03); }
-  if(keyIsDown(LEFT_ARROW)){ cam.slide(-0.03); }
-  if(keyIsDown(87)){ cam.arise(0.031); }
-  if(keyIsDown(83)){ cam.arise(-0.031); }
+  if(keyIsDown(UP_ARROW)){ cam2.zoom(0.02); }
+  if(keyIsDown(DOWN_ARROW)){ cam2.zoom(-0.02); }
+  if(keyIsDown(RIGHT_ARROW)){ cam2.spin(0.03); }
+  if(keyIsDown(LEFT_ARROW)){ cam2.spin(-0.03); }
+  if(keyIsDown(87)){ cam2.arise(0.04); }
+  if(keyIsDown(83)){ cam2.arise(-0.04); }
 }

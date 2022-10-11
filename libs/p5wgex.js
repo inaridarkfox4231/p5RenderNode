@@ -1380,9 +1380,11 @@ const p5wgex = (function(){
       // distanceの計算
       this.calcDistance();
       // topは基本y軸正の方向。
-      if(info.top === undefined){ this.top.set(0, 1, 0); }else{ this.top.set(info.top); }
-      // topは正規化したいのよね
-      this.top.normalize();
+      if(info.top === undefined){
+        this.top.set(0, 1, 0);
+      }else{
+        this.top.set(info.top).normalize(); /* topは正規化しておく */
+      }
       // ここでviewMatを構成すると同時にside,up,frontを決定する。これらはカメラのローカル軸x,y,zを与えるもの。
       // topとは概念が異なる。これらはtopに常に制約を受ける。具体的にはtopを越えることが許されない（ゆえに「top」）.
       this.calcViewMat();
@@ -1400,9 +1402,8 @@ const p5wgex = (function(){
         this.projData.ortho = info.ortho;
       }
       if(info.frustum === undefined){
-        const n = this.distance * 0.1;
-        const h0 = Math.tan(Math.PI/6) * n;
-        const w0 = h0 * w/h;
+        const h0 = Math.tan(Math.PI/6) * 0.1; // nearの値に対する比率
+        const w0 = h0 * w/h; // そこにaspect比を掛ける
         this.projData.frustum = {left:-w0, right:w0, bottom:-h0, top:h0, near:0.1, far:10};
       }else{
         this.projData.frustum = info.frustum;
@@ -1477,9 +1478,10 @@ const p5wgex = (function(){
       // そこにおけるleft~right,bottom~topの領域を切り取る。その4隅にeyeから稜線を伸ばすことでfrustumを形成し
       // そこに落とす。persと違って矩形の重心がeyeからcenterへ向かう半直線と交わるとは限らないところと、
       // 通常のカメラのように切り取る範囲を設定できるところが特徴です。
+      // 2022/10/11: near, far, left, right, bottom, topすべてdistanceとの比になったのでそこら辺仕様変更。
       const {left, right, bottom, top, near, far} = this.projData.frustum;
-      const c0 = 2 * this.distance * near / (right - left);
-      const c5 = 2 * this.distance * near / (top - bottom);
+      const c0 = 2 * near / (right - left);
+      const c5 = 2 * near / (top - bottom);
       const c8 = (right + left) / (right - left);
       const c9 = (top + bottom) / (top - bottom);
       const c10 = -(far + near) / (far - near);
@@ -1498,28 +1500,18 @@ const p5wgex = (function(){
       this.calcDistance();
       this.calcViewMat();
     }
-    setProjMode(mode){
-      // "pers", "ortho", "frustum".
-      // getProjMatでどんなMat4をいただくのか決める
-      if(this.projData[mode] === undefined){
-        window.error("setProjMode failure: invalid mode name.");
-        return;
-      }
-      this.projData.mode = mode;
-      // 距離に応じた更新ができていない可能性があるので射影行列を更新
-      this.calcProjMat();
-    }
-    setPerse(info = {}){
+    setPers(info = {}){
       // fov, aspect, near, farの指定。nearとfarはview関係ないので切り離すべきなのです。
-      const projData = this.projMode.pers;
+      const projData = this.projData.pers;
       if(info.fov !== undefined){ projData.fov = info.fov; }
       if(info.aspect !== undefined){ projData.aspect = info.aspect; }
       if(info.near !== undefined){ projData.near = info.near; }
       if(info.far !== undefined){ projData.far = info.far; }
       this.calcPersMat();
+      this.projData.mode = "pers"; // 自動的にpersになる
     }
     setOrtho(info = {}){
-      const projData = this.projMode.ortho;
+      const projData = this.projData.ortho;
       if(info.left !== undefined){ projData.left = info.left; }
       if(info.right !== undefined){ projData.right = info.right; }
       if(info.bottom !== undefined){ projData.bottom = info.bottom; }
@@ -1527,21 +1519,36 @@ const p5wgex = (function(){
       if(info.near !== undefined){ projData.near = info.near; }
       if(info.far !== undefined){ projData.far = info.far; }
       this.calcOrthoMat();
+      this.projData.mode = "ortho"; // 自動的にorthoになる
     }
     setFrustum(info = {}){
-      const projData = this.projMode.frustum;
+      const projData = this.projData.frustum;
+      const prevNear = projData.near; // 変更前のnearの値を記憶しておく
       if(info.left !== undefined){ projData.left = info.left; }
       if(info.right !== undefined){ projData.right = info.right; }
       if(info.bottom !== undefined){ projData.bottom = info.bottom; }
       if(info.top !== undefined){ projData.top = info.top; }
       if(info.near !== undefined){ projData.near = info.near; }
+      // もしnearが変更され、かつleft,right,bottom,topの変更が無い場合、
+      // これらをnearの値に応じて見た目が変わらないように変化させる（具体的にはnear/prevNearを掛ける）
+      if(info.near !== undefined && info.left === undefined && info.right === undefined && info.bottom === undefined && info.top === undefined){
+        const ratio = info.near / prevNear;
+        projData.left *= ratio;
+        projData.right *= ratio;
+        projData.bottom *= ratio;
+        projData.top *= ratio;
+      }
+      // farは関係ない。
       if(info.far !== undefined){ projData.far = info.far; }
       this.calcFrustumMat();
+      this.projData.mode = "frustum"; // 自動的にfrustumになる
     }
     getViewMat(){
+      // ビュー行列の取得
       return this.viewMat;
     }
     getProjMat(){
+      // 射影行列の取得
       return this.projMat[this.projData.mode]; // モードごと、違う物を返す。
     }
     getViewData(){
@@ -1553,8 +1560,64 @@ const p5wgex = (function(){
       return {side:this.side, up:this.up, front:this.front};
     }
     getProjData(mode){
-      // modeごとの射影変換に使うdataの取得。あんま使いそうにないな。
+      // modeごとの射影変換に使うdataの取得。あんま使いそうにないな。fovとaspectをレイマ用に...とかで使いそう。
+      // レイマでもorthoとかpointLight普通に使えるから色々試してみたいわね
       return this.projData[this.projData.mode];
+    }
+    zoom(delta, sensitivity = 1){
+      // すべての場合に矩形のサイズを(1+delta)倍する。だからdeltaが正なら大きくなるし逆なら小さくなる。
+      if(delta < -1){ return; }
+      // ここでマイナスにしないと...あの、視界を大きくするにはfovを小さく絞る、ので、逆なんですね。
+      const ratio = (1 - delta) * sensitivity;
+      switch(this.projData.mode){
+        case "pers":
+          // fovから1の距離のところの矩形の縦の長さの半分を出して倍率を掛けてから引き戻す。
+          const {fov} = this.projData.pers;
+          const _scale = Math.tan(fov/2) * ratio;
+          this.setPers({fov:Math.atan(_scale) * 2.0});
+          break;
+        case "ortho":
+          const {left:l0, right:r0, bottom:b0, top:t0} = this.projData.ortho;
+          this.setOrtho({left:l0*ratio, right:r0*ratio, bottom:b0*ratio, top:t0*ratio});
+          break;
+        case "frustum":
+          const {left:l1, right:r1, bottom:b1, top:t1} = this.projData.ortho;
+          this.setOrtho({left:l1*ratio, right:r1*ratio, bottom:b1*ratio, top:t1*ratio});
+          break;
+      }
+    }
+    spin(delta, sensitivity = 1){
+      // 視点を中心の周りに反時計回りに回転させる。角度。
+      // 計算がめんどくさいね...で、camの方は間違ってた、か...centerからeyeに向かうベクトルをtopの周りに回転させるのだ。
+      // あれ使うか。
+      const d = this.distance;
+      const t = delta * sensitivity;
+      this.eye.rotate(this.top, t);
+      this.calcDistance();
+      this.calcViewMat();
+    }
+    arise(delta, sensitivity = 1){
+      // 視点を中心の周りに上昇させる。ただしtopベクトルを超えないようにする。角度。frontとupでeyeを再計算。ただし、
+      const d = this.distance;
+      const t = delta * sensitivity;
+      this.eye.set(this.center).addScalar(this.front, d * Math.cos(t)).addScalar(this.up, d * Math.sin(t));
+      // このベクトル三重積でなす角thetaに対するd*sin(theta)が出るのでそれとd*0.001を比べて...
+      // sin(0.001)～0.001.
+      // あ、そうか、sinだけだとどっちだかわからん。内積で符号取らないと。
+      // つまり上でBANするならこれでいいけど下でBANする場合は-topでないと失敗するんだわ。
+      const tm = tripleMultiple(this.top, this.eye, this.side);
+      if(tm < d * 0.001){
+        console.log(tm);
+        this.side.cross(this.top); // あとで再計算するのでとりあえずsideを使わせてもらう。
+        // topに直交するeye方向の単位ベクトルsideを使ってちょっとずらす感じ
+        // 位置ベクトルを足してからcenterだけ移動。dotSignでどっち側か調べないと駄目。
+        const dotSign = (this.top.dot(this.eye) > 0 ? 1 : -1);
+        console.log(dotSign);
+        this.eye.set(this.top).mult(dotSign).addScalar(this.side, 0.001).normalize().mult(d).add(this.center);
+      }
+      // 大丈夫なんかな。またデバッグしよう。
+      this.calcDistance();
+      this.calcViewMat();
     }
   }
 
@@ -1724,12 +1787,12 @@ const p5wgex = (function(){
       // deltaが正の時、中心に対して反時計回りに横移動する。eyeしか動かさない。deltaは角度。ラジアン。
       const {side, top} = this.getViewData();
       // center + top*Rcos(delta) + side*Rsin(delta) でeyeを上書きするだけ。
-      /*
-      let z0 = this.eyeX - this.centerX;
-      let z1 = this.eyeY - this.centerY;
-      let z2 = this.eyeZ - this.centerZ;
-      const zLen = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
-      */
+
+      //let z0 = this.eyeX - this.centerX;
+      //let z1 = this.eyeY - this.centerY;
+      //let z2 = this.eyeZ - this.centerZ;
+      //const zLen = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
+
       const _z = this.distance * Math.cos(delta);
       const _x = this.distance * Math.sin(delta);
       this.eyeX = this.centerX + _z * top.x + _x * side.x;
@@ -1942,6 +2005,13 @@ const p5wgex = (function(){
       this.z += r.z;
       return this;
     }
+    addScalar(v, s = 1){
+      // vはベクトル限定。vのs倍を足し算する処理。なぜ用意するのか？不便だから。
+      this.x += s * v.x;
+      this.y += s * v.y;
+      this.z += s * v.z;
+      return this;
+    }
     sub(a, b, c){
       const r = _getValidation(a, b, c);
       this.x -= r.x;
@@ -1990,6 +2060,22 @@ const p5wgex = (function(){
       this.z = x0 * r.y - y0 * r.x;
       return this;
     }
+    rotate(v, theta){
+      // ベクトルvの周りにtだけ回転させる処理。vはVec3ですがx,y,z...まあ、いいか。
+      const L = v.mag();
+      const a = v.x/L;
+      const b = v.y/L;
+      const c = v.z/L;
+      const s = 1 - Math.cos(theta);
+      const t = Math.cos(theta);
+      const u = Math.sin(theta);
+      this.multMat([
+        s*a*a + t,   s*a*b + u*c, s*a*c - u*b,
+        s*a*b - u*c, s*b*b + t,   s*b*c + u*a,
+        s*a*c + u*b, s*b*c - u*a, s*c*c + t
+      ]);
+      // OK??
+    }
     normalize(){
       const L = this.mag();
       if(L == 0.0){
@@ -2015,6 +2101,18 @@ const p5wgex = (function(){
       this.z = m[2] * a + m[5] * b + m[8] * c;
       return this;
     }
+  }
+
+  // utility for Vec3.
+  function tripleMultiple(u, v, w){
+    let result = 0;
+    result += u.x * v.y * w.z;
+    result += u.y * v.z * w.x;
+    result += u.z * v.x * w.y;
+    result -= u.y * v.x * w.z;
+    result -= u.z * v.y * w.x;
+    result -= u.x * v.z * w.y;
+    return result;
   }
 
   // ゆくゆくはVec4とかQuarternionやりたいけど必要が生じて明確な利用方法の目途が立ってからでないと駄目ね。
