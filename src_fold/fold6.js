@@ -365,6 +365,10 @@ function controlCamera(){
   if(keyIsDown(DOWN_ARROW)){ cam2.zoom(-0.02); }
   if(keyIsDown(RIGHT_ARROW)){ cam2.spin(0.03); }
   if(keyIsDown(LEFT_ARROW)){ cam2.spin(-0.03); }
-  if(keyIsDown(87)){ cam2.arise(0.04); }
-  if(keyIsDown(83)){ cam2.arise(-0.04); }
+  if(keyIsDown(87)){ cam2.arise(0.04); } // Wキー
+  if(keyIsDown(83)){ cam2.arise(-0.04); } // Sキー
+  if(keyIsDown(69)){ cam2.dolly(0.05); } // Eキー
+  if(keyIsDown(68)){ cam2.dolly(-0.05); } // Dキー
+  if(keyIsDown(67)){ cam2.pan(0.03); } // Cキー
+  if(keyIsDown(90)){ cam2.pan(-0.03); } // Zキー
 }

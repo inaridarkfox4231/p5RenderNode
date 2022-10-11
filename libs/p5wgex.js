@@ -1590,289 +1590,62 @@ const p5wgex = (function(){
       // 視点を中心の周りに反時計回りに回転させる。角度。
       // 計算がめんどくさいね...で、camの方は間違ってた、か...centerからeyeに向かうベクトルをtopの周りに回転させるのだ。
       // あれ使うか。
+      // あ！！中心...まずいじゃん。
       const d = this.distance;
       const t = delta * sensitivity;
-      this.eye.rotate(this.top, t);
+      // 中心を引いて、回転して、また中心を足す。今中心が(0,0,0)で固定なので...なんとかしたいね。デバッグするうえで不利。
+      this.eye.sub(this.center).rotate(this.top, t).add(this.center);
       this.calcDistance();
       this.calcViewMat();
     }
     arise(delta, sensitivity = 1){
-      // 視点を中心の周りに上昇させる。ただしtopベクトルを超えないようにする。角度。frontとupでeyeを再計算。ただし、
+      // 視点を中心の周りに上昇させる。ただしtopベクトルを超えないようにする。角度。frontとupでeyeを再計算。
+      // centerは変化しないのでそれを無視して計算し最後にcenterを足す。
       const d = this.distance;
       const t = delta * sensitivity;
-      this.eye.set(this.center).addScalar(this.front, d * Math.cos(t)).addScalar(this.up, d * Math.sin(t));
+      // 答えを作る
+      this.eye.set(this.front).mult(d * Math.cos(t)).addScalar(this.up, d * Math.sin(t));
       // このベクトル三重積でなす角thetaに対するd*sin(theta)が出るのでそれとd*0.001を比べて...
       // sin(0.001)～0.001.
       // あ、そうか、sinだけだとどっちだかわからん。内積で符号取らないと。
       // つまり上でBANするならこれでいいけど下でBANする場合は-topでないと失敗するんだわ。
+      // ここは答えのeyeで。
       const tm = tripleMultiple(this.top, this.eye, this.side);
       if(tm < d * 0.001){
-        console.log(tm);
         this.side.cross(this.top); // あとで再計算するのでとりあえずsideを使わせてもらう。
         // topに直交するeye方向の単位ベクトルsideを使ってちょっとずらす感じ
-        // 位置ベクトルを足してからcenterだけ移動。dotSignでどっち側か調べないと駄目。
+        // dotSignでどっち側か調べないと駄目。
         const dotSign = (this.top.dot(this.eye) > 0 ? 1 : -1);
-        console.log(dotSign);
-        this.eye.set(this.top).mult(dotSign).addScalar(this.side, 0.001).normalize().mult(d).add(this.center);
+        this.eye.set(this.top).mult(dotSign).addScalar(this.side, 0.001).normalize().mult(d);
       }
-      // 大丈夫なんかな。またデバッグしよう。
+      this.eye.add(this.center); // centerを足す。
       this.calcDistance();
       this.calcViewMat();
     }
-  }
-
-  /*
-  class CameraEx{
-    constructor(w, h){
-      if(w === undefined){ w = window.innerWidth; }
-      if(h === undefined){ h = window.innerHeight; }
-      this.viewMat = new Mat4();
-      this.projMat = new Mat4();
-      this.initialize(w, h);
-    }
-    initialize(w, h, info = {}){
-      this.projType = "perse";
-      // デフォルトはこんな感じで。カメラの位置は真上、パースで、原点注視。
-      if(info.fov !== undefined){ this.fov = info.fov; }else{ this.fov = Math.PI/3; }
-      if(info.aspect !== undefined){ this.aspect = info.aspect; }else{ this.aspect = w/h; }
-      if(info.eye !== undefined){
-        this.eyeX = info.eye.x; this.eyeY = info.eye.y; this.eyeZ = info.eye.z;
-      }else{
-        this.eyeX = 0; this.eyeY = 0; this.eyeZ = (h/2)/Math.tan(this.fov/2);
-      }
-      if(info.center !== undefined){
-        this.centerX = info.center.x; this.centerY = info.center.y; this.centerZ = info.center.z;
-      }else{
-        this.centerX = 0; this.centerY = 0; this.centerZ = 0;
-      }
-      // ここ...まあ、いいや、もうめんどくさいし、廃止予定だし...
-      this.distance = (h/2)/Math.tan(this.fov/2); // 視点と中心との距離で、視点や中心をいじるたびに更新する。
-
-      // デフォルトupベクトル。これはローカル軸のupとは別の概念で、これに基づいてカメラを上下させた場合の
-      // 限界が決まるようになっているのだ。
-      if(info.up !== undefined){
-
-      }
-      this.upX = 0;
-      this.upY = 1;
-      this.upZ = 0;
-      this.near = 0.1; // nearで視点と中心との距離に対する視点からnearまでの距離の比率とする。
-      this.far = 10; // farで視点と中心との距離に対する視点からfarまでの距離の比率とする。
-      // perspectiveでしか用いられない。内部の計算もちょっといじる。
-      // ortho用。一応説明。
-      // 想定ではleftが左でrightが右、中心原点。left<right.
-      // bottomが上でtopが下、中心原点。（いずれ直す）bottom<top.
-      // 最後にnearとfarは視点から中心への垂直線の近い方と遠い方。この直方体内部に対して適用される。
-      // なお大小関係をいじると逆になったりしておかしなことになるので注意しましょう。
-      this.left = -w/2;
-      this.right = w/2;
-      this.bottom = -h/2;
-      this.top = h/2;
-
-      this.setViewMat();
-      this.setPerspectiveMat();
-    }
-    calcDistance(){
-      // 視点と中心との距離をセットする
-      let z0 = this.eyeX - this.centerX;
-      let z1 = this.eyeY - this.centerY;
-      let z2 = this.eyeZ - this.centerZ;
-      this.distance = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
-    }
-    getViewMat(){
-      return this.viewMat;
-    }
-    getProjMat(){
-      return this.projMat;
-    }
-    setView(info){
-      // 定義されてるところだけ更新する。p5.Vectorでもなんでもx,y,zが使えるなら何でもOK
-      if(info.eye !== undefined){
-        this.eyeX = info.eye.x;
-        this.eyeY = info.eye.y;
-        this.eyeZ = info.eye.z;
-      }
-      if(info.center !== undefined){
-        this.centerX = info.center.x;
-        this.centerY = info.center.y;
-        this.centerZ = info.center.z;
-      }
-      if(info.up !== undefined){
-        this.upX = info.up.x;
-        this.upY = info.up.y;
-        this.upZ = info.up.z;
-      }
-      this.calcDistance(); // 距離を計算
-      this.setViewMat();
-    }
-    setViewMat(){
-      // ちょっと長くなるが...
-      // まずcenterからeyeに向かうtopベクトルを用意する。正規化する。新しいz軸になる。
-      let z0 = this.eyeX - this.centerX;
-      let z1 = this.eyeY - this.centerY;
-      let z2 = this.eyeZ - this.centerZ;
-      //const zLen = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
-      const zLen = this.distance; // 計算する必要ないわね。
-      z0 /= zLen;
-      z1 /= zLen;
-      z2 /= zLen;
-      // upデフォルトベクトルはこの処理で変化しないので注意
-      // upデフォルトベクトルとtopベクトルで外積を取って正規化するとsideベクトルが出来る。新しいx軸になる。
-      let x0 = this.upY * z2 - this.upZ * z1;
-      let x1 = this.upZ * z0 - this.upX * z2;
-      let x2 = this.upX * z1 - this.upY * z0;
-      const xLen = Math.sqrt(x0*x0 + x1*x1 + x2*x2);
-      x0 /= xLen;
-      x1 /= xLen;
-      x2 /= xLen;
-      // topベクトルとsideベクトルで外積を取って正規化する。念のため正規化する。これが新しいy軸。
-      // 仕様変更によりupベクトルは上を向くようになりました。
-      let y0 = z1 * x2 - z2 * x1;
-      let y1 = z2 * x0 - z0 * x2;
-      let y2 = z0 * x1 - z1 * x0;
-      const yLen = Math.sqrt(y0*y0 + y1*y1 + y2*y2);
-      y0 /= yLen;
-      y1 /= yLen;
-      y2 /= yLen;
-      // ただしthis.upX,upY,upZはいじらない。理由はカメラ制御で使うので。
-      // これらを縦に並べる。そこら辺の理屈を説明するのはまあ、大変です...
-      const data = [x0, y0, z0, 0, x1, y1, z1, 0, x2, y2, z2, 0, 0, 0, 0, 1];
-      this.viewMat.set(data);
-      // そしてeyeの分だけ平行移動しないといけないんですね...なるほど。eyeの位置が原点に来るように。
-      // そして成分間違ってましたね...馬鹿か...これでちゃんと中心を向いてくれます。お疲れさまでした。
-      this.viewMat.translate(-this.eyeX, -this.eyeY, -this.eyeZ);
-    }
-    getViewData(){
-      // topベクトル、sideベクトル、upベクトルを取得する。
-      // topベクトルは視点から中心と逆向きに突き出すz軸相当、
-      // sideベクトルはキャンバスの右方向、upベクトルは仕様変更で上方向になりました。
-      // 右手系です。わかりやすい！
-      // eyeの位置もついでに取得。
-      // ていうかああ、そうか、行列のあそこ、eyeの座標値じゃなかったわ、ほんと馬鹿...
-      const m = this.viewMat.m;
-      return {
-        side: {x:m[0], y:m[4], z:m[8]},
-        up: {x:m[1], y:m[5], z:m[9]},
-        top: {x:m[2], y:m[6], z:m[10]},
-        eye: {x:this.eyeX, y:this.eyeY, z:this.eyeZ}
-      }
-    }
-    zoom(delta, sensitivity = 1){
-      // sensitivityは倍率。小さくすると感度も変わる。
-      delta *= sensitivity;
-      // やっぱzoomなのでdeltaが正の時近づくようにするか～
-      // ベクトル(z0,z1,z2)はtopで外向き方向。
-      const {top} = this.getViewData();
-      //let z0 = this.eyeX - this.centerX;
-      //let z1 = this.eyeY - this.centerY;
-      //let z2 = this.eyeZ - this.centerZ;
-      //const zLen = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
-      //z0 /= zLen;
-      //z1 /= zLen;
-      //z2 /= zLen;
-      if(this.distance - delta < 0.001){ return; } // マイナス回避. deltaが正のとき近づくので。
-      // deltaが正の時近づく、を表現
-      this.eyeX -= delta * top.x;
-      this.eyeY -= delta * top.y;
-      this.eyeZ -= delta * top.z;
+    dolly(delta, sensitivity = 1){
+      // 視点を対象物に近づける処理。zoomと違ってfov等は変化しない。正の時近づけたいのでマイナスで。
+      const d = this.distance;
+      const t = delta * sensitivity;
+      if(d + t < 0.001){ return; }
+      this.eye.addScalar(this.front, -t);
       this.calcDistance();
-      this.setViewMat();
-      // nearとfarは中心との距離に対する比率にしたので、
-      // 視点が移動するにしたがってnearとfarも同じ比率で変化します。
-      // 中心も動けば当然変化しないが...中心を動かすメソッドで視点も一緒に動く感じで...また作るよ。
+      this.calcViewMat(); // これでよいはず。
     }
-    slide(delta, sensitivity = 1){
-      // sensitivityは倍率。小さくすると感度も変わる。
-      delta *= sensitivity;
-      // deltaが正の時、中心に対して反時計回りに横移動する。eyeしか動かさない。deltaは角度。ラジアン。
-      const {side, top} = this.getViewData();
-      // center + top*Rcos(delta) + side*Rsin(delta) でeyeを上書きするだけ。
-
-      //let z0 = this.eyeX - this.centerX;
-      //let z1 = this.eyeY - this.centerY;
-      //let z2 = this.eyeZ - this.centerZ;
-      //const zLen = Math.sqrt(z0*z0 + z1*z1 + z2*z2);
-
-      const _z = this.distance * Math.cos(delta);
-      const _x = this.distance * Math.sin(delta);
-      this.eyeX = this.centerX + _z * top.x + _x * side.x;
-      this.eyeY = this.centerY + _z * top.y + _x * side.y;
-      this.eyeZ = this.centerZ + _z * top.z + _x * side.z;
-      this.calcDistance(); // 念のためね
-      this.setViewMat();
-    }
-    arise(delta, sensitivity = 1){
-      // upベクトルが傾いてる場合にも適用可能なようにしましょう。deltaが正の時上昇するんですが、
-      // 球面上を動きます。なので、使うのはupとtopですね。
-      // あー...なるほど。そうか。計算によれば...通り過ぎた場合でも問題ないのか。
-      // あの、結局side,up,topの構成が変わるし、upX,upY,upZもいじらないから、頂点付近でとどまる形になるんだわな。
-      // で、通り過ぎると今度は下げた場合反対側から見る形になるわけだ。それでいくかー。
-      const {up, top} = this.getViewData();
-      const _z = this.distance * Math.cos(delta);
-      const _y = this.distance * Math.sin(delta);
-      this.eyeX = this.centerX + _z * top.x + _y * up.x;
-      this.eyeY = this.centerY + _z * top.y + _y * up.y;
-      this.eyeZ = this.centerZ + _z * top.z + _y * up.z;
+    pan(delta, sensitivity = 1){
+      // eyeからcenterに向かうベクトルを右に振る。t<0の場合は左に振る。なおcenterが動くので注意。
+      // center-eyeでeyeからcenterに向かうベクトルになるがこれの正の向きの変化は時計回りなのでマイナスを付ける。
+      // centerを動かす処理なので早速問題が発生している...
+      const d = this.distance;
+      const t = delta * sensitivity;
+      this.center.sub(this.eye).rotate(this.top, -t).add(this.eye);
       this.calcDistance();
-      this.setViewMat();
-      // upX,upY,upZはいじらないため、これにより通り過ぎた場合は背後から見る形となる。
-      // ...テストして確かめます...
+      this.calcViewMat();
     }
-    setPerspective(info = {}){
-      if(info.fov !== undefined){ this.fov = info.fov; }
-      if(info.aspect !== undefined){ this.aspect = info.aspect; }
-      if(info.near !== undefined){ this.near = info.near; }
-      if(info.far !== undefined){ this.far = info.far; }
-      this.projType = "perse";
-      this.setPerspectiveMat();
-    }
-    setPerspectiveMat(){
-      // fov, aspect, near, farから行列を計算してセットする。
-      // 理屈はめんどくさいので結果だけ。
-      const factor = 1.0 / Math.tan(this.fov/2);
-      const c0 = factor / this.aspect;
-      const c5 = factor; // 符号反転！
-      const c10 = (this.near + this.far) / (this.near - this.far); // ここは次元0なので比率そのままでOK
-      const c11 = -1;
-      const c14 = 2 * this.distance * this.near * this.far / (this.near - this.far); // 次元1なのでdistanceの1乗を掛ける
-      const data = [c0, 0, 0, 0, 0, c5, 0, 0, 0, 0, c10, c11, 0, 0, c14, 0];
-      this.projMat.set(data);
-    }
-    getPerseParam(){
-      return {fov:this.fov, aspect:this.aspect, near:this.near, far:this.far};
-    }
-    setOrtho(info = {}){
-      if(info.right !== undefined){ this.right = info.right; }
-      if(info.left !== undefined){ this.left = info.left; }
-      if(info.bottom !== undefined){ this.bottom = info.bottom; }
-      if(info.top !== undefined){ this.top = info.top; }
-      if(info.near !== undefined){ this.near = info.near; }
-      if(info.far !== undefined){ this.far = info.far; }
-      this.projType = "ortho";
-      this.setOrthoMat();
-    }
-    setOrthoMat(){
-      // left, right, top, bottom, near, farから行列を計算してセットする。
-      // 理屈は簡単で、要はleftとrightを-1～1に、top～bottom（ただしupベクトルが示す正方向がtopという形）
-      // を-1～1に、near～farを-1～1にマッピングするわけ。行列の掛け算も2次の逆行列でちょちょいっと。
-      // でもまあ結果だけ。
-      // ごめん間違えた...中で掛ける行列そのまま使っちゃった。
-      // nearとfarの定義が変更になったので微調整。これも使わないと変化がわかんないからテストしないといけないですね。
-      const c0 = 2 / (this.right - this.left);
-      const c5 = 2 / (this.top - this.bottom); // 符号反転！
-      const c10 = -2 / (this.distance * (this.far - this.near)); // ここは掛け算して合わせないといけない。
-      const c12 = -(this.right + this.left) / (this.right - this.left);
-      const c13 = -(this.top + this.bottom) / (this.top - this.bottom);
-      const c14 = -(this.far + this.near) / (this.far - this.near); // ここは次元0なので無修正
-      const c15 = 1;
-      const data = [c0, 0, 0, 0, 0, c5, 0, 0, 0, 0, c10, 0, c12, c13, c14, c15];
-      this.projMat.set(data);
-    }
-    getOrthoParam(){
-      return {left:this.left, right:this.right, top:this.top, far:this.far};
+    tilt(delta, sensitivity = 1){
+      // eyeからcenterに向かうベクトルを上に振る。t<0の場合は下に振る。これもtopベクトルに制限を受ける。
+      // centerを答えにして色々計算して最後にeyeを足して答えとする。
     }
   }
-  */
 
   // ---------------------------------------------------------------------------------------------- //
   // TransformEx.
@@ -2074,6 +1847,7 @@ const p5wgex = (function(){
         s*a*b - u*c, s*b*b + t,   s*b*c + u*a,
         s*a*c + u*b, s*b*c - u*a, s*c*c + t
       ]);
+      return this;
       // OK??
     }
     normalize(){
