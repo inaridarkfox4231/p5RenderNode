@@ -18,7 +18,7 @@
 const ex = p5wgex; // alias.
 let _node; // RenderNode.
 
-let tf, cam;
+let tf, cam, cam2;
 let _timer = new ex.Timer();
 
 // ------------------------------------------------------------------------------------------------------------ //
@@ -166,7 +166,8 @@ function setup(){
   const gl = this._renderer.GL;
   _node = new ex.RenderNode(gl);
   tf = new ex.TransformEx();
-  cam = new ex.CameraEx(width, height);
+  //cam = new ex.CameraEx(width, height);
+  cam2 = new ex.CameraEx2({w:width, h:height});
 
   // lightingShader.
   _node.registPainter("light", lightVert, lightFrag);
@@ -219,7 +220,8 @@ function draw(){
   _node.usePainter("light");
 
   // 射影
-  const projMat = cam.getProjMat().m;
+  //const projMat = cam.getProjMat().m;
+  const projMat = cam2.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
 
   // ライティングユニフォーム
@@ -244,7 +246,8 @@ function draw(){
 // 行列関連はまとめとこうか
 function setModelView(){
   const modelMat = tf.getModelMat().m;
-  const viewMat = cam.getViewMat().m;
+  //const viewMat = cam.getViewMat().m;
+  const viewMat = cam2.getViewMat().m;
   const modelViewMat = ex.getMult4x4(modelMat, viewMat);
   const normalMat = ex.getNormalMat(modelViewMat);
   _node.setUniform("uViewMatrix", viewMat);

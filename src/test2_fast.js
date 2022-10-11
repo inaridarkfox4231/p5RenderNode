@@ -63,7 +63,8 @@
 const ex = p5wgex; // alias.
 let _node; // RenderNode.
 
-let tf, cam;
+let tf;
+let cam2;
 let _timer = new ex.Timer();
 let _time = 0;
 
@@ -287,7 +288,9 @@ function setup(){
   const gl = this._renderer.GL;
   _node = new ex.RenderNode(gl);
   tf = new ex.TransformEx();
-  cam = new ex.CameraEx(width, height);
+  //cam = new ex.CameraEx(width, height);
+  cam2  = new ex.CameraEx2({w:width, h:height}); // これ以上やること無いな...
+  // んー。小さい数でやるべきなんだろうな、とか思ったり
 
   // lightingShader.
   _node.registPainter("preLight", preLightVert, preLightFrag);
@@ -405,13 +408,15 @@ function draw(){
   _node.use("preLight", "cube");
   // 各種行列
   const modelMat = tf.getModelMat().m;
-  const viewMat = cam.getViewMat().m;
+  //const viewMat = cam.getViewMat().m;
+  const viewMat = cam2.getViewMat().m;
   const modelViewMat = ex.getMult4x4(modelMat, viewMat);
   const normalMat = ex.getNormalMat(modelViewMat);
   _node.setUniform("uModelViewMatrix", modelViewMat);
   _node.setUniform("uNormalMatrix", normalMat);
   // 射影
-  const projMat = cam.getProjMat().m;
+  //const projMat = cam.getProjMat().m;
+  const projMat = cam2.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
   // param
   _node.setFBOtexture2D("uData", "param");

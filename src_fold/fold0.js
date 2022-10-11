@@ -26,6 +26,8 @@
 
 // フレームバッファ使う方法一旦やめようか。パフォーマンス逆に落ちてる。撤退。
 
+// cam2への移行完了
+
 // ----global---- //
 const ex = p5wgex;
 let _node;
@@ -33,7 +35,8 @@ let _timer = new ex.Timer();
 let info, infoTex;
 
 // カメラ
-let cam;
+//let cam;
+let cam2;
 
 // ----shaders---- //
 const rayMVert =
@@ -54,8 +57,8 @@ uniform vec3 uEye; // 目線の位置
 uniform float uFov; // fov, 視野角（上下開き、デフォルト60°）
 uniform float uAspect; // アスペクト比、横長さ/縦長さ（W/H）
 uniform vec3 uSide; // 画面右方向
-uniform vec3 uUp; // 画面下方向で、マイナスで使う
-uniform vec3 uTop; // 画面手前方向...マイナスで使う。
+uniform vec3 uUp; // 画面上方向で、マイナスでは使わなくてもよくなりました（めでたい）
+uniform vec3 uFront; // 画面手前方向...マイナスで使う。
 uniform vec3 uLightDirection; // 光を使う場合。光の進む向き。マイナスで使って法線と内積を取る。
 
 in vec2 vUv;
@@ -117,8 +120,8 @@ void main(){
   vec3 color = vec3(0.0);
   // rayを計算する
   vec3 ray = vec3(0.0);
-  // uTopだけマイナス、これで近づく形。さらにuSideで右、uUpで上に。分かりやすいね。
-  ray -= uTop;
+  // uFrontだけマイナス、これで近づく形。さらにuSideで右、uUpで上に。分かりやすいね。
+  ray -= uFront;
   ray += uSide * uAspect * tan(uFov * 0.5) * vUv.x;
   ray += uUp * tan(uFov * 0.5) * vUv.y;
   ray = normalize(ray);
@@ -195,8 +198,10 @@ function setup(){
   _node.clearColor(0,0,0,1);
 
   // カメラ
-  cam = new ex.CameraEx(width, height);
-  cam.setView({eye:{x:0,y:0,z:1.732}, center:{x:0,y:0,z:0}, up:{x:0,y:1,z:0}});
+  //cam = new ex.CameraEx(width, height);
+  //cam.setView({eye:{x:0,y:0,z:1.732}, center:{x:0,y:0,z:0}, up:{x:0,y:1,z:0}});
+  // カメラ2のテスト
+  cam2 = new ex.CameraEx2({w:width, h:height, eye:[0, 0, 1.732], center:[0, 0, 0], top:[0, 1, 0]});
 }
 
 // ----draw---- //
@@ -211,7 +216,7 @@ function draw(){
   _node.use("rayM", "board")
 
   // カメラ設定
-  moveCamera();
+  moveCamera(currentTime);
   setCameraParameter();
 
   // 光の設定、レンダリング
@@ -223,13 +228,14 @@ function draw(){
   showPerformance(fps);
 }
 
-function moveCamera(){
+function moveCamera(currentTime){
   // 動かしてみる。マウスで動かしてもいいと思う。
-  const curTime = _timer.getDeltaSecond("cur");
-  const _x = Math.sqrt(3) * Math.cos(curTime * Math.PI*2 * 0.5);
-  const _y = 0.7 * Math.sin(curTime * Math.PI*2 * 0.4);
-  const _z = Math.sqrt(3) * Math.sin(curTime * Math.PI*2 * 0.5);
-  cam.setView({eye:{x:_x, y:_y, z:_z}});
+  //const curTime = _timer.getDeltaSecond("cur");
+  const _x = Math.sqrt(3) * Math.cos(currentTime * Math.PI*2 * 0.5);
+  const _y = 0.7 * Math.sin(currentTime * Math.PI*2 * 0.4);
+  const _z = Math.sqrt(3) * Math.sin(currentTime * Math.PI*2 * 0.5);
+  //cam.setView({eye:{x:_x, y:_y, z:_z}});
+  cam2.setView({eye:[_x, _y, _z]});
 }
 
 function setCameraParameter(){
@@ -240,16 +246,20 @@ function setCameraParameter(){
   // uTopも(0,0,1)ですっきり。
 
   // まずgetViewData.
-  const viewData = cam.getViewData();
-  const perseData = cam.getPerseParam();
-  const {side, up, top, eye} = viewData;
-  const {fov, aspect} = perseData;
+  //const viewData = cam.getViewData();
+  //const perseData = cam.getPerseParam();
+  //const {side, up, top, eye} = viewData;
+  //const {fov, aspect} = perseData;
+  const {side, up, front} = cam2.getLocalAxes();
+  const {eye} = cam2.getViewData();
+  const {fov, aspect} = cam2.getProjData(); // persモードに固定してあるので
+
   _node.setUniform("uEye", [eye.x, eye.y, eye.z])
        .setUniform("uFov", fov)
        .setUniform("uAspect", aspect)
        .setUniform("uSide", [side.x, side.y, side.z])
        .setUniform("uUp", [up.x, up.y, up.z])
-       .setUniform("uTop", [top.x, top.y, top.z]);
+       .setUniform("uFront", [front.x, front.y, front.z]);
 }
 
 function showPerformance(fps){

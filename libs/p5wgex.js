@@ -1334,21 +1334,19 @@ const p5wgex = (function(){
 
   // ---------------------------------------------------------------------------------------------- //
   // CameraEx.
-  // ビューとプロジェクションはここが担う。
-  // モデルはまた別のモジュールを用意しないとねぇ
-  // ものによってはカメラ要らないですからそこら辺。p5js常にカメラが備わってるので柔軟性が低いんですよね。
-  // うそですよ
+  // ビューとプロジェクションを担うパート。
+  // 完全に切り離したかったんだけど射影行列が距離依存になってしまった...距離はビューの概念...
+  // でもこの方がnearとfarを視点との距離に対して定義出来て便利なのでOKです。メソッド分離でいいのです。
 
-  // まあ色々と雑だから何とかしたいよね...問題はp5jsみたく節操無く何でも用意した挙句使い方分かりません！使わない！
-  // ってならないためにはどうすればいいかっていうね。
-
-  // eyeとcenterの距離は常に保持するようにしたうえで、それとの比率でnearとfarを決める感じで。
-  // near/farは射影の計算で使うからそのときに距離Rに掛け算してやればいい。
-  // だいたい常に同じスケールで議論するとは限らないのに定数で制御するのおかしいでしょうよ。
-
-  // infoで初期化時に指定できるようにしよっかな
-  // upX,upY,upZなんだけど定義時に正規化してくれると嬉しい...
-  // upではないです。topです。さて、仕様変更じゃ...
+  // 動かすのはテストが終わってからにしましょう。
+  // 実装予定：zoom（倍率を指定して矩形を拡縮）,spin（視点を中心の周りに横に回転）,arise（同、縦回転。ただしtopは越えない。）,
+  // pan（視点を中心の横にずらす、これも回転）,tilt（同、縦方向。ただしtopは越えない）,move（一緒にローカル軸で平行移動）
+  // moveはローカル軸ベースの移動。たとえばzを増やす場合は中心とともに逆方向に遠ざかる感じ...ローカル軸は固定。
+  // とはいえ中心が動くので行列は再計算されるわね。dolly:視点を中心に近づけたり離したりする。
+  // parallel:グローバル軸に対して視点と中心のセットを平行移動させる。需要があるかどうかは不明。
+  // lookAt: 中心だけ強制的に動かす。
+  // moveはあれなんですよね。一人称で、動きを同期させたりするのに...まあ、使うんかな...
+  // って思ったけど同期させるなら直接eyeとcenterいじった方が早い気がする((
 
   // 新カメラ。
   // infoの指定の仕方、topは常に正規化、Vec3で統一、ローカル軸の名称変更、動かすメソッド追加, etc...
@@ -1380,7 +1378,7 @@ const p5wgex = (function(){
       // centerは原点で
       if(info.center === undefined){ this.center.set(0, 0, 0); }else{ this.center.set(info.center); }
       // distanceの計算
-      this.distance = this.calcDistance();
+      this.calcDistance();
       // topは基本y軸正の方向。
       if(info.top === undefined){ this.top.set(0, 1, 0); }else{ this.top.set(info.top); }
       // topは正規化したいのよね
@@ -1415,12 +1413,14 @@ const p5wgex = (function(){
     }
     calcDistance(){
       // メソッドに落とし込む。eyeとcenterの距離取るだけ。
-      return this.eye.dist(this.center);
+      this.distance = this.eye.dist(this.center);
+      // 射影行列が距離依存なので更新
+      this.calcProjMat();
     }
     calcViewMat(){
       // eye,center,topが変更された場合に行列の再計算を行なうパート
       // まずfrontを作る。center → eye, の単位ベクトル
-      this.front.set(this.center).sub(this.eye).normalize();
+      this.front.set(this.eye).sub(this.center).normalize();
       // sideはtopとfrontの外積で作る。ゆえに常にtopに直交するのでtopが動かない限りたとえば画面の揺れなどは起こらない
       this.side.set(this.top).cross(this.front).normalize();
       // upはfrontとsideの外積で作る。画面の上方向を向くベクトルとなる。
@@ -1435,11 +1435,19 @@ const p5wgex = (function(){
       this.viewMat.translate(-this.eye.x, -this.eye.y, -this.eye.z);
       // おつかれさま！
     }
+    calcProjMat(){
+      // そのときのモードの射影行列を更新する
+      switch(this.projData.mode){
+        case "pers": this.calcPersMat(); break;
+        case "ortho": this.calcOrthoMat(); break;
+        case "frustum": this.calcFrustumMat(); break;
+      }
+    }
     calcPersMat(){
       // persデータを元に行列を構築する。
       // fov, aspect, near, farから行列を計算してセットする。
       // fovは視野角、aspectは横/縦の比。オーソドックスな指定方法。
-      const {far, aspect, near, far} = this.projData.pers;
+      const {fov, aspect, near, far} = this.projData.pers;
       const factor = 1 / Math.tan(fov/2);
       const c0 = factor / aspect;
       const c5 = factor; // 符号反転！
@@ -1472,7 +1480,7 @@ const p5wgex = (function(){
       const {left, right, bottom, top, near, far} = this.projData.frustum;
       const c0 = 2 * this.distance * near / (right - left);
       const c5 = 2 * this.distance * near / (top - bottom);
-      const c8 = (right - left) / (right + left);
+      const c8 = (right + left) / (right - left);
       const c9 = (top + bottom) / (top - bottom);
       const c10 = -(far + near) / (far - near);
       const c11 = -1;
@@ -1498,6 +1506,8 @@ const p5wgex = (function(){
         return;
       }
       this.projData.mode = mode;
+      // 距離に応じた更新ができていない可能性があるので射影行列を更新
+      this.calcProjMat();
     }
     setPerse(info = {}){
       // fov, aspect, near, farの指定。nearとfarはview関係ないので切り離すべきなのです。
@@ -1538,26 +1548,17 @@ const p5wgex = (function(){
       // viewのdataであるVec3の取得
       return {eye:this.eye, center:this.center, top:this.top};
     }
-    getLocalAxis(){
-      // いわゆるカメラ座標系の3軸を取得
+    getLocalAxes(){
+      // いわゆるカメラ座標系の3軸を取得(Axesが複数形だそうです)
       return {side:this.side, up:this.up, front:this.front};
     }
     getProjData(mode){
       // modeごとの射影変換に使うdataの取得。あんま使いそうにないな。
       return this.projData[this.projData.mode];
     }
-    // 動かすのはテストが終わってからにしましょう。
-    // 実装予定：zoom（倍率を指定して矩形を拡縮）,spin（視点を中心の周りに横に回転）,arise（同、縦回転。ただしtopは越えない。）,
-    // pan（視点を中心の横にずらす、これも回転）,tilt（同、縦方向。ただしtopは越えない）,move（一緒にローカル軸で平行移動）
-    // moveはローカル軸ベースの移動。たとえばzを増やす場合は中心とともに逆方向に遠ざかる感じ...ローカル軸は固定。
-    // とはいえ中心が動くので行列は再計算されるわね。dolly:視点を中心に近づけたり離したりする。
-    // parallel:グローバル軸に対して視点と中心のセットを平行移動させる。需要があるかどうかは不明。
-    // lookAt: 中心だけ強制的に動かす。
-    // moveはあれなんですよね。一人称で、動きを同期させたりするのに...まあ、使うんかな...
-    // って思ったけど同期させるなら直接eyeとcenterいじった方が早い気がする((
-
   }
 
+  /*
   class CameraEx{
     constructor(w, h){
       if(w === undefined){ w = window.innerWidth; }
@@ -1581,7 +1582,7 @@ const p5wgex = (function(){
       }else{
         this.centerX = 0; this.centerY = 0; this.centerZ = 0;
       }
-
+      // ここ...まあ、いいや、もうめんどくさいし、廃止予定だし...
       this.distance = (h/2)/Math.tan(this.fov/2); // 視点と中心との距離で、視点や中心をいじるたびに更新する。
 
       // デフォルトupベクトル。これはローカル軸のupとは別の概念で、これに基づいてカメラを上下させた場合の
@@ -1808,6 +1809,7 @@ const p5wgex = (function(){
       return {left:this.left, right:this.right, top:this.top, far:this.far};
     }
   }
+  */
 
   // ---------------------------------------------------------------------------------------------- //
   // TransformEx.
@@ -1896,21 +1898,22 @@ const p5wgex = (function(){
   // aがnumberならb,cもそうだろうということでa,b,cで確定
   // aがArrayなら適当に長さ3の配列をあてがってa[0],a[1],a[2]で確定
   // それ以外ならa.x,a.y,a.zを割り当てる。最終的にオブジェクトで返す。
-  // なおdefaultはaがnumberだった場合に用いられるaのデフォルト値
-  function _getValidation(a, b, c, default = 0){
+  // なお_defaultはaがnumberだった場合に用いられるaのデフォルト値
+  // ...defaultは予約語なので_を付ける必要があるわね。
+  function _getValidation(a, b, c, _default = 0){
     const r = {};
-    if(a === undefined){ a = default; }
+    if(a === undefined){ a = _default; }
     if(typeof(a) === "number"){
       if(b === undefined){ b = a; }
       if(c === undefined){ c = b; }
       r.x = a; r.y = b; r.z = c;
     }else if(Array.isArray(a)){
-      if(a[0] === undefined){ a[0] = default; }
+      if(a[0] === undefined){ a[0] = _default; }
       if(a[1] === undefined){ a[1] = a[0]; }
       if(a[2] === undefined){ a[2] = a[1]; }
       r.x = a[0]; r.y = a[1]; r.z = a[2];
     }
-    if(r.x === undefined){ return r; }
+    if(r.x !== undefined){ return r; } // あ、===と!==間違えた...
     return a; // aがベクトルとかの場合ね。.x,.y,.zを持ってる。
   }
 
@@ -2016,6 +2019,8 @@ const p5wgex = (function(){
 
   // ゆくゆくはVec4とかQuarternionやりたいけど必要が生じて明確な利用方法の目途が立ってからでないと駄目ね。
   // 別に派手なことをしたいとかね、そういう話ではないので。基礎固め。地味な話です。
+  // てか、ああそうか、Vec4作ってVec3から(x,y,z,1)作るメソッドを...そうすれば自由に...
+  // となるとゆくゆくはside,up,frontはVec4というかQuarternionとして扱うことになる？それでもいいけどね。
 
   const ex = {};
 
@@ -2032,7 +2037,8 @@ const p5wgex = (function(){
   ex.Figure = Figure;
   ex.RenderNode = RenderNode;
   ex.Mat4 = Mat4;
-  ex.CameraEx = CameraEx;
+  //ex.CameraEx = CameraEx; // 旧カメラは廃止
+  ex.CameraEx2 = CameraEx2;
   ex.TransformEx = TransformEx;
   ex.Vec3 = Vec3;
 

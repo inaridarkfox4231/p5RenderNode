@@ -36,13 +36,24 @@
 // そのうえで上と下の内積で然るべき領域に落とす。
 // 落とした後は複製したうえで然るべき平面で評価する。と、うまくいく、はず。
 
+// 20221011
+// 初期化時にeyeの位置指定してproj指定すればそれ以降は更新不要、なんですが...
+// 距離で変化するので難しいですね...てかそうか。距離絡んでるせいで距離変えるたびに更新しないといけない？？
+// てことは距離変えるたびにViewだけでなくパースもいじらないとおかしなことになる...のか...？
+// ??
+// 行列を保持するという考え方であればそうなるわね。それはね。てか全部。うん。
+// モードごとに...
+// あ、そうか。なるほど？距離の更新時に射影行列を変えちゃえばいい。
+// メソッド化してよかった...
+
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
 
 const ex = p5wgex; // alias.
 let _node; // RenderNode.
 
-let tf, cam;
+let tf;
+let cam2;
 let _timer = new ex.Timer();
 
 // ------------------------------------------------------------------------------------------------------------ //
@@ -183,21 +194,22 @@ void main(void){
 function setup(){
   createCanvas(800, 640, WEBGL);
   _timer.set("currentTime");
-  _node = new ex.RenderNode(this._renderer.GL);
+  const gl = this._renderer.GL;
+  _node = new ex.RenderNode(gl);
   tf = new ex.TransformEx();
-  cam = new ex.CameraEx(width, height);
+  cam2 = new ex.CameraEx2({w:width, h:height, eye:[0, 0, Math.sqrt(3)*3]});
 
   // lightingShader.
   _node.registPainter("light", lightVert, lightFrag);
 
   // Mesh.
-  registMesh();
+  //registMesh();
   registMesh1();
 
   _node.clearColor(0, 0, 0, 1);
 
   // ちょっとカリング有効にしますね
-  //_node.enable("cull_face");
+  _node.enable("cull_face");
   // 理解しました。
 }
 
@@ -224,12 +236,6 @@ function registMesh(){
 
   _node.registFigure("test", meshData);
   _node.registIBO("testIBO", {data:fData});
-
-  _node.registFigure("plane", [
-    {name:"aPosition", size:3, data:[-2, 0, -2, -2, 0, 2, 2, 0, -2, 2, 0, 2]},
-    {name:"aVertexColor", size:3, data:[0, 0.5, 1, 0, 0.5, 1, 1, 1, 1, 1, 1, 1]},
-    {name:"aNormal", size:3, data:[0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]}
-  ]);
 }
 
 function registMesh1(){
@@ -290,26 +296,12 @@ function registMesh1(){
              23,17,20, 20,17,16, 18,10,19, 19,10,9, 21,7,22, 22,7,6, 4,8,5, 5,8,11, // 側面8つ
              0,8,4, 1,7,21, 2,20,16, 3,19,9, 6,15,22, 14,17,23, 13,10,18, 5,11,12); // 頂点の三角形8つ
 
-   // foldに必要なデータの出力
-   const getNormal = (i, j, k) => {
-     let v0 = createVector(vData[3*i], vData[3*i+1], vData[3*i+2]);
-     let v1 = createVector(vData[3*j], vData[3*j+1], vData[3*j+2]);
-     let v2 = createVector(vData[3*k], vData[3*k+1], vData[3*k+2]);
-     v1.sub(v0); v2.sub(v0);
-     const v012 = p5.Vector.cross(v1, v2).normalize();
-     return v012;
-   }
-
   let newVData = [];
   let newCData = [];
   for(let i=0; i<fData.length/3; i++){
     const f0 = fData[3*i];
     const f1 = fData[3*i+1];
     const f2 = fData[3*i+2];
-    const n = getNormal(f0, f1, f2);
-    // ついでに頂点も
-    //console.log("vec3 n" + i + " = vec3(" + (n.x).toFixed(4) + ", " + (n.y).toFixed(4) + ", " + (n.z).toFixed(4) + ");" );
-    //console.log("vec3 g" + i + " = vec3(" + vData[3*f0].toFixed(4) + ", " + vData[3*f0+1].toFixed(4) + ", " + vData[3*f0+2].toFixed(4) + ");" );
     newVData.push(vData[3*f0], vData[3*f0+1], vData[3*f0+2],
                   vData[3*f1], vData[3*f1+1], vData[3*f1+2],
                   vData[3*f2], vData[3*f2+1], vData[3*f2+2]);
@@ -332,6 +324,7 @@ function registMesh1(){
     }
   }
   // 初めの36個が正方形、以下24個、24個、24個、24個。
+
 
   meshData.push({name:"aPosition", size:3, data:newVData});
   meshData.push({name:"aVertexColor", size:3, data:newCData});
@@ -359,21 +352,14 @@ function registMesh1(){
       showNormal(indexArray[i*3], indexArray[i*3+1], indexArray[i*3+2]);
     }
   }
-  //showNormals([8,4,0, 8,5,4, 11,5,8, 11,12,5, 12,6,5, 5,6,7]);
-  // 0.0, 0.5773, 0.8165
+  //showNormals([4,5,6, 1,7,21, 1,4,7, 1,0,4, 0,8,4, 4,8,5]);
+  // 0.7071, 0, 0.7071
+  // 0.8165, 0.5773, 0
+  // 0.6853, 0.5773, 0.4439
+  // 0.2875, 0.7985, 0.5289
+  // 0, 0.5773, 0.8165
   // 0.1564, 0.1707, 0.9728
-  // -0.1564, -0.1707, 0.9728
-  // 0.0, -0.5773, 0.8165
-  // 0.4439, -0.5773, 0.6853
-  // 0.7071, 0.0, 0.7071
   // この6本で...
-  // 1と4の座標ほしいです。
-  const showPoint = i => {
-    console.log(vData[3*i], vData[3*i+1], vData[3*i+2]);
-  }
-  //showPoint(4); // 0.3522, 0.3845, 0.6478
-  //showPoint(5); // 0.2281, -0.2090, 0.7719
-  // 4に対して8,4,0の法線を使い、5に対して残り5本を使う。
 }
 
 function draw(){
@@ -390,28 +376,26 @@ function draw(){
   moveCamera(currentTime);
 
   // 視点方向から光が当たるようにしたいのでtopを取得
-  const cameraData = cam.getViewData();
-  const top = cameraData.top;
+  const {front} = cam2.getLocalAxes();
 
   // ライティングユニフォーム
   _node.setUniform("uAmbientColor", [0.25, 0.25, 0.25]);
   _node.setUniform("uUseDirectionalLight", true);
-  _node.setUniform("uLightingDirection", [-top.x, -top.y, -top.z]); // ここは、合ってるんですよ。
+  //_node.setUniform("uLightingDirection", [-top.x, -top.y, -top.z]); // ここは、合ってるんですよ。
+  _node.setUniform("uLightingDirection", [-front.x, -front.y, -front.z]); // ここは、合ってるんですよ。
   _node.setUniform("uDirectionalDiffuseColor", [1, 1, 1]);
 
   // 彩色方法指定（頂点色）
   _node.setUniform("uUseColorFlag", 0);
 
   // 射影
-  const projMat = cam.getProjMat().m;
+  const projMat = cam2.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
 
   // レンダリング
   moveMesh();
-  _node.drawFigure("test1")
-       .drawArrays("triangles")
-       .drawFigure("plane")
-       .drawArrays("triangle_strip");
+  _node.drawFigure("test1");
+  _node.drawArrays("triangles");
 
   _node.unbind();
 
@@ -421,7 +405,7 @@ function draw(){
 // 行列関連はまとめとこうか
 function setModelView(){
   const modelMat = tf.getModelMat().m;
-  const viewMat = cam.getViewMat().m;
+  const viewMat = cam2.getViewMat().m;
   const modelViewMat = ex.getMult4x4(modelMat, viewMat);
   const normalMat = ex.getNormalMat(modelViewMat);
   _node.setUniform("uViewMatrix", viewMat);
@@ -432,7 +416,7 @@ function setModelView(){
 // 特に動かさない...
 function moveMesh(){
   const curTime = _timer.getDeltaSecond("currentTime");
-  tf.initialize();
+  tf.initialize().scale(2,2,2);
   setModelView();
 }
 
@@ -446,6 +430,5 @@ function moveCamera(currentTime){
   const _x = r * sin(phi) * cos(theta);
   const _y = r * sin(theta);
   const _z = r * cos(phi) * cos(theta);
-  cam.setView({eye:{x:_x, y:_y, z:_z}});
-  cam.setPerspective({near:0.1, far:10});
+  cam2.setView({eye:[_x, _y, _z]});
 }

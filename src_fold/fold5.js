@@ -23,7 +23,7 @@ let _timer = new ex.Timer();
 let info, infoTex;
 
 // カメラ
-let cam;
+let cam2;
 
 // ----shaders---- //
 const rayMVert =
@@ -44,8 +44,8 @@ uniform vec3 uEye; // 目線の位置
 uniform float uFov; // fov, 視野角（上下開き、デフォルト60°）
 uniform float uAspect; // アスペクト比、横長さ/縦長さ（W/H）
 uniform vec3 uSide; // 画面右方向
-uniform vec3 uUp; // 画面下方向で、マイナスで使う
-uniform vec3 uTop; // 画面手前方向...マイナスで使う。
+uniform vec3 uUp; // 画面上方向
+uniform vec3 uFront; // 画面手前方向...マイナスで使う。
 uniform vec3 uLightDirection; // 光を使う場合。光の進む向き。マイナスで使って法線と内積を取る。
 
 in vec2 vUv;
@@ -270,7 +270,7 @@ void main(){
   // rayを計算する
   vec3 ray = vec3(0.0);
   // uTopだけマイナス、これで近づく形。さらにuSideで右、uUpで上に。分かりやすいね。
-  ray -= uTop;
+  ray -= uFront;
   ray += uSide * uAspect * tan(uFov * 0.5) * vUv.x;
   ray += uUp * tan(uFov * 0.5) * vUv.y;
   ray = normalize(ray);
@@ -348,7 +348,8 @@ function setup(){
   _node.clearColor(0,0,0,1);
 
   // カメラ
-  cam = new ex.CameraEx(width, height);
+  //cam = new ex.CameraEx(width, height);
+  cam2 = new ex.CameraEx2({w:width, h:height});
 }
 
 // ----draw---- //
@@ -385,7 +386,8 @@ function moveCamera(currentTime){
   const _x = r * sin(phi) * cos(theta);
   const _y = r * sin(theta);
   const _z = r * cos(phi) * cos(theta);
-  cam.setView({eye:{x:_x, y:_y, z:_z}});
+  //cam.setView({eye:{x:_x, y:_y, z:_z}});
+  cam2.setView({eye:[_x, _y, _z]});
   // あ、これレイマーチングだから要らないのか...
   //cam.setPerspective({near:r*0.1, far:r*10});
 }
@@ -398,17 +400,16 @@ function setCameraParameter(){
   // uTopも(0,0,1)ですっきり。
 
   // まずgetViewData.
-  const viewData = cam.getViewData();
-  const perseData = cam.getPerseParam();
-  const {side, up, top, eye} = viewData;
-  const {fov, aspect} = perseData;
+  const {side, up, front} = cam2.getLocalAxes();
+  const {eye} = cam2.getViewData();
+  const {fov, aspect} = cam2.getProjData(); // persモードに固定してあるので
   _node.setUniform("uEye", [eye.x, eye.y, eye.z])
        .setUniform("uFov", fov)
        .setUniform("uAspect", aspect)
        .setUniform("uSide", [side.x, side.y, side.z])
        .setUniform("uUp", [up.x, up.y, up.z])
-       .setUniform("uTop", [top.x, top.y, top.z])
-       .setUniform("uLightDirection", [-top.x, -top.y, -top.z]); // 面倒なので見る方向の後方から光を当てよう
+       .setUniform("uFront", [front.x, front.y, front.z])
+       .setUniform("uLightDirection", [-front.x, -front.y, -front.z]);
 }
 
 function showPerformance(fps){
