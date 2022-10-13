@@ -57,6 +57,12 @@
 // ただこれを正規化デバイスのvUvでアクセスして取得する場合こっちも縦方向が逆（左下が0,0）なので問題なくアクセスできるわけ。
 // そこら辺ですね。だから普通にvUvを0.5*aPosition+0.5で計算して渡せばいい。そこは、本当に、うん。それでいいの。
 
+// やることは大きく分けて3つ。
+// 1. specularなどライティング関連の充実、加えてパイプラインの整備（テンプレート関数の充実）
+// 2. MRTを習得して個別に色を付けられるようにする（フレームバッファを用意するところをちょっといじるだけ、実験が相当必要になるね）
+// 3. transformを個別に簡単に付けられるようなフレームバッファを用意する適切な関数を構築する（脳内ではある程度できてる...書き起こすだけ）
+// option: Cameraの2画面で分かりやすくするとかpointLightの可視化、などなど。これは本筋とは関係ないが...カメラの可視化ってやつ
+
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
 
@@ -121,6 +127,9 @@ void main(){
 // できるようになるはず。それを記録すればいいだけなので。
 // さらにビューポジションも記録できるようになればpointLightの計算も出来るようになる。
 // バッファの数が増えるが...恩恵は大きいよ。
+
+// 本来はここでfb使ってtfするならそれに応じて法線とかも再計算しないといけないんだわ
+// まとめてできれば速いからいいね...
 const preLightVert =
 `#version 300 es
 in vec3 aPosition;
@@ -128,7 +137,6 @@ in vec3 aNormal;
 
 uniform mat4 uModelViewMatrix;
 uniform mat4 uProjectionMatrix;
-uniform mat3 uNormalMatrix; // あーこれまだ作ってない...な...uMVの逆転置行列だそうです。
 
 uniform sampler2D uData;
 
@@ -161,7 +169,13 @@ void main(void){
 
   gl_Position = uProjectionMatrix * viewModelPosition;
 
-  vNormal = uNormalMatrix * aNormal;
+  mat3 normalMatrix; // こうしよう。[0]で列ベクトルにアクセス。
+  normalMatrix[0] = uModelViewMatrix[0].xyz;
+  normalMatrix[1] = uModelViewMatrix[1].xyz;
+  normalMatrix[2] = uModelViewMatrix[2].xyz;
+  normalMatrix = inverse(transpose(normalMatrix)); // これでいい。今回は全部いじらないのであんま意味ないが...
+
+  vNormal = normalMatrix * aNormal;
 }
 `;
 
@@ -169,6 +183,9 @@ void main(void){
 // 色が必要な場合はここで決めるのでフラグとかはこっちで...って感じになるな。まあそもそも
 // これが本来のあるべき姿なんだろうね
 // ってわけでもない、か、半透明とかできないし...まあとりあえず。
+
+// MRTやろうって話になるならこれの他にRGBへの出力と、
+// あとpointのポジション渡してpointLightが適用できるようにする。合計3つだわね。
 const preLightFrag =
 `#version 300 es
 precision mediump float;
@@ -190,6 +207,8 @@ void main(void){
 // vUvとuNormalDataから法線と明るさの情報を取得
 
 // directionalLight前提の限定的なシェーダでとりあえず実験
+
+// そのうちpointもできるように...specularとかshininessも面白そう
 const lightFrag =
 `#version 300 es
 precision mediump float;
@@ -288,7 +307,6 @@ function setup(){
   const gl = this._renderer.GL;
   _node = new ex.RenderNode(gl);
   tf = new ex.TransformEx();
-  //cam = new ex.CameraEx(width, height);
   cam2  = new ex.CameraEx2({w:width, h:height}); // これ以上やること無いな...
   // んー。小さい数でやるべきなんだろうな、とか思ったり
 
@@ -310,9 +328,7 @@ function setup(){
 
   let vData = [-1,-1,1,  1,-1,1,  1,1,1,  -1,1,1,
                -1,-1,-1, 1,-1,-1, 1,1,-1, -1,1,-1];
-  // 正規化. 今回は仕様の関係で0.5サイズとさせていただきます。つまり辺の長さが1ということ。
-  // 0.5って字が書くのめんどくさいのでこの方がいいですね。
-  // 先に計算してしまう。
+  // サイズ
   for(let i=0; i<8; i++){
     vData[3*i] *= 0.5 * 9;
     vData[3*i+1] *= 0.5 * 600;
@@ -325,9 +341,9 @@ function setup(){
   }
   meshData.push({name:"aPosition", size:3, data:positions});
 
-  // 高さで色付けしましょうか
-  // 反時計回りになってなかったので修正
+  // 修業が足りないので色は無しで
   let fData = [0,1,2,  0,2,3,  1,5,6,  1,6,2,  5,4,7,  5,7,6,  4,0,3,  4,3,7,  3,2,6,  3,6,7,  4,5,1,  4,1,0];
+  // デフォルト法線
   let nData = ex.getNormals(vData, fData);
   // nDataを4000個複製
   let normals = [];
@@ -369,12 +385,13 @@ function setup(){
 
   // カリング有効化
   _node.enable("cull_face");
-  _node.cullFace("back");
+  _node.cullFace("back"); // backを摘み取る
 
   // 同じサイズのフレームバッファを用意
   // MRT見てみたけど難しくなさそう。近いうちに挑戦してみる。
   const _size = _node.getDrawingBufferSize();
   _node.registFBO("pre", {w:_size.w, h:_size.h, textureType:"float"}); // ここに法線と明るさを落とす...
+  // そのうちmodelPositionとmodelColorも落とす（追加で2枚）
 }
 
 // やること
@@ -408,14 +425,10 @@ function draw(){
   _node.use("preLight", "cube");
   // 各種行列
   const modelMat = tf.getModelMat().m;
-  //const viewMat = cam.getViewMat().m;
   const viewMat = cam2.getViewMat().m;
   const modelViewMat = ex.getMult4x4(modelMat, viewMat);
-  const normalMat = ex.getNormalMat(modelViewMat);
   _node.setUniform("uModelViewMatrix", modelViewMat);
-  _node.setUniform("uNormalMatrix", normalMat);
   // 射影
-  //const projMat = cam.getProjMat().m;
   const projMat = cam2.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
   // param

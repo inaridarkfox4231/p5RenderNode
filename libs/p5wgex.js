@@ -902,7 +902,7 @@ const p5wgex = (function(){
     let u0 = new Vec3(0);
     let u1 = new Vec3(0);
     let u2 = new Vec3(0);
-    let m0, m1, m2, angle0, angle1, angle2;
+    let m0, m1, m2, sin0, sin1, sin2, angle0, angle1, angle2;
     for(let i = 0; i < Math.floor(indices.length / 3); i++){
       const id = [indices[3*i], indices[3*i+1], indices[3*i+2]];
       v0.set(vertices[3*id[0]], vertices[3*id[0]+1], vertices[3*id[0]+2]);
@@ -917,15 +917,29 @@ const p5wgex = (function(){
       v0.set(u0).cross(u1);
       v1.set(u0).cross(u2);
       v2.set(u1).cross(u2);
-      angle0 = Math.asin(v0.mag() / (m0 * m1));
-      angle1 = Math.asin(v1.mag() / (m0 * m2));
-      angle2 = Math.asin(v2.mag() / (m1 * m2));
+      sin0 = v0.mag() / (m0 * m1);
+      sin1 = v1.mag() / (m0 * m2);
+      sin2 = v2.mag() / (m1 * m2);
+      // ここでこれらの値が1を微妙に超えてしまうことでエラーになる場合がある(asinは-1～1の外は未定義)
+      // その逆に-1を下回ってもエラーになる。
+      // どうしようもないので1を超えたら2から引いて-1を下回ったら-2から引くことで間に合わせよう
+      // 実は|u|^2・|v|^2 = |uxv|^2 + |u・v|^2 なんだけどね
+      // 内積の方でやってもそっちが1を越えたりするからね。どうしようも、ないのです。
+      if(sin0 > 1){ sin0 = 2-sin0; }
+      if(sin0 < -1){ sin0 = -2-sin0; }
+      if(sin1 > 1){ sin1 = 2-sin1; }
+      if(sin1 < -1){ sin1 = -2-sin1; }
+      if(sin2 > 1){ sin2 = 2-sin2; }
+      if(sin2 < -1){ sin2 = -2-sin2; }
+      angle0 = Math.asin(sin0);
+      angle1 = Math.asin(sin1);
+      angle2 = Math.asin(sin2);
       v0.normalize();
       normals[id[0]].addScalar(v0, angle0);
       normals[id[1]].addScalar(v0, angle1);
       normals[id[2]].addScalar(v0, angle2);
     }
-    let result = new Array(N*3);
+    let result = new Array(3*N);
     for(let i=0; i<N; i++){
       normals[i].normalize();
       result[3*i] = normals[i].x;
@@ -940,8 +954,6 @@ const p5wgex = (function(){
   // まあ、メッシュいろいろテンプレート、あると便利だし。難しいけどね。
   // 落ち着いてから。
 
-  // fboとiboはクラス化しない方向で。iboはMAXを取るのがコストなのでlargeかどうか事前に指定しようね。
-  // ていうかそれだけだと判断できない場合もあるからね。
 
   // ---------------------------------------------------------------------------------------------- //
   // blendについて...
@@ -1529,6 +1541,7 @@ const p5wgex = (function(){
       this.eye = new Vec3();
       this.center = new Vec3();
       this.top = new Vec3();
+      this.ciel = new Vec3(); // デフォルトのtopベクトルの方向。リセットで戻す。
       this.side = new Vec3();
       this.up = new Vec3();
       this.front = new Vec3();
@@ -1559,6 +1572,7 @@ const p5wgex = (function(){
       }else{
         this.top.set(info.top).normalize(); /* topは正規化しておく */
       }
+      this.ciel.set(this.top);  // cielにtopを記録
       // ここでviewMatを構成すると同時にside,up,frontを決定する。これらはカメラのローカル軸x,y,zを与えるもの。
       // topとは概念が異なる。これらはtopに常に制約を受ける。具体的にはtopを越えることが許されない（ゆえに「top」）.
       this.calcViewMat();
@@ -1765,7 +1779,6 @@ const p5wgex = (function(){
       // 計算がめんどくさいね...で、camの方は間違ってた、か...centerからeyeに向かうベクトルをtopの周りに回転させるのだ。
       // あれ使うか。
       // あ！！中心...まずいじゃん。
-      const d = this.distance;
       const t = delta * sensitivity;
       // 中心を引いて、回転して、また中心を足す。今中心が(0,0,0)で固定なので...なんとかしたいね。デバッグするうえで不利。
       this.eye.sub(this.center).rotate(this.top, t).add(this.center);
@@ -1809,7 +1822,6 @@ const p5wgex = (function(){
       // eyeからcenterに向かうベクトルを右に振る。t<0の場合は左に振る。なおcenterが動くので注意。
       // center-eyeでeyeからcenterに向かうベクトルになるがこれの正の向きの変化は時計回りなのでマイナスを付ける。
       // centerを動かす処理なので早速問題が発生している...
-      const d = this.distance;
       const t = delta * sensitivity;
       this.center.sub(this.eye).rotate(this.top, -t).add(this.eye);
       this.calcDistance();
@@ -1832,6 +1844,20 @@ const p5wgex = (function(){
       this.calcDistance();
       this.calcViewMat();
     }
+    roll(delta, sensitivity = 1){
+      // topベクトルをfrontの周りに回転させる。画面の横揺れ。
+      // 結果だけ述べると、tが正解です。-tではない。まずfrontの周りに反時計回りに回転させるともともとのtopに対して
+      // 左に傾く。これが新しいtopだとするならば、それを上として座標系を作る場合、それがてっぺんに来ることを想像すれば、
+      // 全体は右に傾くと分かる。だからそのまんまでいい。
+      const t = delta * sensitivity;
+      this.top.rotate(this.front, t);
+      this.calcViewMat();
+    }
+    topReset(){
+      // topを初期状態に戻す
+      this.top.set(this.ciel);
+      this.calcViewMat();
+    }
     move(a, b, c){
       const v = _getValidation(a, b, c);
       // で、この分だけ全体を移動する。eyeとcenterをそれぞれ...side, up, front方向に。
@@ -1850,7 +1876,6 @@ const p5wgex = (function(){
       // centerのtop方向にeyeがきちゃうのまずいよねって話。ただ、まあ、いいか...
       this.center.set(v);
       this.calcDistance();
-      const d = this.distance;
       this.calcViewMat();
     }
   }
@@ -1919,6 +1944,8 @@ const p5wgex = (function(){
   // getNormalMatrix.
   // モデルビューは既に4x4の配列として計算済み。それに対し左上の3x3から逆転置を作って返す。
   // この中で掛け算するのはいろいろと二度手間になりそうだったので却下。
+  // normalMatrixはVSで計算することになったので廃止で。いろいろ変えないとね...
+  /*
   function getNormalMat(modelView){
     const result = new Array(9).fill(0);
     result[0] = modelView[0]; result[1] = modelView[1]; result[2] = modelView[2];
@@ -1926,6 +1953,7 @@ const p5wgex = (function(){
     result[6] = modelView[8]; result[7] = modelView[9]; result[8] = modelView[10];
     return getInverseTranspose3x3(result);
   }
+  */
 
   // 順番としては
   // TransformExとCameraExを用意 → モデルとビューでモデルビュー作って法線も作って
@@ -1941,10 +1969,11 @@ const p5wgex = (function(){
 
   // utility.
   ex.getNormals = getNormals;
-  ex.getMult4x4 = getMult4x4;
+  ex.getMult3x3 = getMult3x3; // 3x3の使い道があるかもしれない的な
+  ex.getMult4x4 = getMult4x4; // こっちは使い道あるかもしれない
   ex.hsv2rgb = hsv2rgb;
   ex.hsvArray = hsvArray;
-  ex.getNormalMat = getNormalMat;
+  //ex.getNormalMat = getNormalMat;
 
   // class.
   ex.Timer = Timer;

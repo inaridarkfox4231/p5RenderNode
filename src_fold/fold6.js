@@ -22,6 +22,8 @@
 // そのうえで3つの射影モードとカメラを動かす各種メソッドをチェックするguiを作る。以上。
 // transformの異なる立方体を作るやり方は...考えます...
 
+// カメラのテスト一応終わりました。疲れた。疲れたわ...
+
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
 
@@ -51,7 +53,6 @@ uniform vec3 uAmbientColor;
 
 uniform mat4 uModelViewMatrix;
 uniform mat4 uProjectionMatrix;
-uniform mat3 uNormalMatrix; // あーこれまだ作ってない...な...uMVの逆転置行列だそうです。
 
 out vec3 vVertexColor;
 out vec3 vNormal;
@@ -68,7 +69,13 @@ void main(void){
   vViewPosition = viewModelPosition.xyz;
   gl_Position = uProjectionMatrix * viewModelPosition;
 
-  vNormal = uNormalMatrix * aNormal;
+  mat3 normalMatrix; // こうしよう。[0]で列ベクトルにアクセス。
+  normalMatrix[0] = uModelViewMatrix[0].xyz;
+  normalMatrix[1] = uModelViewMatrix[1].xyz;
+  normalMatrix[2] = uModelViewMatrix[2].xyz;
+  normalMatrix = inverse(transpose(normalMatrix)); // これでいい。
+
+  vNormal = normalMatrix * aNormal;
   vVertexColor = aVertexColor;
   vTexCoord = aTexCoord;
 
@@ -336,6 +343,9 @@ function drawBG(){
   bg.text("P key: perspective", 5, 305);
   bg.text("O key: ortho", 5, 330);
   bg.text("F key: frustum", 5, 355);
+  bg.text("M key: roll right", 5, 380);
+  bg.text("N key: roll left", 5, 405);
+  bg.text("B key: top reset", 5, 430);
 
   bgTex.update();
 
@@ -350,10 +360,10 @@ function setModelView(){
   const modelMat = tf.getModelMat().m;
   const viewMat = cam2.getViewMat().m;
   const modelViewMat = ex.getMult4x4(modelMat, viewMat);
-  const normalMat = ex.getNormalMat(modelViewMat);
+  //const normalMat = ex.getNormalMat(modelViewMat);
   _node.setUniform("uViewMatrix", viewMat);
   _node.setUniform("uModelViewMatrix", modelViewMat);
-  _node.setUniform("uNormalMatrix", normalMat);
+  //_node.setUniform("uNormalMatrix", normalMat);
 }
 
 function controlCamera(){
@@ -386,4 +396,8 @@ function controlCamera(){
   if(keyIsDown(80)){ cam2.setPers(); }   // Pキー
   if(keyIsDown(79)){ cam2.setOrtho(); }  // Oキー
   if(keyIsDown(70)){ cam2.setFrustum(); } // Fキー
+  // roll.
+  if(keyIsDown(77)){ cam2.roll(0.03); } // mキーで右に傾く
+  if(keyIsDown(78)){ cam2.roll(-0.03); } // nキーで左に傾く
+  if(keyIsDown(66)){ cam2.topReset(); } // bキーでリセット
 }

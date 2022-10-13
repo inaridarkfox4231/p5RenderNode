@@ -71,7 +71,7 @@ uniform vec3 uAmbientColor;
 
 uniform mat4 uModelViewMatrix;
 uniform mat4 uProjectionMatrix;
-uniform mat3 uNormalMatrix; // あーこれまだ作ってない...な...uMVの逆転置行列だそうです。
+//uniform mat3 uNormalMatrix; // あーこれまだ作ってない...な...uMVの逆転置行列だそうです。
 
 out vec3 vVertexColor;
 out vec3 vNormal;
@@ -88,7 +88,13 @@ void main(void){
   vViewPosition = viewModelPosition.xyz;
   gl_Position = uProjectionMatrix * viewModelPosition;
 
-  vNormal = uNormalMatrix * aNormal;
+  mat3 normalMatrix; // こうしよう。[0]で列ベクトルにアクセス。
+  normalMatrix[0] = uModelViewMatrix[0].xyz;
+  normalMatrix[1] = uModelViewMatrix[1].xyz;
+  normalMatrix[2] = uModelViewMatrix[2].xyz;
+  normalMatrix = inverse(transpose(normalMatrix)); // これでいい。
+
+  vNormal = normalMatrix * aNormal;
   vVertexColor = aVertexColor;
   vTexCoord = aTexCoord;
 
@@ -138,6 +144,7 @@ vec3 getDirectionalLightDiffuseColor(vec3 normal){
   return diffuse * lightColor;
 }
 // PointLight項の計算。attenuationも考慮。
+// 今気づいたけど距離依存かこれ...全体のスケールが変わると色々めんどくさいことになるな...
 vec3 getPointLightDiffuseColor(vec3 modelPosition, vec3 normal){
   vec3 lightPosition = (uViewMatrix * vec4(uPointLightLocation, 1.0)).xyz;
   vec3 lightVector = modelPosition - lightPosition;
@@ -334,6 +341,8 @@ function registMesh1(){
     newFData.push(i);
   }
   let nData = ex.getNormals(newVData, newFData);
+  // これが旧式だと(0,0,0)で新式だと(NaN,NaN,NaN)になってる。
+  // 本格的に0の問題に取り組まないといけない。サボるのは駄目だし、計算の仕方、この際きちんと考えよう。
   meshData.push({name:"aNormal", size:3, data:nData});
 
   _node.registFigure("test1", meshData);
@@ -403,14 +412,15 @@ function draw(){
 }
 
 // 行列関連はまとめとこうか
+// 法線ベクトルは内部でtransposeのinverseできるので要らないね
 function setModelView(){
   const modelMat = tf.getModelMat().m;
   const viewMat = cam2.getViewMat().m;
   const modelViewMat = ex.getMult4x4(modelMat, viewMat);
-  const normalMat = ex.getNormalMat(modelViewMat);
+  //const normalMat = ex.getNormalMat(modelViewMat);
   _node.setUniform("uViewMatrix", viewMat);
   _node.setUniform("uModelViewMatrix", modelViewMat);
-  _node.setUniform("uNormalMatrix", normalMat);
+  //_node.setUniform("uNormalMatrix", normalMat);
 }
 
 // 特に動かさない...
