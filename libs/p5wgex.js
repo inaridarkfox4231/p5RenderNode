@@ -557,12 +557,21 @@ const p5wgex = (function(){
     };
   }
 
+  // ---------------------------------------------------------------------------------------------- //
+  // utility for Texture.
+
   // ubyte: gl.UNSIGNED_BYTE, float: gl.FLOAT, half_float: gl.HALF_FLOAT
   // nearest: gl.NEAREST, linear: gl.LINEAR
   // clamp: gl.CLAMP_TO_EDGE, repeat: gl.REPEAT, mirror: gl.MIRRORED_REPEAT. ミラーもいいよね。使ってみたい。
   // テクスチャ作る関数も作るつもり。そのうち...
   // r32fとか使ってみたいわね。効率性よさそう
-  function _validateForFBO(gl, info){
+  // これtextureの話しかしてないからこれでいいね？
+  // gl.RGBA32F --- gl.RGBA --- gl.FLOAT
+  // gl.RGBA16F --- gl.RGBA --- gl.FLOAT
+  // gl.RGBA16F --- gl.RGBA --- gl.HALF_FLOAT
+  // gl.RGBA --- gl.RGBA --- gl.UNSIGNED_BYTE
+  // gl.R32F --- gl.RED --- gl.FLOAT
+  function _validateForTexture(gl, info){
     // textureType. "ubyte", "half_float", "float"で指定
     if(info.textureType === undefined){ info.textureType = "ubyte"; }
     // textureInternalFormatとtextureFormatについて
@@ -584,6 +593,19 @@ const p5wgex = (function(){
     if(info.mipmap === undefined){ info.mipmap = false; } // mipmapはデフォルトfalseで。
   }
 
+  function _getTextureDataFromSrc(src){
+    if(src === undefined){ return null; }
+    if(src instanceof Uint8Array || src instanceof Float32Array){ return src; }
+    if(src instanceof HTMLImageElement){ return src; }
+    if(src instanceof p5.Graphics){ return src.elt; }
+    if(src instanceof p5.Image){ return src.canvas; }
+    window.error("sorry, I don't know how to.");
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------------------------- //
+  // framebuffer.
+
   // というわけでややこしいんですが、
   // 「gl.RGBAーgl.RGBAーgl.UNSIGNED_BYTE」「gl.RGBA32Fーgl.RGBAーgl.FLOAT」「gl.RGBA16Fーgl.RGBAーgl.HALF_FLOAT」
   // という感じなので、Typeの種類にInternalFormatとFormatが左右されるのですね。
@@ -595,6 +617,8 @@ const p5wgex = (function(){
   // 他のパラメータとか若干ややこしいのでそのうち何とかしましょう...webgl2はややこしいのだ...
   // 場合によってはtextureInternalFormatとtextureFormatも指定するべきなんだろうけど
   // まだ扱ったことが無くて。でもおいおい実験していかなければならないだろうね。てか、やりたい。やらせてください（OK!）
+
+  // 最後にinfo.srcですがこれがundefinedでないなら然るべくdataを取得してそれを放り込む形となります。
 
   // textureFilter: テクスチャのフェッチの仕方。通常は"nearest"（点集合など正確にフェッチする場合など）、
   // 学術計算とかなら"linear"使うかも
@@ -612,7 +636,7 @@ const p5wgex = (function(){
 
   // 2DをCUBE_MAPや2D_ARRAYにしても大丈夫っていうのは...まあ、まだ無理ね...
   function _createFBO(gl, info, dict){
-    _validateForFBO(gl, info);
+    _validateForTexture(gl, info);
 
     // フレームバッファを生成。怖くないよ！！
     let framebuffer = gl.createFramebuffer();
@@ -628,37 +652,47 @@ const p5wgex = (function(){
     gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, info.w, info.h);
     // フレームバッファにレンダーバッファを関連付ける
     gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRenderbuffer);
+    // たぶんこれでクリアする
+    if(data === null){
+      gl.viewport(0, 0, info.w, info.h);
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+    }
     // 深度レンダーバッファのバインドを解除
     gl.bindRenderbuffer(gl.RENDERBUFFER, null);
 
-    // 次に色テクスチャを生成する
+    // 次にテクスチャを生成する
     let fTexture = gl.createTexture();
     // gl.activeTexture(gl.TEXTURE0); // これ要らないっぽい。
-    // 色テクスチャをバインド
+    // テクスチャをバインド
     gl.bindTexture(gl.TEXTURE_2D, fTexture);
-    // 色テクスチャにカラー用のメモリ領域を確保
+    // テクスチャにメモリ領域を確保
     // internalFormat, Format, Typeの組み合わせが限定されているので注意
     // ちなみに0のところはmipmapのレベルを指定していてこれを1とか2にする、と。
+
+    const data = _getTextureDataFromSrc(info.src);
     gl.texImage2D(gl.TEXTURE_2D, 0, dict[info.textureInternalFormat], info.w, info.h, 0,
-                  dict[info.textureFormat], dict[info.textureType], null);
+                  dict[info.textureFormat], dict[info.textureType], data);
     // mipmapの作成
     if(info.mipmap){ gl.generateMipmap(gl.TEXTURE_2D); }
 
-    // 色テクスチャのパラメータ設定
+    // テクスチャのフィルタ設定（サンプリングの仕方を決める）
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[info.textureFilter]); // 拡大表示用
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[info.textureFilter]); // 縮小表示用
+    // テクスチャのラッピング設定（範囲外のUV値に対する挙動を決める）
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, dict[info.textureWrap]);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[info.textureWrap]);
 
-    // 色テクスチャをフレームバッファに関連付ける
+    // テクスチャをフレームバッファに関連付ける
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, fTexture, 0);
 
     // 中身をクリアする(clearに相当する)
-    // 色テクスチャに初期設定を用意する場合ここは無い方がいいね...用意したいんだけど。
-    gl.viewport(0, 0, info.w, info.h);
-    gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    // dataがnullでない時はまずいのでやらないようにしよう...
+    if(data === null){
+      gl.viewport(0, 0, info.w, info.h);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
 
-    // 色テクスチャのバインドを解除
+    // テクスチャのバインドを解除
     gl.bindTexture(gl.TEXTURE_2D, null);
 
     // フレームバッファのバインドを解除
@@ -699,6 +733,89 @@ const p5wgex = (function(){
 
   // あとはp5の2D,webgl画像からテクスチャを作るのとか用意したいね.
   // 登録しておいてそこから取り出して編集とか。そうね。それでもいいかも。bgManagerの後継機みたいな。さすがにクラスにしないと...
+
+  // ---------------------------------------------------------------------------------------------- //
+  // Texture.
+  // 画像データないしはUint8Arrayから作る。Float32ArrayからでもOK？pavelさんのあれは必要ないわけだ。）
+  // infoについて
+  // info.srcはたとえばnew Image()で作ったimgであったりp5.Graphicsであったりp5.Imageであったり
+  // Uint8ArrayであったりUint32Arrayであったり（後者は4*w*hくらいの大きさで）
+  // info.wとinfo.hのサイズで作ります
+  // info.textureIntervalFormat, info.textureFormat, info.textureType,
+  // info.mipmap, info.textureFilter, info.textureWrapはまあ、然るべく。デフォは色で。
+
+  // デフォルト設定にはフレームバッファと同じものを使いますね。
+
+  function _createTexture(gl, info){
+    _validateForTexture(info);
+    const data = _getTextureDataFromSrc(info.src);
+    // テクスチャを生成する
+    let tex = gl.createTexture();
+    // テクスチャをバインド
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    // テクスチャにメモリ領域を確保
+    gl.texImage2D(gl.TEXTURE_2D, 0, dict[info.textureInternalFormat], info.w, info.h, 0,
+                  dict[info.textureFormat], dict[info.textureType], data);
+    // mipmapの作成
+    if(info.mipmap){ gl.generateMipmap(gl.TEXTURE_2D); }
+
+    // テクスチャのフィルタ設定（サンプリングの仕方を決める）
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[info.textureFilter]); // 拡大表示用
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[info.textureFilter]); // 縮小表示用
+    // テクスチャのラッピング設定（範囲外のUV値に対する挙動を決める）
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, dict[info.textureWrap]);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[info.textureWrap]);
+    // テクスチャのバインドを解除
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    return tex;
+  }
+
+  // 名前で管理
+  // RenderNodeに管理させる。textureそれ自体に触れることはまずないので。srcだけアクセス可能にする。
+  class TextureEx{
+    constructor(gl, info){
+      this.gl = gl;
+      this.name = info.name;
+      this.src = info.src; // ソース。p5.Graphicsの場合これを使って...
+      this.tex = _createTexture(gl, info);
+      // infoのバリデーションが済んだので各種情報を格納
+      this.w = (info.w !== undefined ? info.w : 1);
+      this.h = (info.h !== undefined ? info.h : 1);
+      this.wrapParam = {s:info.textureWrap, t:info.textureWrap};
+      this.filterParam = {mag:info.textureFilter, min:info.textureFilter};
+      this.formatParam = {internalFormat:info.internalFormat, format:info.format, type:info.type};
+    }
+    setFilterParam(param = {}){
+      // フィルタ設定関数
+      if(param.mag !== undefined){ this.filterParam.mag = param.mag; }
+      if(param.min !== undefined){ this.filterParam.min = param.min; }
+      this.gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[this.filterParam.mag]); // 拡大表示用
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[this.filterParam.min]); // 縮小表示用
+      this.gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+    setWrapParam(param = {}){
+      if(param.s !== undefined){ this.wrapParam.s = param.s; }
+      if(param.t !== undefined){ this.wrapParam.t = param.t; }
+      // ラッピング設定関数
+      this.gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, dict[this.wrapParam.s]);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[this.wrapParam.t]);
+      this.gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+    getTextureSource(){
+      return this.src;
+    }
+    updateTexture(){
+      // texSubImage2Dを使って内容を上書きする。
+      const data = _getTextureDataFromSrc(this.src);
+      this.gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, dict[this.formatParam.internalFormat], this.w, this.h, 0,
+                    dict[this.formatParam.format], dict[this.formatParam.type], data);
+      this.gl.bindTexture(gl.TEXTURE_2D, null);
+      // 果たしてこれでちゃんと上書きされるのか...
+    }
+  }
 
   // ----------------------------------------
   // Vec3. normalの計算でもこれ使おう。
@@ -1041,11 +1158,6 @@ const p5wgex = (function(){
   }
 
   // ---------------------------------------------------------------------------------------------- //
-  // Texture.
-  // canvas要素からテクスチャオブジェクトを生成する...というかそれを当てはめることができる、それ。
-
-
-  // ---------------------------------------------------------------------------------------------- //
   // Meshes.
   // まあ、メッシュいろいろテンプレート、あると便利だし。難しいけどね。
   // 落ち着いてから。
@@ -1082,6 +1194,7 @@ const p5wgex = (function(){
       this.figures = {};
       this.fbos = {};
       this.ibos = {};
+      this.textures = {}; // textures!
       this.currentPainter = undefined;
       this.currentFigure = undefined;
       this.currentIBO = undefined; // このくらいはいいか。
@@ -1176,15 +1289,30 @@ const p5wgex = (function(){
       }
       return this;
     }
+    registTexture(name, info){
+      // お待たせしました！！
+      info.name = name;
+      const newTexture = new TextureEx(this.gl, info);
+      this.textures[name] = newTexture;
+      return this;
+    }
+    getTextureSource(name){
+      // source取得。これでp5.Graphicsを取得...
+      return this.textures[name].getTextureSource();
+    }
+    updateTexture(name){
+      // ついでupdateすればOK!
+      this.textures[name].updateTexture();
+      return this;
+    }
     usePainter(name){
+      // Painter単独の有効化関数。複数のFigureをまとめてdrawする場合など。
       this.currentPainter = this.painters[name];
       this.currentPainter.use();
       return this;
     }
     drawFigure(name){
-      // よく考えたら切り離す必要ないか。同じ板ポリ使い回す場合、板ポリはそのままで、
-      // 使うペインター（色塗り機）だけ差し替えるわけで。差し替えるたびに有効化すると。
-      // まとめてやるような処理でもないし切り離す必要性あんまないな。
+      // 異なるポリゴンを同じシェーダでレンダリングする際に重宝する。
       this.currentFigure = this.figures[name];
       // 属性の有効化
       this.enableAttributes();
@@ -1228,6 +1356,13 @@ const p5wgex = (function(){
     setTexture2D(name, _texture){
       // 有効になっているPainterがテクスチャユニフォームを持っているとして、それを使えるようにbindする。
       this.currentPainter.setTexture2D(name, _texture);
+      return this;
+    }
+    setTexture2D_(name, textureName){
+      // 有効になっているPainterがテクスチャユニフォームを持っているとして、それを使えるようにbindする。
+      // textureは名前から取得する。texを取り出してbindする。
+      // 最後の_はテストが終わるまで残しといて。
+      this.currentPainter.setTexture2D(name, this.textures[textureName].tex);
       return this;
     }
     setUniform(name, data){
@@ -2072,11 +2207,12 @@ const p5wgex = (function(){
   //ex.getNormalMat = getNormalMat; // 法線行列の取得関数は廃止
 
   // class.
-  ex.OldTimer = OldTimer;
+  //ex.OldTimer = OldTimer;
   ex.Timer = Timer;
   ex.Painter = Painter;
   ex.Figure = Figure;
   ex.RenderNode = RenderNode;
+  ex.TextureEx = TextureEx;
   ex.Mat4 = Mat4;
   //ex.CameraEx = CameraEx; // 旧カメラは廃止
   ex.CameraEx = CameraEx;

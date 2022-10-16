@@ -59,11 +59,10 @@
 
 // gl.RGBA32F --- gl.RGBA --- gl.FLOAT
 // gl.RGBA16F --- gl.RGBA --- gl.FLOAT
+// gl.RGBA16F --- gl.RGBA --- gl.HALF_FLOAT
 // gl.RGBA --- gl.RGBA --- gl.UNSIGNED_BYTE
-// 気になるのは...
-// gl.R32F --- gl.RED --- gl.FLOAT fbmのマルチパス計算とかできたら面白そう
-// gl.RGB32F --- gl.RGB --- gl.FLOAT  ランダムベクトルの格納とかで使えそう
-
+// gl.R32F --- gl.RED --- gl.FLOAT
+// gl.RGB32F --- gl.RGB --- gl.FLOAT
 
 // それ以前に
 // https://stackoverflow.com/questions/69016956/webgl2-incomplete-framebuffer
@@ -573,3 +572,9 @@ TODO
 
 // Timer更新。カメラの2もなくしました。結論、仕様変更は、大変...！
 // test10以降を番号をずらして一旦保留にしました。それどころではないので。
+
+// UInt8ArrayじゃなくてUint8Arrayでした。ごめんなさい。iは小文字でしたね...
+
+// copyShaderは簡単なんですよね。まずVSでuvを取ってvaryingで渡し、FSでセットしたテクスチャを...
+// nullであればスクリーンに、nullでなければセットしたframebufferのtextureに、大きさそのままでコピーする。
+// つまり縦横ぴっちりぴったりくっつけ！です。

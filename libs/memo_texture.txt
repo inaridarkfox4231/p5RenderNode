@@ -1,3 +1,104 @@
 // テクスチャとセーブ
 // テクスチャ
 // まずp5.Imageとnew Image()とcreateGraphicsで作るimageのいずれからでも作れるようにする。
+// それぞれの作り方はこんな感じ：
+/*
+let _loaded;
+let img = new Image();
+img.onload = function(){
+  console.log(this.width, this.height); // 256, 256. 通常サイズ。当然か。
+}
+img.src = "https://inaridarkfox4231.github.io/assets/texture/rdm.png";
+
+function preload(){
+  _loaded = loadImage("https://inaridarkfox4231.github.io/assets/texture/cloud.png");
+}
+
+function setup() {
+  createCanvas(400, 400);
+  let gr = createGraphics(100,100);
+  // これはもちろん100,100になる。
+  // texture作るのにこの値を用いてはいけない。gr自身は、
+  // テクスチャの引数になることはできないのだ。
+  console.log(gr.width, gr.height); // 100, 100.
+  console.log(gr.elt.width, gr.elt.height); // 200, 200 2倍サイズ
+  console.log(_loaded.canvas.width, _loaded.canvas.height); // 256,256 通常
+  // このように、p5.Graphicsを使う場合だけ、2倍になる。
+  // そしてこれらのeltだったりcanvasだったりimgだったりが
+  // texImage2Dの最後の引数の資格を持つ。
+
+  // ImageElementもしくはCanvasElementがtexImage2Dの引数としての
+  // 資格を持ち、そのwidth,heightを使う場合、p5.Graphicsだけ値が意図した
+  // 値の2倍とかになるので困るわけ。
+  console.log(gr instanceof p5.Graphics);
+  console.log(_loaded instanceof p5.Image);
+  console.log(gr.elt instanceof HTMLCanvasElement);
+  console.log(_loaded.canvas instanceof HTMLCanvasElement);
+  console.log(img instanceof HTMLImageElement);
+  const testArray = new Uint8Array(4*100*100);
+  console.log(testArray instanceof Uint8Array);
+}
+
+function draw() {
+  background(220);
+}
+*/
+
+// テクスチャの作り方
+// っていってもframebufferんとこに書いてあるんだからそれをなぞるだけなのよ、基本。
+
+// 0. createTextureでテクスチャオブジェクト生成
+// 1. 各種設定の準備のため一時的にbind
+// 2. 書き込みの仕様を決めるためにformat設定、幅と高さの設定、さらに画像データがあるならそれを設定、無ければnull.
+//    p5js公式は1x1のUint8Arrayを使ってるけどサイズが確定してる場合この方法は使えません。h_doxasさんは読み込み...
+//    前提でやってますね。あの記事は2Dでいろいろやることを想定していないので読み込み以外ありえないのです。
+//    先ほども説明したようにp5.ImageもしくはHTMLImageElementの場合は同じなんですがp5.Graphicsの場合そのcanvasは2倍サイズ
+//    なので注意です。
+// 3. フィルタ設定。場合によってはmipmapがtrueになっていてLINEAR_MIPMAP_LINEARを設定する...かも？
+// 4. ラッピング設定。範囲外のUV値に対してどうふるまうか。いわゆるシームレステクスチャの場合ここをrepeatにする。
+// 5. 終わったのでbindを解除。お疲れさまでした。createしたtextureにはアクセスできるようにしておこう。
+// で、終わりなんですが、メソッドでフィルタやラッピングを変更できるメソッドも一応用意しておこう。
+// さらにupdateといってsrcというか
+
+// p5.Graphicsから構成する場合は特殊ケースとみなした方が良さそうだ。テクスチャ単独で使う場合はいいけれど。
+// これをあえて切り離して、grに手を加えたうえでそのたびにupdateが実行されるようにしよう。return thisでchainで。
+// 要するにbgManagerの復活というわけね。getGraphicsで取得してあれこれする、updateする。
+// updateの場合はおそらくだけどtexSubImage2DでOKのはず。
+// さらにこれらとは別に第3のケースとしてフレームバッファのtextureの初期設定に画像データを仕込めるようにする。
+
+// UInt8Array → Uint8Array.
+
+// 4つくらいで。んでこれらが用いられ...Uint8Arrayの場合すでにwとhが想定されてて何かしらの方法で4*w*hの長さになってたりする...
+// ので、wとhはそのままで、って感じで。
+
+// gl.RGBA32F --- gl.RGBA --- gl.FLOAT
+// gl.RGBA16F --- gl.RGBA --- gl.FLOAT
+// gl.RGBA16F --- gl.RGBA --- gl.HALF_FLOAT
+// gl.RGBA --- gl.RGBA --- gl.UNSIGNED_BYTE
+// gl.R32F --- gl.RED --- gl.FLOAT
+
+// せいぜいこんくらいだろ。
+// ちなみになぜメモ帳なのに「//」で始めてるかというと
+// ソースコードに貼り付けるときに便利だから。まあ最初//で書いてたのを移して、惰性、だけどね。
+
+// やっぱp5.Graphicsだけ特別扱いするのは、無しで。めんどくさい。
+
+// フレームバッファのクラス化が出来れば、その内部のテクスチャにアクセスして、ラップとかいじれるし（いじる機会なさそうだけど）、
+// ...どうしよ。
+
+// framebufferのinfoでsrcってやってこれを初期設定できるかどうか確かめる。
+// 20221017
+// だめ。他の変数が使えない。
+// やっぱソース取得とupdateそれぞれ用意して。
+// あとtextureのupdateも隠蔽しよう。
+
+/*
+  イメージ：
+  const gr = _node.getTextureSource("hoge");
+  ~~~~~~ grであれこれ ~~~~~~
+  _node.updateTexture("hoge");
+*/
+
+// 簡単でしょ！？さて、動くかどうかテストだ...しんどいわ...
+// まあこんな感じなんで、「texture早く実装してよ！」って言われても、無理なんですよ。考えないといけないことが山ほどある。
+// のちのちの仕様変更とかも考えるとうかつに動けないわけ。お分かりですかね...？
