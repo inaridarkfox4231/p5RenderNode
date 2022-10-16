@@ -241,7 +241,7 @@ void main(void){
 // ----setup---- //
 function setup(){
   createCanvas(640, 640, WEBGL);
-  _timer.set("slot0");
+  _timer.initialize("slot0");
   _node = new ex.RenderNode(this._renderer.GL);
 
   _node.registPainter("clear", dataVert, clearFrag); // 初期化用
@@ -262,13 +262,13 @@ function setup(){
   info.textAlign(LEFT, TOP);
   infoTex = new p5.Texture(this._renderer, info);
 
-	_timer.set("fps"); // 最初に1回だけ
+	_timer.initialize("fps", {scale:1000/60}); // 最初に1回だけ
 }
 
 // ----draw---- //
 function draw(){
-  const currentTime = _timer.getDeltaSecond("slot0");
-  const fps = _timer.getDeltaFPStext("fps");
+  const currentTime = _timer.getDelta("slot0");
+  const fps = _timer.getDelta("fps").toFixed(3);
 	_timer.set("fps"); // ここから上のあそこまで、ってやってみたわけ。うん。なるほど...んー...
 	// でもよく考えたらfpsなんだからこうするのが正解よね...
 

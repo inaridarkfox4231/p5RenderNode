@@ -30,11 +30,10 @@
 const ex = p5wgex; // alias.
 let _node; // RenderNode.
 
-let tf, cam;
-let cam2;
+let tf;
+let cam;
 // 手動で動かすのでタイマーは無しで。とりあえずズームとスライド。余裕があったらアライズ、
 // あとヨーイングローリングピッチング（おいおいおいおーーーい）
-let _timer = new ex.Timer();
 let bg, bgTex; // ていうかテクスチャ実装はよ（3Dテクスチャ実装はよ）
 let img;
 
@@ -206,12 +205,11 @@ void main(void){
 
 function setup(){
   createCanvas(800, 640, WEBGL);
-  _timer.set("currentTime");
   _node = new ex.RenderNode(this._renderer.GL);
   tf = new ex.TransformEx();
   const r = Math.sqrt(3)*3; // デフォルトのカメラとの距離
   // orthoは今回世界が小さいのでそれに合わせる形で。
-  cam2 = new ex.CameraEx2({
+  cam = new ex.CameraEx({
     w:10, h:8, top:[0, 0, 1], eye:[r, 0, r*0.5],
     proj:{near:0.1, far:10}, ortho:{left:-5, right:5, bottom:-4, top:4, near:0, far:4}
   });
@@ -273,9 +271,6 @@ function setup(){
 }
 
 function draw(){
-  // 時間取得
-  const currentTime = _timer.getDeltaSecond("currentTime");
-
   _node.bindFBO(null).clear(); // これ癖にするといいかも。
 
   // 背景...
@@ -300,11 +295,11 @@ function draw(){
   _node.usePainter("light");
 
   // 射影
-  const projMat = cam2.getProjMat().m;
+  const projMat = cam.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
 
   // ライティングユニフォーム
-  const {front} = cam2.getLocalAxes(); // frontから視線方向に光を当てる。
+  const {front} = cam.getLocalAxes(); // frontから視線方向に光を当てる。
   _node.setUniform("uAmbientColor", [0.25, 0.5, 0.25]);
   _node.setUniform("uUseDirectionalLight", true);
   _node.setUniform("uLightingDirection", [-front.x, -front.y, -front.z]);
@@ -358,7 +353,7 @@ function drawBG(){
 // 行列関連はまとめとこうか
 function setModelView(){
   const modelMat = tf.getModelMat().m;
-  const viewMat = cam2.getViewMat().m;
+  const viewMat = cam.getViewMat().m;
   const modelViewMat = ex.getMult4x4(modelMat, viewMat);
   //const normalMat = ex.getNormalMat(modelViewMat);
   _node.setUniform("uViewMatrix", viewMat);
@@ -369,35 +364,35 @@ function setModelView(){
 function controlCamera(){
   // カメラをコントロール。
   // 上下キーでズーム、左右キーでスライド、Wキーで上昇、Sキーで下降。できたね！！
-  if(keyIsDown(UP_ARROW)){ cam2.zoom(0.02); }
-  if(keyIsDown(DOWN_ARROW)){ cam2.zoom(-0.02); }
-  if(keyIsDown(RIGHT_ARROW)){ cam2.spin(0.03); }
-  if(keyIsDown(LEFT_ARROW)){ cam2.spin(-0.03); }
-  if(keyIsDown(87)){ cam2.arise(0.04); } // Wキー
-  if(keyIsDown(83)){ cam2.arise(-0.04); } // Sキー
-  if(keyIsDown(69)){ cam2.dolly(0.05); } // Eキー
-  if(keyIsDown(68)){ cam2.dolly(-0.05); } // Dキー
-  if(keyIsDown(67)){ cam2.pan(0.03); } // Cキー
-  if(keyIsDown(90)){ cam2.pan(-0.03); } // Zキー
-  if(keyIsDown(84)){ cam2.tilt(0.04); } // Tキー
-  if(keyIsDown(71)){ cam2.tilt(-0.04); } // Gキー
+  if(keyIsDown(UP_ARROW)){ cam.zoom(0.02); }
+  if(keyIsDown(DOWN_ARROW)){ cam.zoom(-0.02); }
+  if(keyIsDown(RIGHT_ARROW)){ cam.spin(0.03); }
+  if(keyIsDown(LEFT_ARROW)){ cam.spin(-0.03); }
+  if(keyIsDown(87)){ cam.arise(0.04); } // Wキー
+  if(keyIsDown(83)){ cam.arise(-0.04); } // Sキー
+  if(keyIsDown(69)){ cam.dolly(0.05); } // Eキー
+  if(keyIsDown(68)){ cam.dolly(-0.05); } // Dキー
+  if(keyIsDown(67)){ cam.pan(0.03); } // Cキー
+  if(keyIsDown(90)){ cam.pan(-0.03); } // Zキー
+  if(keyIsDown(84)){ cam.tilt(0.04); } // Tキー
+  if(keyIsDown(71)){ cam.tilt(-0.04); } // Gキー
   // テンキーの4,6で左と右のmoveを実装
-  if(keyIsDown(100)){ cam2.move([-0.04, 0, 0]); } // テンキー4
-  if(keyIsDown(102)){ cam2.move([0.04, 0, 0]); } // テンキー6
+  if(keyIsDown(100)){ cam.move([-0.04, 0, 0]); } // テンキー4
+  if(keyIsDown(102)){ cam.move([0.04, 0, 0]); } // テンキー6
   // テンキーの8,2で上と下のmoveを実装
-  if(keyIsDown(104)){ cam2.move([0, 0.04, 0]); } // テンキー8
-  if(keyIsDown(98)){ cam2.move([0, -0.04, 0]); } // テンキー2
+  if(keyIsDown(104)){ cam.move([0, 0.04, 0]); } // テンキー8
+  if(keyIsDown(98)){ cam.move([0, -0.04, 0]); } // テンキー2
   // テンキーの5と0で奥と手前のmoveを実装
-  if(keyIsDown(101)){ cam2.move([0, 0, 0.04]); } // テンキー5
-  if(keyIsDown(96)){ cam2.move([0, 0, -0.04]); } // テンキー0
+  if(keyIsDown(101)){ cam.move([0, 0, 0.04]); } // テンキー5
+  if(keyIsDown(96)){ cam.move([0, 0, -0.04]); } // テンキー0
   // Lキーで中心を原点に戻します。
-  if(keyIsDown(76)){ cam2.lookAt(0, 0, 0); } // Lキー
+  if(keyIsDown(76)){ cam.lookAt(0, 0, 0); } // Lキー
   // 射影モードの切り替え
-  if(keyIsDown(80)){ cam2.setPers(); }   // Pキー
-  if(keyIsDown(79)){ cam2.setOrtho(); }  // Oキー
-  if(keyIsDown(70)){ cam2.setFrustum(); } // Fキー
+  if(keyIsDown(80)){ cam.setPers(); }   // Pキー
+  if(keyIsDown(79)){ cam.setOrtho(); }  // Oキー
+  if(keyIsDown(70)){ cam.setFrustum(); } // Fキー
   // roll.
-  if(keyIsDown(77)){ cam2.roll(0.03); } // mキーで右に傾く
-  if(keyIsDown(78)){ cam2.roll(-0.03); } // nキーで左に傾く
-  if(keyIsDown(66)){ cam2.topReset(); } // bキーでリセット
+  if(keyIsDown(77)){ cam.roll(0.03); } // mキーで右に傾く
+  if(keyIsDown(78)){ cam.roll(-0.03); } // nキーで左に傾く
+  if(keyIsDown(66)){ cam.topReset(); } // bキーでリセット
 }

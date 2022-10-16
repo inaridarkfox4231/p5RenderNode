@@ -12,13 +12,17 @@
 // 信じられないなぁ...
 // なのでこれからはちゃんと反時計回り、お願いしますね...
 
+// normalMatrixを外で作らないことになったので修正
+// timerが変わりました。scaleを1000でデフォルト指定するとgetDeltaで秒数がサクッと入手出来ます
+// setで現在時刻をstump出来るのは従来通りです。
+
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
 
 const ex = p5wgex; // alias.
 let _node; // RenderNode.
 
-let tf, cam, cam2;
+let tf, cam;
 let _timer = new ex.Timer();
 
 // ------------------------------------------------------------------------------------------------------------ //
@@ -36,7 +40,7 @@ uniform vec3 uAmbientColor;
 
 uniform mat4 uModelViewMatrix;
 uniform mat4 uProjectionMatrix;
-uniform mat3 uNormalMatrix; // あーこれまだ作ってない...な...uMVの逆転置行列だそうです。
+//uniform mat3 uNormalMatrix; // あーこれまだ作ってない...な...uMVの逆転置行列だそうです。
 
 out vec3 vVertexColor;
 out vec3 vNormal;
@@ -53,7 +57,13 @@ void main(void){
   vViewPosition = viewModelPosition.xyz;
   gl_Position = uProjectionMatrix * viewModelPosition;
 
-  vNormal = uNormalMatrix * aNormal;
+  mat3 normalMatrix; // こうしよう。[0]で列ベクトルにアクセス。
+  normalMatrix[0] = uModelViewMatrix[0].xyz;
+  normalMatrix[1] = uModelViewMatrix[1].xyz;
+  normalMatrix[2] = uModelViewMatrix[2].xyz;
+  normalMatrix = inverse(transpose(normalMatrix)); // これでいい。今回は全部いじらないのであんま意味ないが...
+
+  vNormal = normalMatrix * aNormal;
   vVertexColor = aVertexColor;
   vTexCoord = aTexCoord;
 
@@ -162,12 +172,12 @@ void main(void){
 
 function setup(){
   createCanvas(800, 640, WEBGL);
-  _timer.set("slot0");
+  _timer.initialize("slot0"); // 秒数を用いる
   const gl = this._renderer.GL;
   _node = new ex.RenderNode(gl);
   tf = new ex.TransformEx();
   //cam = new ex.CameraEx(width, height);
-  cam2 = new ex.CameraEx2({w:width, h:height});
+  cam = new ex.CameraEx({w:width, h:height});
 
   // lightingShader.
   _node.registPainter("light", lightVert, lightFrag);
@@ -221,7 +231,7 @@ function draw(){
 
   // 射影
   //const projMat = cam.getProjMat().m;
-  const projMat = cam2.getProjMat().m;
+  const projMat = cam.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
 
   // ライティングユニフォーム
@@ -247,19 +257,19 @@ function draw(){
 function setModelView(){
   const modelMat = tf.getModelMat().m;
   //const viewMat = cam.getViewMat().m;
-  const viewMat = cam2.getViewMat().m;
+  const viewMat = cam.getViewMat().m;
   const modelViewMat = ex.getMult4x4(modelMat, viewMat);
-  const normalMat = ex.getNormalMat(modelViewMat);
+  //const normalMat = ex.getNormalMat(modelViewMat);
   _node.setUniform("uViewMatrix", viewMat);
   _node.setUniform("uModelViewMatrix", modelViewMat);
-  _node.setUniform("uNormalMatrix", normalMat);
+  //_node.setUniform("uNormalMatrix", normalMat);
 }
 
 // キューブのtf
 // これも同じことで、この場合特定の場所で重心を中心に回転させたいわけだが、点集合で考えれば
 // 回転してから然るべくtranslate,となるから、それを逆回ししただけ。さらにスケール変換...？これ最後なのでは...？
 function moveCube(){
-  const currentTime = _timer.getDeltaSecond("slot0");
+  const currentTime = _timer.getDelta("slot0");
   tf.initialize()
     .rotateZ(Math.PI*currentTime)
     .rotateX(Math.PI*currentTime)

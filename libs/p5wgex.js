@@ -90,11 +90,15 @@ const p5wgex = (function(){
     return {r:255, g:255, b:255};
   }
 
+  // ---------------------------------------------------------------------------------------------- //
+  // Timer.
+
   // 簡単なタイマー的な何か
   // 単純に経過ミリ秒を返す...
   // たとえば適当なタイミングで"draw"とかしてgetDeltaでdrawって呼ぶとそこまでの差が出るから
   // deltaでなんかしたいなら個別にやってください...まあでもそのうち何か作るよ。deltaのhistory...要望があれば。
-  class Timer{
+  /*
+  class OldTimer{
     constructor(){
       this.stumps = {};
     }
@@ -124,9 +128,73 @@ const p5wgex = (function(){
     }
     getDeltaFPStext(keyName, fps = 60, digits = 3){
       // fpsのテキストを返してくれる。ざっくりいうと1に近いほど遅い。
+      // ただ、今p5jsのframeRate使ってるからもはや不要なのよね...
       const delta = this.getDelta(keyName);
       if(delta === null){ return null; }
       return (delta * fps / 1000).toFixed(digits); // 1000/fpsで割って...桁数指定で文字列を返す。
+    }
+  }
+  */
+
+  // stumpの概念を有するタイマー。デフォルトスタンプを持って初期化出来る。常に最後に発火したタイミングを保持
+  // しておりそこに到達するたびにそのタイミングを更新しつつtrueを返す。
+  // 上位互換になるな...Timerは廃止かもしれない（え？）
+  // たとえばscaleに1000/60を指定すれば...っていう感じなので。
+  // 関数を設定してもいいんだけどtargetとかfuncNameとか引数とかややこしいので勝手にやってくれって感じ...
+  // 従来通り使うなら普通にinitialize(name)でいいしsetで現在時刻登録されるしgetDeltaで秒数、
+  // fps欲しいなら1000/60をスケールに設定、そんなところ。
+  class Timer{
+    constructor(){
+      this.timers = {};
+    }
+    initialize(keyName, info = {}){
+      if(info.stump === undefined){ info.stump = window.performance.now(); } // 未定義の場合は現在の時刻
+      if(info.durationTime === undefined){ info.durationTime = Infinity; } // 未定義の場合は無限
+      if(info.scale === undefined){ info.scale = 1000; } // 返すときに何かで割りたいときにどうぞ。未定義の場合は1000.
+      // なぜならほとんどの場合秒数として使用するので（メトロノームなどの場合は具体的に指定するだろう）
+      // 最後に発火したタイミングと、次の発火までの時間間隔(duration)を設定（Infinityの場合は間隔を用意しない感じで）
+      this.timers[keyName] = {stump:info.stump, durationTime:info.durationTime, scale:info.scale};
+    }
+    set(keyName){
+      // 意図的にstumpの値を現在の時刻にすることで、こちらで何かあってからの経過時間を計測する、
+      // 従来の使い方もできるようにしよう。
+      this.timers[keyName].stump = window.performance.now();
+    }
+    getDelta(keyName){
+      // 最後に発火してからの経過時間をscaleで割った値を返す感じ。
+      // こっちの方が基本的に使用されるのでこれをgetDeltaとした。
+      if(this.timers[keyName] === undefined){
+        window.alert("getDelta failure: invalid name");
+        return null;
+      }
+      return (window.performance.now() - this.timers[keyName].stump) / this.timers[keyName].scale;
+    }
+    getDeltaMillis(keyName){
+      // 最後に発火してからの経過時間を生のミリ秒表示で取得する。使い道は検討中。
+      if(this.timers[keyName] === undefined){
+        window.alert("getDeltaMillis failure: invalid name");
+        return null;
+      }
+      return window.performance.now() - this.timers[keyName].stump;
+    }
+    check(keyName, nextDuration){
+      // durationを経過時間が越えたらstumpを更新する
+      // nextDurationは未定義なら同じ値を継続
+      // 毎回違うでもいい、自由に決められるようにする。
+      if(this.timers[keyName] === undefined){
+        window.alert("check failure: invalid name");
+        return null;
+      }
+      const _timer = this.timers[keyName];
+      const elapsedTime = window.performance.now() - _timer.stump;
+      if(elapsedTime > _timer.duration){
+        _timer.stump += _timer.duration;
+        if(nextDuration !== undefined){
+          _timer.duration = nextDuration;
+        }
+        return true;
+      }
+      return false;
     }
   }
 
@@ -166,6 +234,11 @@ const p5wgex = (function(){
     d.repeat = gl.REPEAT;
     d.mirror = gl.MIRRORED_REPEAT;
     d.clamp = gl.CLAMP_TO_EDGE;
+    // -------mipmapParam-------//
+    d.nearest_nearest = gl.NEAREST_MIPMAP_NEAREST;
+    d.nearest_linear = gl.NEAREST_MIPMAP_LINEAR;
+    d.linear_nearest = gl.LINEAR_MIPMAP_NEAREST;
+    d.linear_linear = gl.LINEAR_MIPMAP_LINEAR;
     // -------drawCall-------//
     d.points = gl.POINTS;
     d.lines = gl.LINES;
@@ -508,6 +581,7 @@ const p5wgex = (function(){
     if(info.textureFilter === undefined){ info.textureFilter = "nearest"; }
     // textureWrap. "clamp", "repeat", "mirror"で指定
     if(info.textureWrap === undefined){ info.textureWrap = "clamp"; }
+    if(info.mipmap === undefined){ info.mipmap = false; } // mipmapはデフォルトfalseで。
   }
 
   // というわけでややこしいんですが、
@@ -526,51 +600,68 @@ const p5wgex = (function(){
   // 学術計算とかなら"linear"使うかも
   // textureWrap: 境界処理。デフォルトは"clamp"だが"repeat"や"mirror"を指定する場合もあるかも。
   // 色として普通に使うなら全部指定しなくてOK. 点情報の格納庫として使うなら"float"だけ要ると思う。
+
+  // mipmap（h_doxasさんのサイト）
+  // mipmapはデフォルトfalseで使うときtrueにしましょう
+  // んでtextureFilterは次の物から選ぶ...mipmapが無いとコンパイルエラーになる（はず）
+  // "nearest_nearest": 近いものを一つだけ取りnearestでサンプリング
+  // "nearest_linear": 近いものを一つだけ取りlinearでサンプリング
+  // "linear_nearest": 近いものを二つ取りそれぞれnearestでサンプリングしたうえで平均
+  // "linear_linear": 近いものを二つ取りそれぞれlinearでサンプリングしてさらにそれらを平均（トライリニアサンプリング）
+  // 高品質を追求するならlinear_linearってことのようですね！
+
+  // 2DをCUBE_MAPや2D_ARRAYにしても大丈夫っていうのは...まあ、まだ無理ね...
   function _createFBO(gl, info, dict){
     _validateForFBO(gl, info);
 
-    // framebufferを生成
+    // フレームバッファを生成。怖くないよ！！
     let framebuffer = gl.createFramebuffer();
 
-    // bindする。その間対象はこのframebufferとなる。
+    // フレームバッファをバインド
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 
-    // 深度バッファ用レンダーバッファの生成とバインド
+    // まず深度レンダーバッファを用意する
     let depthRenderbuffer = gl.createRenderbuffer();
+    // 深度レンダーバッファをバインド
     gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderbuffer);
     // レンダーバッファを深度バッファとして設定
     gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, info.w, info.h);
     // フレームバッファにレンダーバッファを関連付ける
     gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRenderbuffer);
+    // 深度レンダーバッファのバインドを解除
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
 
-    // 次にtextureを生成する
+    // 次に色テクスチャを生成する
     let fTexture = gl.createTexture();
-    gl.activeTexture(gl.TEXTURE0);
-    // フレームバッファ用のテクスチャをバインド
+    // gl.activeTexture(gl.TEXTURE0); // これ要らないっぽい。
+    // 色テクスチャをバインド
     gl.bindTexture(gl.TEXTURE_2D, fTexture);
-    // フレームバッファ用のテクスチャにカラー用のメモリ領域を確保
-    // どうでもいいけどInternalFormatってエラーが言ってるならそれに従うべきよ。
+    // 色テクスチャにカラー用のメモリ領域を確保
+    // internalFormat, Format, Typeの組み合わせが限定されているので注意
+    // ちなみに0のところはmipmapのレベルを指定していてこれを1とか2にする、と。
     gl.texImage2D(gl.TEXTURE_2D, 0, dict[info.textureInternalFormat], info.w, info.h, 0,
                   dict[info.textureFormat], dict[info.textureType], null);
+    // mipmapの作成
+    if(info.mipmap){ gl.generateMipmap(gl.TEXTURE_2D); }
 
-    // テクスチャパラメータ
-    // このNEARESTのところを可変にする
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[info.textureFilter]);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[info.textureFilter]);
+    // 色テクスチャのパラメータ設定
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[info.textureFilter]); // 拡大表示用
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[info.textureFilter]); // 縮小表示用
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, dict[info.textureWrap]);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[info.textureWrap]);
 
-    // フレームバッファにテクスチャを関連付ける
-    // こっちがFramebuffer is incompleteか。
+    // 色テクスチャをフレームバッファに関連付ける
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, fTexture, 0);
 
     // 中身をクリアする(clearに相当する)
+    // 色テクスチャに初期設定を用意する場合ここは無い方がいいね...用意したいんだけど。
     gl.viewport(0, 0, info.w, info.h);
     gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
 
-    // 各種オブジェクトのバインドを解除
+    // 色テクスチャのバインドを解除
     gl.bindTexture(gl.TEXTURE_2D, null);
-    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+
+    // フレームバッファのバインドを解除
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
     // オブジェクトを返して終了。
@@ -948,6 +1039,11 @@ const p5wgex = (function(){
     }
     return result;
   }
+
+  // ---------------------------------------------------------------------------------------------- //
+  // Texture.
+  // canvas要素からテクスチャオブジェクトを生成する...というかそれを当てはめることができる、それ。
+
 
   // ---------------------------------------------------------------------------------------------- //
   // Meshes.
@@ -1536,7 +1632,7 @@ const p5wgex = (function(){
 
   // 新カメラ。
   // infoの指定の仕方、topは常に正規化、Vec3で統一、ローカル軸の名称変更、動かすメソッド追加, etc...
-  class CameraEx2{
+  class CameraEx{
     constructor(info = {}){
       this.eye = new Vec3();
       this.center = new Vec3();
@@ -1973,16 +2069,17 @@ const p5wgex = (function(){
   ex.getMult4x4 = getMult4x4; // こっちは使い道あるかもしれない
   ex.hsv2rgb = hsv2rgb;
   ex.hsvArray = hsvArray;
-  //ex.getNormalMat = getNormalMat;
+  //ex.getNormalMat = getNormalMat; // 法線行列の取得関数は廃止
 
   // class.
+  ex.OldTimer = OldTimer;
   ex.Timer = Timer;
   ex.Painter = Painter;
   ex.Figure = Figure;
   ex.RenderNode = RenderNode;
   ex.Mat4 = Mat4;
   //ex.CameraEx = CameraEx; // 旧カメラは廃止
-  ex.CameraEx2 = CameraEx2;
+  ex.CameraEx = CameraEx;
   ex.TransformEx = TransformEx;
   ex.Vec3 = Vec3;
 

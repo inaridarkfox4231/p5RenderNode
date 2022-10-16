@@ -30,7 +30,7 @@ const NUM = 1024;
 let posiData = new Array(NUM*2*3).fill(0);
 let posiDataTyped = new Float32Array(NUM*2*3);
 let randoms = new Array(NUM*2); // 位置計算用
-let _startTime = 0;
+//let _startTime = 0;
 
 const TRIANGLE_SIZE = 0.02;
 

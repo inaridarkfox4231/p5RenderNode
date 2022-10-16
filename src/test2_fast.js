@@ -70,9 +70,9 @@ const ex = p5wgex; // alias.
 let _node; // RenderNode.
 
 let tf;
-let cam2;
+let cam;
 let _timer = new ex.Timer();
-let _time = 0;
+//let _time = 0;
 
 let info, infoTex;
 
@@ -302,12 +302,12 @@ function setup(){
   createCanvas(800, 640, WEBGL);
   // frameRate==30をなくしました。ちょっと速くなったかも...？
   // 1秒周期なのでこれで！
-  _timer.set("cur");
+  _timer.initialize("cur");
 
   const gl = this._renderer.GL;
   _node = new ex.RenderNode(gl);
   tf = new ex.TransformEx();
-  cam2  = new ex.CameraEx2({w:width, h:height}); // これ以上やること無いな...
+  cam  = new ex.CameraEx({w:width, h:height}); // これ以上やること無いな...
   // んー。小さい数でやるべきなんだろうな、とか思ったり
 
   // lightingShader.
@@ -381,7 +381,7 @@ function setup(){
   info.textAlign(LEFT, TOP);
   infoTex = new p5.Texture(this._renderer, info);
 
-	_timer.set("fps"); // 最初に1回だけ
+	_timer.initialize("fps", {scale:1000/60}); // スケールを1フレームのミリ秒にしました(fps60前提)
 
   // カリング有効化
   _node.enable("cull_face");
@@ -403,12 +403,12 @@ function setup(){
 function draw(){
   _node.clearColor(0, 0, 0, 1).clear();
 
-  const fps = _timer.getDeltaFPStext("fps", frameRate());
+  const fps = _timer.getDelta("fps");
 	_timer.set("fps"); // ここから上のあそこまで、ってやってみたわけ。うん。なるほど...んー...
 
   // 時間のとこいじろうかなって
   // ロジック見たら1秒周期だった
-  const currentTime = _timer.getDeltaSecond("cur") * 0.6;
+  const currentTime = _timer.getDelta("cur") * 0.6;
 
   // データ計算.
   _node.bindFBO("param")
@@ -425,11 +425,11 @@ function draw(){
   _node.use("preLight", "cube");
   // 各種行列
   const modelMat = tf.getModelMat().m;
-  const viewMat = cam2.getViewMat().m;
+  const viewMat = cam.getViewMat().m;
   const modelViewMat = ex.getMult4x4(modelMat, viewMat);
   _node.setUniform("uModelViewMatrix", modelViewMat);
   // 射影
-  const projMat = cam2.getProjMat().m;
+  const projMat = cam.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
   // param
   _node.setFBOtexture2D("uData", "param");
@@ -466,7 +466,7 @@ function draw(){
        .disable("blend");
 
   info.clear();
-  info.text("fpsRate:" + fps, 5, 5);
+  info.text("fpsRate:" + fps.toFixed(3), 5, 5);
   info.text("frameRate:" + frameRate().toFixed(2), 5, 25);
   infoTex.update();
 }

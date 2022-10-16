@@ -1,0 +1,3 @@
+// テクスチャとセーブ
+// テクスチャ
+// まずp5.Imageとnew Image()とcreateGraphicsで作るimageのいずれからでも作れるようにする。

@@ -53,7 +53,7 @@ const ex = p5wgex; // alias.
 let _node; // RenderNode.
 
 let tf;
-let cam2;
+let cam;
 let _timer = new ex.Timer();
 
 // ------------------------------------------------------------------------------------------------------------ //
@@ -200,11 +200,11 @@ void main(void){
 
 function setup(){
   createCanvas(800, 640, WEBGL);
-  _timer.set("currentTime");
+  _timer.initialize("currentTime");
   const gl = this._renderer.GL;
   _node = new ex.RenderNode(gl);
   tf = new ex.TransformEx();
-  cam2 = new ex.CameraEx2({w:width, h:height, eye:[0, 0, Math.sqrt(3)*3]});
+  cam = new ex.CameraEx({w:width, h:height, eye:[0, 0, Math.sqrt(3)*3]});
 
   // lightingShader.
   _node.registPainter("light", lightVert, lightFrag);
@@ -376,7 +376,7 @@ function draw(){
   _node.clear();
 
   // 時間取得
-  const currentTime = _timer.getDeltaSecond("currentTime");
+  const currentTime = _timer.getDelta("currentTime");
 
   // ライティング
   _node.usePainter("light");
@@ -385,7 +385,7 @@ function draw(){
   moveCamera(currentTime);
 
   // 視点方向から光が当たるようにしたいのでtopを取得
-  const {front} = cam2.getLocalAxes();
+  const {front} = cam.getLocalAxes();
 
   // ライティングユニフォーム
   _node.setUniform("uAmbientColor", [0.25, 0.25, 0.25]);
@@ -398,7 +398,7 @@ function draw(){
   _node.setUniform("uUseColorFlag", 0);
 
   // 射影
-  const projMat = cam2.getProjMat().m;
+  const projMat = cam.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
 
   // レンダリング
@@ -415,7 +415,7 @@ function draw(){
 // 法線ベクトルは内部でtransposeのinverseできるので要らないね
 function setModelView(){
   const modelMat = tf.getModelMat().m;
-  const viewMat = cam2.getViewMat().m;
+  const viewMat = cam.getViewMat().m;
   const modelViewMat = ex.getMult4x4(modelMat, viewMat);
   //const normalMat = ex.getNormalMat(modelViewMat);
   _node.setUniform("uViewMatrix", viewMat);
@@ -425,7 +425,7 @@ function setModelView(){
 
 // 特に動かさない...
 function moveMesh(){
-  const curTime = _timer.getDeltaSecond("currentTime");
+  const curTime = _timer.getDelta("currentTime");
   tf.initialize().scale(2,2,2);
   setModelView();
 }
@@ -440,5 +440,5 @@ function moveCamera(currentTime){
   const _x = r * sin(phi) * cos(theta);
   const _y = r * sin(theta);
   const _z = r * cos(phi) * cos(theta);
-  cam2.setView({eye:[_x, _y, _z]});
+  cam.setView({eye:[_x, _y, _z]});
 }
