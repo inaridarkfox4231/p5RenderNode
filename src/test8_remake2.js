@@ -251,7 +251,7 @@ function setup(){
   _node.registFigure("board", [{name:"aPosition", size:2, data:[-1,-1,1,-1,-1,1,1,1]}]);
 
   // ダブルにする
-  _node.registDoubleFBO("data", {w:640, h:640, textureInternalFormat:"r32f", textureFormat:"red", textureType:"float"});
+  _node.registDoubleFBO("data", {w:640, h:640, color:{info:{internalFormat:"r32f", format:"red", type:"float"}}});
   _node.clearColor(0,0,0,1);
 
   prepareRandomTable(_node);

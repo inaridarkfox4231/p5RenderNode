@@ -304,3 +304,6 @@ infoのvalidationの掛け方はもう決まっている。
 // 細かいこと言うね。textureのパラメータで「texture～～」の「texture」はもう不要だから
 // 取ってしまおう。うざい。
 // texture用であることがattachTypeでわかってるんだから強調する必要ないんよ。
+
+// framebuffer終わりました。疲れた...
+// MRTの簡単なテストは...また今度。

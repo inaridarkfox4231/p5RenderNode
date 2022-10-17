@@ -155,7 +155,8 @@ function setup(){
   _node.registFigure("board", [{name:"aPosition", size:2, data:[-1, -1, 1, -1, -1, 1, 1, 1]}]);
   _node.registFigure("indices", [{name:"aIndex", size:1, data: new Array(SIZE*SIZE).fill(0)}]); // これでOKってこと？
 
-  _node.registDoubleFBO("sprites", {w:SIZE, h:SIZE, textureType:"float"});
+  //_node.registDoubleFBO("sprites", {w:SIZE, h:SIZE, textureType:"float"});
+  _node.registDoubleFBO("sprites", {w:SIZE, h:SIZE, color:{info:{type:"float"}}});
 
   _node.clearColor(0, 0, 0, 1);
 

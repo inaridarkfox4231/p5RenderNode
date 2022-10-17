@@ -196,7 +196,8 @@ function setup(){
   _node.registFigure("indices", [{name:"aIndex", data:indexArray, size:1}]);
 
   // 準備完了！！じゃないや。フレームバッファかもーん。щ(ﾟДﾟщ)ｶﾓｰﾝ   ...なにこれ
-  _node.registDoubleFBO("sprites", {w:SIZE, h:SIZE, textureType:"float"});
+  //_node.registDoubleFBO("sprites", {w:SIZE, h:SIZE, textureType:"float"});
+  _node.registDoubleFBO("sprites", {w:SIZE, h:SIZE, color:{info:{type:"float"}}});
 
   _node.clearColor(0, 0, 0, 1); // スクリーンを黒で初期化
 

@@ -170,7 +170,8 @@ function setup(){
   _node.registIBO("triangleIBO", {data:indexArray}); // そのまま使える
 
   // フレームバッファ
-  _node.registDoubleFBO("sprites", {w:SIZE, h:SIZE, textureType:"float"});
+  //_node.registDoubleFBO("sprites", {w:SIZE, h:SIZE, textureType:"float"});
+  _node.registDoubleFBO("sprites", {w:SIZE, h:SIZE, color:{info:{type:"float"}}});
 
   _node.clearColor(0, 0, 0, 1);
 
