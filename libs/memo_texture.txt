@@ -255,3 +255,30 @@ img.onload = function(){
 }
 */
 // こうすることで問題なくロードできるようです。new Image()でやる場合はこうするそうですね。
+
+// framebufferのdoubleについて。
+// まず複製はしなくていいです。同じもの使っていい。よく考えたら何の問題も無かったわ。
+// 検証は無しで。めんどくさい。uniformのlocation隠蔽しちゃったのよ。
+
+// 新しいframebuffer生成の際のinfo.
+
+/*
+info = {w:~~, h:~~, depth:{}, color:{}, stencil:{}}
+nameも持つが登録の際にinfoに付与するのでいちいち書く必要はない。
+wとhは必須。当たり前。
+depthとstencilは無い場合はvalidationで勝手に
+depth:{attachType:"renderbuffer", info:{}}
+stencil:{attachType:"none"}
+が付与される。attachTypeは"renderbuffer", "texture", "none"の3種類があり種類に応じてinfoにvalidationが掛けられる。
+infoのvalidationの掛け方はもう決まっている。
+*/
+
+// doubleも同じ、全く同じinfoを用いていい（複製なんかするかよ）
+// colorのinfoは配列を取れる。それはtextureInfoの配列。つまり「color」かつ「texture」の場合のみ配列が許される。
+// それでマルチ（以下略）
+
+// 名前で管理しなくていいや。配列なんだからインデックスで管理しよう。
+// 必要ならネームリストを用意すればいいだけの話。煩雑さは避けたい。textureInfoは名前を持たない設定...
+
+// テクスチャクラスにする必要ないな。どうせフィルタとかいじらないで使うんだから。
+// ...いじることになったら

@@ -199,7 +199,7 @@ void main(void){
 // -------setup------- //
 function setup(){
   createCanvas(640, 640);
-  _timer.set("slot0");
+  _timer.initialize("slot0");
   gr0 = createGraphics(width, height, WEBGL);
   _node0 = new ex.RenderNode(gr0._renderer.GL);
 
@@ -219,13 +219,13 @@ function setup(){
   info.textAlign(LEFT, TOP);
   infoTex = new p5.Texture(gr0._renderer, info);
 
-	_timer.set("fps"); // 最初に1回だけ
+	_timer.initialize("fps", {scale:1000/60}); // 最初に1回だけ
 }
 
 // -------draw------- //
 function draw(){
-  const currentTime = _timer.getDeltaSecond("slot0");
-  const fps = _timer.getDeltaFPStext("fps");
+  const currentTime = _timer.getDelta("slot0");
+  const fps = _timer.getDelta("fps").toFixed(3);
 	_timer.set("fps");
 
   background(0);

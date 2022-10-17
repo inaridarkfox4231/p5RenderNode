@@ -61,7 +61,7 @@ function setup(){
   createCanvas(640, 640, WEBGL);
   //_startTime = performance.now();
   _timer = new ex.Timer();
-  _timer.set("duration");
+  _timer.initialize("duration");
   const gl = this._renderer.GL;
   _node = new ex.RenderNode(gl);
 
@@ -97,7 +97,7 @@ function draw(){
 }
 
 function dataUpdate(){
-  const currentTime = _timer.getDeltaSecond("duration"); // 経過秒数
+  const currentTime = _timer.getDelta("duration"); // 経過秒数
 
   for(let i=0; i<NUM; i++){
     const offset = i*6;

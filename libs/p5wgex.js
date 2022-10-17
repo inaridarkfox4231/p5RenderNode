@@ -93,49 +93,6 @@ const p5wgex = (function(){
   // ---------------------------------------------------------------------------------------------- //
   // Timer.
 
-  // 簡単なタイマー的な何か
-  // 単純に経過ミリ秒を返す...
-  // たとえば適当なタイミングで"draw"とかしてgetDeltaでdrawって呼ぶとそこまでの差が出るから
-  // deltaでなんかしたいなら個別にやってください...まあでもそのうち何か作るよ。deltaのhistory...要望があれば。
-  /*
-  class OldTimer{
-    constructor(){
-      this.stumps = {};
-    }
-    set(keyName){
-      // これを呼び出すことで登録される
-      this.stumps[keyName] = window.performance.now();
-    }
-    getDelta(keyName){
-      // 単純に経過ミリ秒を返す。
-      if(this.stumps[keyName] === undefined){
-        window.alert("getDelta failure: invalid name");
-        return null;
-      }
-      return window.performance.now() - this.stumps[keyName];
-    }
-    getDeltaSecond(keyName){
-      // 秒数にする
-      const delta = this.getDelta(keyName);
-      if(delta === null){ return null; }
-      return delta / 1000; // 1000で割ってミリ秒にする
-    }
-    getDeltaFPS(keyName){
-      // fpsの割合を返してくれる。ざっくりいうと1に近いほど遅い。別の方法で可視化したい場合もあるでしょうから。
-      const delta = this.getDelta(keyName);
-      if(delta === null){ return null; }
-      return (delta * fps / 1000); // 1000/fpsで割る。
-    }
-    getDeltaFPStext(keyName, fps = 60, digits = 3){
-      // fpsのテキストを返してくれる。ざっくりいうと1に近いほど遅い。
-      // ただ、今p5jsのframeRate使ってるからもはや不要なのよね...
-      const delta = this.getDelta(keyName);
-      if(delta === null){ return null; }
-      return (delta * fps / 1000).toFixed(digits); // 1000/fpsで割って...桁数指定で文字列を返す。
-    }
-  }
-  */
-
   // stumpの概念を有するタイマー。デフォルトスタンプを持って初期化出来る。常に最後に発火したタイミングを保持
   // しておりそこに到達するたびにそのタイミングを更新しつつtrueを返す。
   // 上位互換になるな...Timerは廃止かもしれない（え？）
@@ -246,6 +203,25 @@ const p5wgex = (function(){
     d.rgba4 = gl.RGBA4;
     d.rgba8 = gl.RGBA8;
     d.stencil8 = gl.STENCIL_INDEX8;
+    // -------attachment-------//
+    d.att_depth = gl.DEPTH_ATTACHMENT;
+    d.att_color0 = gl.COLOR_ATTACHMENT0;
+    d.att_color1 = gl.COLOR_ATTACHMENT1;
+    d.att_color2 = gl.COLOR_ATTACHMENT2;
+    d.att_color3 = gl.COLOR_ATTACHMENT3;
+    d.att_color4 = gl.COLOR_ATTACHMENT4;
+    d.att_color5 = gl.COLOR_ATTACHMENT5;
+    d.att_color6 = gl.COLOR_ATTACHMENT6;
+    d.att_color7 = gl.COLOR_ATTACHMENT7;
+    d.att_color8 = gl.COLOR_ATTACHMENT8;
+    d.att_color9 = gl.COLOR_ATTACHMENT9;
+    d.att_color10 = gl.COLOR_ATTACHMENT10;
+    d.att_color11 = gl.COLOR_ATTACHMENT11;
+    d.att_color12 = gl.COLOR_ATTACHMENT12;
+    d.att_color13 = gl.COLOR_ATTACHMENT13;
+    d.att_color14 = gl.COLOR_ATTACHMENT14;
+    d.att_color15 = gl.COLOR_ATTACHMENT15;
+    d.att_stencil = gl.STENCIL_ATTACHMENT;
     // -------drawCall-------//
     d.points = gl.POINTS;
     d.lines = gl.LINES;
@@ -661,6 +637,51 @@ const p5wgex = (function(){
     return renderbuffer;
   }
 
+  function _validateForEachInfo(gl, attachType, info, dict){
+    // 各々のinfoのvalidation. noneの場合、何もしない。
+    switch(attachType){
+      case "renderbuffer":
+        _validateForRenderbuffer(gl, info, dict); break;
+      case "texture":
+        _validateForTexture(gl, info, dict); break;
+    }
+    // "none"は何もしない。たとえばdepth:{attachType:"none"}とすればdepthは用意されない。
+  }
+
+  // framebufferに渡されるinfoのvalidation.
+  function _validateForFramebuffer(gl, info, dict){
+    if(info.depth === undefined){
+      info.depth.attachType = "renderbuffer"; // depthはレンダーバッファ形式を採用する
+      info.depth.info = {};
+    }else if(info.depth.attachType === undefined){
+      info.depth.attachType = "renderbuffer";
+    }
+    if(info.color === undefined){
+      info.color.attachType = "texture"; // colorはテクスチャ形式を採用する
+      info.color.info = {};
+    }else if(info.color.attachType === undefined){
+      info.color.attachType = "texture";
+    }
+    if(info.stencil === undefined){
+      info.stencil.attachType = "none"; // stencilは用意しない。いつか仲良くしてください...
+      info.stencil.info = {};
+    }else if(info.stencil.attachType === undefined){
+      info.stencil.attachType = "renderbuffer"; // 使うならまあ、renderbufferかなと。
+    }
+    // 各種infoにvalidationを掛ける準備
+    const depthInfo = info.depth.info;
+    const colorInfo = info.color.info;
+    const stencilInfo = info.stencil.info;
+    // wとhはここで付与してしまおう。なお全体のinfoにnameはもう付与済み（のはず）
+    depthInfo.w = info.w;   depthInfo.h = info.h;
+    colorInfo.w = info.w;   colorInfo.h = info.h;    // colorで配列の場合これを全部に適用
+    stencilInfo.w = info.w; stencilInfo.h = info.h;
+    // ここでバリデーション掛ければいいのか
+    _validateForEachInfo(gl, info.depth.attachType, depthInfo, dict);
+    _validateForEachInfo(gl, info.color.attachType, colorinfo, dict); // colorで配列の場合これを全部に適用
+    _validateForEachInfo(gl, info.stencil.attachType, stencilInfo, dict);
+  }
+
   // ---------------------------------------------------------------------------------------------- //
   // framebuffer.
 
@@ -741,21 +762,17 @@ const p5wgex = (function(){
     // オブジェクトを返して終了。
     return {
       f: framebuffer, d: depthRenderbuffer, t: colorTexture,
-      name: info.name, w: info.w, h: info.h,
-      texelSizeX: 1/info.w, texelSizeY: 1/info.h, double: false,
+      name: info.name, w: info.w, h: info.h, double: false, // texelSizeってwとhで割るだけでしょ？どうでもいいよ。
     }
   }
 
   // テクスチャはクラスにするつもり。もう少々お待ちを...canvas要素から生成できるように作るつもり。
 
   // fboのダブル。TFFとは違うのよね。フレームの別の場所参照できるから。そこが異なるようです。
+  // validateの重ね掛けは問題ないので、そのままぶちこめ。
   function _createDoubleFBO(gl, info, dict){
-    // assignでコピーしないと多分infoの内容が正しく伝わらないので
-    const info0 = Object.assign({}, info);
-    let fbo0 = _createFBO(gl, info0, dict);
-    const info1 = Object.assign({}, info);
-    let fbo1 = _createFBO(gl, info1, dict);
-    // 各種情報は生成にしか使わないのでこれでいい。
+    let fbo0 = _createFBO(gl, info, dict);
+    let fbo1 = _createFBO(gl, info, dict);
     return {
       read: {f:fbo0.f, d:fbo0.d, t:fbo0.t},  // f,d,tしか要らないので。
       write: {f:fbo1.f, d:fbo1.d, t:fbo1.t},
@@ -780,6 +797,9 @@ const p5wgex = (function(){
 
   // 名前で管理
   // RenderNodeに管理させる。textureそれ自体に触れることはまずないので。srcだけアクセス可能にする。
+  // glとdictが無いと...もっともこれを直接いじる必要性を感じない、基本シェーダーで書き込むものだから。
+  // そう割り切ってしまってもいいのよね...というかさ、今まで通りテクスチャを直接...
+  // あー、p5のTexture使いたくないんだっけ。じゃあ仕方ないな。
   class TextureEx{
     constructor(gl, info, dict){
       this.gl = gl;
@@ -795,34 +815,37 @@ const p5wgex = (function(){
       this.formatParam = {internalFormat:info.textureInternalFormat, format:info.textureFormat, type:info.textureType};
     }
     setFilterParam(param = {}){
+      const {gl, dict} = this;
       if(param.mag !== undefined){ this.filterParam.mag = param.mag; }
       if(param.min !== undefined){ this.filterParam.min = param.min; }
       // フィルタ設定関数
-      this.gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[this.filterParam.mag]); // 拡大表示用
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[this.filterParam.min]); // 縮小表示用
-      this.gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.bindTexture(gl.TEXTURE_2D, null);
     }
     setWrapParam(param = {}){
+      const {gl, dict} = this;
       if(param.s !== undefined){ this.wrapParam.s = param.s; }
       if(param.t !== undefined){ this.wrapParam.t = param.t; }
       // ラッピング設定関数
-      this.gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, dict[this.wrapParam.s]);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[this.wrapParam.t]);
-      this.gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.bindTexture(gl.TEXTURE_2D, null);
     }
     getTextureSource(){
       // Source取得関数。主にp5の2D用。
       return this.src;
     }
     updateTexture(){
+      const {gl, dict} = this;
       // texSubImage2Dを使って内容を上書きする。主にp5の2D用。
       const data = _getTextureDataFromSrc(this.src);
-      this.gl.bindTexture(this.gl.TEXTURE_2D, this.tex);
-      this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.dict[this.formatParam.internalFormat], this.w, this.h, 0,
-                    this.dict[this.formatParam.format], this.dict[this.formatParam.type], data);
-      this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, dict[this.formatParam.internalFormat], this.w, this.h, 0,
+                    dict[this.formatParam.format], dict[this.formatParam.type], data);
+      gl.bindTexture(gl.TEXTURE_2D, null);
       // 果たしてこれでちゃんと上書きされるのか...
     }
   }
@@ -1172,14 +1195,6 @@ const p5wgex = (function(){
   // まあ、メッシュいろいろテンプレート、あると便利だし。難しいけどね。
   // 落ち着いてから。
 
-
-  // ---------------------------------------------------------------------------------------------- //
-  // blendについて...
-
-  // ただね
-
-  // 使い方を知らないと何にもできません。何にもね。
-
   // ---------------------------------------------------------------------------------------------- //
   // RenderNode.
 
@@ -1292,12 +1307,16 @@ const p5wgex = (function(){
       this.textures[name] = newTexture;
       return this;
     }
+    getTexture(name){
+      // 使うかわかんないけどgetTexture. Wrapモードとかいじる必要があるならまあ、あった方がいいかなと。
+      return this.textures[name];
+    }
     getTextureSource(name){
       // source取得。これでp5.Graphicsを取得...
       return this.textures[name].getTextureSource();
     }
     updateTexture(name){
-      // ついでupdateすればOK!
+      // まあいいか。
       this.textures[name].updateTexture();
       return this;
     }
