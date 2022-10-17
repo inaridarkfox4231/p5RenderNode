@@ -781,17 +781,18 @@ const p5wgex = (function(){
   // 名前で管理
   // RenderNodeに管理させる。textureそれ自体に触れることはまずないので。srcだけアクセス可能にする。
   class TextureEx{
-    constructor(gl, info){
+    constructor(gl, info, dict){
       this.gl = gl;
+      this.dict = dict;
       this.name = info.name;
       this.src = info.src; // ソース。p5.Graphicsの場合これを使って...
-      this.tex = _createTexture(info);
+      this.tex = _createTexture(gl, info, dict);
       // infoのバリデーションが済んだので各種情報を格納
       this.w = (info.w !== undefined ? info.w : 1);
       this.h = (info.h !== undefined ? info.h : 1);
       this.wrapParam = {s:info.textureWrap, t:info.textureWrap};
       this.filterParam = {mag:info.textureFilter, min:info.textureFilter};
-      this.formatParam = {internalFormat:info.internalFormat, format:info.format, type:info.type};
+      this.formatParam = {internalFormat:info.textureInternalFormat, format:info.textureFormat, type:info.textureType};
     }
     setFilterParam(param = {}){
       if(param.mag !== undefined){ this.filterParam.mag = param.mag; }
@@ -818,10 +819,10 @@ const p5wgex = (function(){
     updateTexture(){
       // texSubImage2Dを使って内容を上書きする。主にp5の2D用。
       const data = _getTextureDataFromSrc(this.src);
-      this.gl.bindTexture(gl.TEXTURE_2D, this.tex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, dict[this.formatParam.internalFormat], this.w, this.h, 0,
-                    dict[this.formatParam.format], dict[this.formatParam.type], data);
-      this.gl.bindTexture(gl.TEXTURE_2D, null);
+      this.gl.bindTexture(this.gl.TEXTURE_2D, this.tex);
+      this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.dict[this.formatParam.internalFormat], this.w, this.h, 0,
+                    this.dict[this.formatParam.format], this.dict[this.formatParam.type], data);
+      this.gl.bindTexture(this.gl.TEXTURE_2D, null);
       // 果たしてこれでちゃんと上書きされるのか...
     }
   }
@@ -1174,20 +1175,6 @@ const p5wgex = (function(){
 
   // ---------------------------------------------------------------------------------------------- //
   // blendについて...
-  // 基本は
-  // 描画色＝描画元の色 * sFactor + 描画先の色 * dFactor
-  // ですね。なのでたとえば、ONEとONE_MINUS_SRC_ALPHAにすると、ソースアルファが1のところはソースが維持されるため、
-  // すでに塗った色への上書きができるというわけ。そんな感じ。ONEーONEで通常のADDになったりする。
-  // ...webgl2なのでもっと複雑なのができる。らしい。
-  // さらにこれは足し算だが、引き算や、逆引き算も定義出来て、それがblendEquationで、
-  // しかもwebgl2では加えてMINとMAXも指定できるのだ。以上。
-  // blendFuncはこのファクターをそれぞれ決めている。
-  // blendFuncSeparateを使うと(srcRGB, dstRGB, srcA, dstA)って感じで計算結果が分離される。
-  // 個別のファクター決定ができるということ。
-  // blendEquationは真ん中の「+」を別のものにできる。FUNC_SUBTRACTで描画元 - 描画先、
-  // これは描画先の分だけ描画内容を減算。逆にFUNC_REVERSE_SUBTRACTは描画先 - 描画元、描画してある結果からマイナス。
-  // 加えてMINとMAXが追加されました...！これでDARKESTやLIGHTESTを実現できるというわけ。
-  // blendEquationSeparateはRGBとAで個別に計算方法を変えることができるよ。そんなところ。
 
   // ただね
 
@@ -1298,10 +1285,10 @@ const p5wgex = (function(){
       }
       return this;
     }
-    registTexture(name, info){
+    registTexture(name, info = {}){
       // お待たせしました！！
       info.name = name;
-      const newTexture = new TextureEx(this.gl, info);
+      const newTexture = new TextureEx(this.gl, info, this.dict);
       this.textures[name] = newTexture;
       return this;
     }
@@ -1367,7 +1354,7 @@ const p5wgex = (function(){
       // 分岐処理！
       // _textureがstringの場合は登録されているのを使う。
       if(typeof(_texture) === "string"){
-        this.currentPainter.setTexture2D(name, this.textures[textureName].tex);
+        this.currentPainter.setTexture2D(name, this.textures[_texture].tex);
         return this;
       }
       // そうでない場合は直接放り込む形で。

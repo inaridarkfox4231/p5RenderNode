@@ -578,3 +578,10 @@ TODO
 // copyShaderは簡単なんですよね。まずVSでuvを取ってvaryingで渡し、FSでセットしたテクスチャを...
 // nullであればスクリーンに、nullでなければセットしたframebufferのtextureに、大きさそのままでコピーする。
 // つまり縦横ぴっちりぴったりくっつけ！です。
+
+// Textureについてはmemo_textureさんが頑張ってくれてる
+// こっちはこっちで別の事をします。
+// 遠い未来の目標として。
+
+// CameraとTFをRenderNodeにぶち込んで名前で管理する。
+// グローバルを、やめる。

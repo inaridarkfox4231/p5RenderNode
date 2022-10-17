@@ -1,0 +1,27 @@
+// blend覚書
+// 時間があればMAXやMINも試したいんだけど
+// 時間が無い！！！！！！！！
+
+
+// 基本は
+// 描画色＝描画元の色 * sFactor + 描画先の色 * dFactor
+// ですね。なのでたとえば、ONEとONE_MINUS_SRC_ALPHAにすると、ソースアルファが1のところはソースが維持されるため、
+// すでに塗った色への上書きができるというわけ。そんな感じ。ONEーONEで通常のADDになったりする。
+
+// あなたは馬鹿ですか？？？SRC_ALPHAとONE_MINUS_SRC_ALPHAの間違いですよそれ。
+// 式： (SRC_ALPHA) * SRC_COLOR + (ONE_MINUS_SRC_ALPHA) + DST_COLOR.
+// ここが↑ ONE だと、そりゃSRC_COLORのALPHAが0のときはいいよ。確かにDST_COLORだよ。でもさ！！！
+// 0じゃなかったら、RGBはどうよ。ゴーストのように値が足されるじゃんよ！！それで変な値になるのさ。
+// SRC_ALPHAならALPHAが0の場合は消えてくれるっていうのに。
+// ... まあ、画像だけなら2Dのが圧倒的にきれいだけど。これテストだからそこまではいいや。
+
+// ...webgl2なのでもっと複雑なのができる。らしい。
+// さらにこれは足し算だが、引き算や、逆引き算も定義出来て、それがblendEquationで、
+// しかもwebgl2では加えてMINとMAXも指定できるのだ。以上。
+// blendFuncはこのファクターをそれぞれ決めている。
+// blendFuncSeparateを使うと(srcRGB, dstRGB, srcA, dstA)って感じで計算結果が分離される。
+// 個別のファクター決定ができるということ。
+// blendEquationは真ん中の「+」を別のものにできる。FUNC_SUBTRACTで描画元 - 描画先、
+// これは描画先の分だけ描画内容を減算。逆にFUNC_REVERSE_SUBTRACTは描画先 - 描画元、描画してある結果からマイナス。
+// 加えてMINとMAXが追加されました...！これでDARKESTやLIGHTESTを実現できるというわけ。
+// blendEquationSeparateはRGBとAで個別に計算方法を変えることができるよ。そんなところ。
