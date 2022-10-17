@@ -63,6 +63,10 @@
 // 3. transformを個別に簡単に付けられるようなフレームバッファを用意する適切な関数を構築する（脳内ではある程度できてる...書き起こすだけ）
 // option: Cameraの2画面で分かりやすくするとかpointLightの可視化、などなど。これは本筋とは関係ないが...カメラの可視化ってやつ
 
+// 20221018
+// お久しぶりです。MRTひっさげて帰ってきました...（まだだけど）
+// fbの仕様変更です。とはいえコードサイドは指定の仕方を変えるだけですが。
+
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
 
@@ -366,7 +370,8 @@ function setup(){
   // データ計算用
   _node.registPainter("calc", calcVert, calcFrag);
   // vec4のfloatのframebuffer.
-  _node.registFBO("param", {w:200, h:20, textureType:"float"})
+  //_node.registFBO("param", {w:200, h:20, textureType:"float"});
+  _node.registFBO("param", {w:200, h:20, color:{info:{type:"float"}}}); // はてさて...
 
   // こんな感じ？ですね。次。
 
@@ -390,7 +395,9 @@ function setup(){
   // 同じサイズのフレームバッファを用意
   // MRT見てみたけど難しくなさそう。近いうちに挑戦してみる。
   const _size = _node.getDrawingBufferSize();
-  _node.registFBO("pre", {w:_size.w, h:_size.h, textureType:"float"}); // ここに法線と明るさを落とす...
+  //_node.registFBO("pre", {w:_size.w, h:_size.h, textureType:"float"}); // ここに法線と明るさを落とす...
+  _node.registFBO("pre", {w:_size.w, h:_size.h, color:{info:{type:"float"}}}); // こんだけ？
+
   // そのうちmodelPositionとmodelColorも落とす（追加で2枚）
 }
 

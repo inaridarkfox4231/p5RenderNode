@@ -559,23 +559,23 @@ const p5wgex = (function(){
   // wとhはframebufferのものを使うのでここ、そうね。
   function _validateForTexture(info){
     // textureType. "ubyte", "half_float", "float"で指定
-    if(info.textureType === undefined){ info.textureType = "ubyte"; }
+    if(info.type === undefined){ info.type = "ubyte"; }
     // textureInternalFormatとtextureFormatについて
-    if(info.textureInternalFormat === undefined){
-      switch(info.textureType){
+    if(info.internalFormat === undefined){
+      switch(info.type){
         case "ubyte":
-          info.textureInternalFormat = "rgba"; break;
+          info.internalFormat = "rgba"; break;
         case "float":
-          info.textureInternalFormat = "rgba32f"; break;
+          info.internalFormat = "rgba32f"; break;
         case "half_float":
-          info.textureInternalFormat = "rgba16f"; break;
+          info.internalFormat = "rgba16f"; break;
       }
     }
-    if(info.textureFormat === undefined){ info.textureFormat = "rgba"; } // とりあえずこれで。あの3種類みんなこれ。
+    if(info.format === undefined){ info.format = "rgba"; } // とりあえずこれで。あの3種類みんなこれ。
     // textureFilter. "nearest", "linear"で指定
-    if(info.textureFilter === undefined){ info.textureFilter = "nearest"; }
+    if(info.filter === undefined){ info.filter = "nearest"; }
     // textureWrap. "clamp", "repeat", "mirror"で指定
-    if(info.textureWrap === undefined){ info.textureWrap = "clamp"; }
+    if(info.wrap === undefined){ info.wrap = "clamp"; }
     if(info.mipmap === undefined){ info.mipmap = false; } // mipmapはデフォルトfalseで。
   }
 
@@ -592,24 +592,24 @@ const p5wgex = (function(){
 
   // dictも要るね。
   function _createTexture(gl, info, dict){
-    _validateForTexture(info);
+    // _validateForTexture(info); // 単独の場合は事前に済ます
     const data = _getTextureDataFromSrc(info.src);
     // テクスチャを生成する
     let tex = gl.createTexture();
     // テクスチャをバインド
     gl.bindTexture(gl.TEXTURE_2D, tex);
     // テクスチャにメモリ領域を確保
-    gl.texImage2D(gl.TEXTURE_2D, 0, dict[info.textureInternalFormat], info.w, info.h, 0,
-                  dict[info.textureFormat], dict[info.textureType], data);
+    gl.texImage2D(gl.TEXTURE_2D, 0, dict[info.internalFormat], info.w, info.h, 0,
+                  dict[info.format], dict[info.type], data);
     // mipmapの作成
     if(info.mipmap){ gl.generateMipmap(gl.TEXTURE_2D); }
 
     // テクスチャのフィルタ設定（サンプリングの仕方を決める）
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[info.textureFilter]); // 拡大表示用
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[info.textureFilter]); // 縮小表示用
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[info.filter]); // 拡大表示用
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[info.filter]); // 縮小表示用
     // テクスチャのラッピング設定（範囲外のUV値に対する挙動を決める）
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, dict[info.textureWrap]);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[info.textureWrap]);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, dict[info.wrap]);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[info.wrap]);
     // テクスチャのバインドを解除
     gl.bindTexture(gl.TEXTURE_2D, null);
     return tex;
@@ -625,49 +625,74 @@ const p5wgex = (function(){
 
   // というわけでレンダーバッファ作成関数。まあ、そうなるわな。
   function _createRenderbuffer(gl, info, dict){
-    _validateForRenderbuffer(info);
+    //_validateForRenderbuffer(info); // もう終わってるからな..framebufferと合わせてしか使わないからな。
     // まず深度レンダーバッファを用意する
     let renderbuffer = gl.createRenderbuffer();
     // 深度レンダーバッファをバインド
     gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer);
     // 深度レンダーバッファを深度バッファとして設定(32F使えるそうです)
-    gl.renderbufferStorage(gl.RENDERBUFFER, info.internalFormat, info.w, info.h);
+    gl.renderbufferStorage(gl.RENDERBUFFER, dict[info.internalFormat], info.w, info.h);
     // 深度レンダーバッファのバインドを解除
     gl.bindRenderbuffer(gl.RENDERBUFFER, null);
     return renderbuffer;
   }
 
-  function _validateForEachInfo(gl, attachType, info, dict){
+  function _validateForEachInfo(attachType, info){
     // 各々のinfoのvalidation. noneの場合、何もしない。
     switch(attachType){
       case "renderbuffer":
-        _validateForRenderbuffer(gl, info, dict); break;
+        _validateForRenderbuffer(info); break;
       case "texture":
-        _validateForTexture(gl, info, dict); break;
+        _validateForTexture(info); break;
     }
     // "none"は何もしない。たとえばdepth:{attachType:"none"}とすればdepthは用意されない。
+  }
+
+  function _createEachBuffer(gl, attachType, info, dict){
+    // renderbuffer又はtextureを返す。
+    switch(attachType){
+      case "renderbuffer":
+        return _createRenderbuffer(gl, info, dict);
+      case "texture":
+        return _createTexture(gl, info, dict);
+    }
+    return null; // noneは何も用意しない。
+  }
+
+  function _connectWithFramebuffer(gl, attachment, attachType, buffer){
+    // bufferをframebufferと関連付けする。
+    switch(attachType){
+      case "renderbuffer":
+        // レンダーバッファの関連付け
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, attachment, gl.RENDERBUFFER, buffer); break;
+      case "texture":
+        // テクスチャの関連付け
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, attachment, gl.TEXTURE_2D, buffer, 0); break;
+    }
   }
 
   // framebufferに渡されるinfoのvalidation.
   function _validateForFramebuffer(gl, info, dict){
     if(info.depth === undefined){
+      info.depth = {};
       info.depth.attachType = "renderbuffer"; // depthはレンダーバッファ形式を採用する
       info.depth.info = {};
-    }else if(info.depth.attachType === undefined){
-      info.depth.attachType = "renderbuffer";
     }
     if(info.color === undefined){
+      info.color = {};
       info.color.attachType = "texture"; // colorはテクスチャ形式を採用する
       info.color.info = {};
-    }else if(info.color.attachType === undefined){
-      info.color.attachType = "texture";
     }
     if(info.stencil === undefined){
+      info.stencil = {};
       info.stencil.attachType = "none"; // stencilは用意しない。いつか仲良くしてください...
       info.stencil.info = {};
-    }else if(info.stencil.attachType === undefined){
-      info.stencil.attachType = "renderbuffer"; // 使うならまあ、renderbufferかなと。
     }
+
+    if(info.depth.attachType === undefined){ info.depth.attachType = "renderbuffer"; }
+    if(info.color.attachType === undefined){ info.color.attachType = "texture"; }
+    if(info.stencil.attachType === undefined){info.stencil.attachType = "renderbuffer"; } // 使うならrenderbuffer.
+
     // 各種infoにvalidationを掛ける準備
     const depthInfo = info.depth.info;
     const colorInfo = info.color.info;
@@ -677,9 +702,9 @@ const p5wgex = (function(){
     colorInfo.w = info.w;   colorInfo.h = info.h;    // colorで配列の場合これを全部に適用
     stencilInfo.w = info.w; stencilInfo.h = info.h;
     // ここでバリデーション掛ければいいのか
-    _validateForEachInfo(gl, info.depth.attachType, depthInfo, dict);
-    _validateForEachInfo(gl, info.color.attachType, colorinfo, dict); // colorで配列の場合これを全部に適用
-    _validateForEachInfo(gl, info.stencil.attachType, stencilInfo, dict);
+    _validateForEachInfo(info.depth.attachType, depthInfo);
+    _validateForEachInfo(info.color.attachType, colorInfo); // colorで配列の場合これを全部に適用
+    _validateForEachInfo(info.stencil.attachType, stencilInfo);
   }
 
   // ---------------------------------------------------------------------------------------------- //
@@ -716,8 +741,15 @@ const p5wgex = (function(){
   // 2DをCUBE_MAPや2D_ARRAYにしても大丈夫っていうのは...まあ、まだ無理ね...
   // ちょっと内容整理。デプス、色、関連付け。くっきりはっきり。この方が分かりやすい。
   function _createFBO(gl, info, dict){
-    _validateForTexture(info);
+    //_validateForTexture(info);
+    _validateForFramebuffer(gl, info, dict);
+    // ここでバリデーションは終わってて、あとは...
 
+    const depthBuffer = _createEachBuffer(gl, info.depth.attachType, info.depth.info, dict);
+    const colorBuffer = _createEachBuffer(gl, info.color.attachType, info.color.info, dict);
+    const stencilBuffer = _createEachBuffer(gl, info.stencil.attachType, info.stencil.info, dict);
+
+/*
     // まず深度レンダーバッファを用意する
     let depthRenderbuffer = gl.createRenderbuffer();
     // 深度レンダーバッファをバインド
@@ -747,23 +779,45 @@ const p5wgex = (function(){
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[info.textureWrap]);
     // テクスチャのバインドを解除
     gl.bindTexture(gl.TEXTURE_2D, null);
+*/
 
     // フレームバッファを生成。怖くないよ！！
-    let framebuffer = gl.createFramebuffer();
+    const framebuffer = gl.createFramebuffer();
+
     // フレームバッファをバインド
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+
+
     // 色テクスチャをフレームバッファに関連付ける
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, colorTexture, 0);
+    //gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, colorTexture, 0);
     // 深度レンダーバッファをフレームバッファに関連付ける
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRenderbuffer);
+    //gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRenderbuffer);
+
+    _connectWithFramebuffer(gl, gl.DEPTH_ATTACHMENT, info.depth.attachType, depthBuffer);
+    _connectWithFramebuffer(gl, gl.COLOR_ATTACHMENT0, info.color.attachType, colorBuffer);
+    _connectWithFramebuffer(gl, gl.STENCIL_ATTACHMENT, info.stencil.attachType, stencilBuffer);
+
     // フレームバッファのバインドを解除
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
+
     // オブジェクトを返して終了。
+    const result = {};
+    result.f = framebuffer;
+    if(depthBuffer !== null){ result.depth = depthBuffer; }
+    if(colorBuffer !== null){ result.color = colorBuffer; }
+    if(stencilBuffer !== null){ result.stencil = stencilBuffer; }
+    result.w = info.w;
+    result.h = info.h;
+    result.double = false;
+    return result;
+    // まじか...
+    /*
     return {
       f: framebuffer, d: depthRenderbuffer, t: colorTexture,
       name: info.name, w: info.w, h: info.h, double: false, // texelSizeってwとhで割るだけでしょ？どうでもいいよ。
     }
+    */
   }
 
   // テクスチャはクラスにするつもり。もう少々お待ちを...canvas要素から生成できるように作るつもり。
@@ -774,8 +828,8 @@ const p5wgex = (function(){
     let fbo0 = _createFBO(gl, info, dict);
     let fbo1 = _createFBO(gl, info, dict);
     return {
-      read: {f:fbo0.f, d:fbo0.d, t:fbo0.t},  // f,d,tしか要らないので。
-      write: {f:fbo1.f, d:fbo1.d, t:fbo1.t},
+      read: fbo0,
+      write: fbo1,
       swap: function(){
         let tmp = this.read;
         this.read = this.write;
@@ -806,13 +860,14 @@ const p5wgex = (function(){
       this.dict = dict;
       this.name = info.name;
       this.src = info.src; // ソース。p5.Graphicsの場合これを使って...
+      _validateForTexture(info); // _createTexture内部ではやらないことになった
       this.tex = _createTexture(gl, info, dict);
       // infoのバリデーションが済んだので各種情報を格納
       this.w = (info.w !== undefined ? info.w : 1);
       this.h = (info.h !== undefined ? info.h : 1);
-      this.wrapParam = {s:info.textureWrap, t:info.textureWrap};
-      this.filterParam = {mag:info.textureFilter, min:info.textureFilter};
-      this.formatParam = {internalFormat:info.textureInternalFormat, format:info.textureFormat, type:info.textureType};
+      this.wrapParam = {s:info.wrap, t:info.wrap};
+      this.filterParam = {mag:info.filter, min:info.filter};
+      this.formatParam = {internalFormat:info.internalFormat, format:info.format, type:info.type};
     }
     setFilterParam(param = {}){
       const {gl, dict} = this;
@@ -1284,14 +1339,17 @@ const p5wgex = (function(){
       return this;
     }
     registFBO(name, info){
-      // nameはここで付けるので要らないね。doubleは生成時に付与するので要らんわな。
+      // nameはここで付ける。wとhは必ず指定してください。
       info.name = name;
       const newFBO = _createFBO(this.gl, info, this.dict);
+      if(newFBO === undefined){
+        window.alert("failure to create framebuffer.");
+      }
       this.fbos[name] = newFBO;
       return this;
     }
     registDoubleFBO(name, info){
-      // nameは以下略
+      // nameはここで付ける。wとhは必ず指定してください。doubleのtrue,falseはあとで指定します。
       info.name = name;
       const newFBO = _createDoubleFBO(this.gl, info, this.dict);
       this.fbos[name] = newFBO;
@@ -1438,26 +1496,32 @@ const p5wgex = (function(){
       this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
       return this;
     }
-    setFBOtexture2D(uniformName, fboName){
+    setFBOtexture2D(uniformName, fboName, kind = "color", index = 0){
       // FBOを名前経由でセット。ダブルの場合はreadをセット。
+      // texture限定。fbo.tやfbo.read.tの代わりに[kind]で場合によっては[index]を付ける。
+      // つまり従来のcolorからtexture取得の場合は変える必要なし。
       if(fboName === undefined || (typeof fboName !== 'string')){
         // 指定の仕方に問題がある場合
-        window.alert("setTexture failure: Inappropriate name setting.");
+        window.alert("setFBOtexture2D failure: Inappropriate name setting.");
         return this;
       }
       let fbo = this.fbos[fboName];
       if(!fbo){
         // fboが無い場合の警告
-        window.alert("setTexture failure: The corresponding framebuffer does not exist.");
+        window.alert("setFBOtexture2D failure: The corresponding framebuffer does not exist.");
         return this;
       }
       if(fbo.double){
         // doubleの場合はreadをセットする
-        this.setTexture2D(uniformName, fbo.read.t);
+        // 配列の場合は...
+        const _texture_double = (Array.isArray(fbo.read[kind]) ? fbo.read[kind][index] : fbo.read[kind]);
+        this.setTexture2D(uniformName, _texture_double);
         return this;
       }
       // 通常時
-      this.setTexture2D(uniformName, fbo.t);
+      // 配列の場合は...
+      const _texture = (Array.isArray(fbo[kind]) ? fbo[kind][index] : fbo[kind]);
+      this.setTexture2D(uniformName, _texture);
       return this;
     }
     swapFBO(fboName){

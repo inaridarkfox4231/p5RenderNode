@@ -261,7 +261,7 @@ img.onload = function(){
 // 検証は無しで。めんどくさい。uniformのlocation隠蔽しちゃったのよ。
 
 // 新しいframebuffer生成の際のinfo.
-
+// 頑張って！
 /*
 info = {w:~~, h:~~, depth:{}, color:{}, stencil:{}}
 nameも持つが登録の際にinfoに付与するのでいちいち書く必要はない。
@@ -282,3 +282,25 @@ infoのvalidationの掛け方はもう決まっている。
 
 // テクスチャクラスにする必要ないな。どうせフィルタとかいじらないで使うんだから。
 // ...いじることになったら
+// doubleは配列とは両立しない...使い道が見つかったらやるかもしれないけど。いや、うーん...
+// そうね～AとBからAとB...できたら面白いかもだね。
+
+// registFBOとregistDoubleFBOは変えるとこなさそう。
+// setFBOtexture2Dで、
+// というわけでfbo.tとかfbo.read.tが配列の場合を考慮した仕様変更終わり。
+// あとはinfoの指定の仕方を変えて、またcolor-textureの場合に配列を許すようにすれば完成。簡単？
+
+// あー、駄目だわ。
+// depth, color, stencilってなるからさ。
+// そういうわけで、未定義ならkind:color, さらに未定義ならindex:0としよう。
+
+// framebufferっていうより frame of buffer の方がしっくりくるわね。
+
+// ああ...validateに必要なのはinfoだけだよ...馬鹿...
+// ごめん。attachTypeなかったら判断出来ないわ。
+
+// 何だもう終わりか。ちょろい。
+
+// 細かいこと言うね。textureのパラメータで「texture～～」の「texture」はもう不要だから
+// 取ってしまおう。うざい。
+// texture用であることがattachTypeでわかってるんだから強調する必要ないんよ。

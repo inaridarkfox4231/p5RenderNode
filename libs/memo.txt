@@ -585,3 +585,7 @@ TODO
 
 // CameraとTFをRenderNodeにぶち込んで名前で管理する。
 // グローバルを、やめる。
+// Timerまでは入れないけど。
+
+// どうでもいいけどclearとclearColor...clearだけでいいよね。なんか、無駄。
+// clearで色指定すればいいだけ。
