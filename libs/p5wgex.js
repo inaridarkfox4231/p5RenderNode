@@ -574,7 +574,7 @@ const p5wgex = (function(){
     if(info.mipmap === undefined){ info.mipmap = false; } // mipmapはデフォルトfalseで。
     // srcがnullでない場合に限りwとhは未定義でもOK
     if(info.src !== undefined){
-      const td = _getTextureDataFromSrc(info.src); // テクスチャデータから設定されるようにする。
+      const td = _getTextureDataFromSrc(info.src); // テクスチャデータから設定されるようにする。理由：めんどくさいから！！
       if(info.w === undefined){ info.w = td.width; }
       if(info.h === undefined){ info.h = td.height; }
     }
@@ -599,6 +599,7 @@ const p5wgex = (function(){
     let tex = gl.createTexture();
     // テクスチャをバインド
     gl.bindTexture(gl.TEXTURE_2D, tex);
+
     // テクスチャにメモリ領域を確保
     gl.texImage2D(gl.TEXTURE_2D, 0, dict[info.internalFormat], info.w, info.h, 0,
                   dict[info.format], dict[info.type], data);
@@ -697,17 +698,24 @@ const p5wgex = (function(){
     const depthInfo = info.depth.info;
     const colorInfo = info.color.info;
     const stencilInfo = info.stencil.info;
+
     // wとhはここで付与してしまおう。なお全体のinfoにnameはもう付与済み（のはず）
-    depthInfo.w = info.w;   depthInfo.h = info.h;
+    // 未定義の場合だけにするか...ピッキングとか同じサイズじゃないとやばいし。
+    if(depthInfo.w === undefined){ depthInfo.w = info.w; }
+    if(depthInfo.h === undefined){ depthInfo.h = info.h; }
     if(!info.MRT){
-      colorInfo.w = info.w;   colorInfo.h = info.h;
+      if(colorInfo.w === undefined){ colorInfo.w = info.w; }
+      if(colorInfo.h === undefined){ colorInfo.h = info.h; }
     }else{
       // 配列の場合
       for(let eachInfo of colorInfo){
-        eachInfo.w = info.w; eachInfo.h = info.h;
+        if(eachInfo.w === undefined){ eachInfo.w = info.w; }
+        if(eachInfo.h === undefined){ eachInfo.h = info.h; }
       }
     }
-    stencilInfo.w = info.w; stencilInfo.h = info.h;
+    if(stencilInfo.w === undefined){ stencilInfo.w = info.w; }
+    if(stencilInfo.h === undefined){ stencilInfo.h = info.h; }
+
     // ここでバリデーション掛ければいいのか
     _validateForEachInfo(info.depth.attachType, depthInfo);
     if(!info.MRT){
@@ -1510,8 +1518,16 @@ const p5wgex = (function(){
     }
     setUniform(name, data){
       // 有効になってるシェーダにuniformをセット（テクスチャ以外）
-      //this.currentShader.setUniform(name, data);
-      this.currentPainter.setUniform(name, data);
+      // shaderProgramは設定されたuniform変数が内部で使われていないときにエラーを返すんですが
+      // どれなのか判然とせず混乱するのでここはtry～catchを使いましょう。
+      try{
+        this.currentPainter.setUniform(name, data);
+      }catch(error){
+        window.alert("setUniform method error!.");
+        console.log(error.message);
+        console.log(error.stack);
+        console.log("error uniform name: " + name);
+      }
       return this;
     }
     setViewport(x, y, w, h){

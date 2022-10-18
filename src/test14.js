@@ -25,6 +25,16 @@
 // 大量、でやるならまあ、個別に...ってなるでしょうね。で、まあ、id持たせるか、あるいはVertexID使って割り算で、
 // uniformと照合して、色を落とす...のがいいと思う。
 
+// unpack不採用。さてと。MRT先にやってみるか～デプスの可視化も面白そうだけど。
+
+// uniform未使用エラーマジでうざい。
+// まあいいや
+// エラー処理早く実装しろよぽんこつ！！
+
+// 結論から言うと、ディファードに関してはnormal, colのrgba, vViewPositionの3つを入れればいい。
+// この3つの情報があれば復元できるわけ。そして爆速になると。
+// で、テクスチャペイントとかしたいんならuv座標も、ってわけ。
+
 // global
 const ex = p5wgex;
 let _node;
@@ -38,14 +48,15 @@ const tf = new ex.TransformEx();
 // shaders.
 
 // 現時点でのライティング。
+// 場合によっては頂点テクスチャフェッチでModelを頂点の付属idかなんかから読み込んで
+// まとめて位置を変換する場合もある。その場合ModelViewは不要でViewだけ放り込み、
+// Modelと掛けて法線を出し、Projectionと掛けて正規化デバイスの位置を出す。
 const lightVert =
 `#version 300 es
 in vec3 aPosition;
 in vec3 aVertexColor;
 in vec3 aNormal;
 in vec2 aTexCoord;
-
-uniform vec3 uAmbientColor;
 
 uniform mat4 uModelViewMatrix;
 uniform mat4 uProjectionMatrix;
@@ -55,7 +66,6 @@ uniform vec3 uPickColor;
 out vec3 vVertexColor;
 out vec3 vNormal;
 out vec3 vViewPosition;
-out vec3 vAmbientColor;
 out vec2 vTexCoord;
 
 out vec3 vPickColor;
@@ -79,8 +89,6 @@ void main(void){
   vVertexColor = aVertexColor;
   vTexCoord = aTexCoord;
 
-  vAmbientColor = uAmbientColor;
-
   vPickColor = uPickColor;
 }
 `;
@@ -89,19 +97,38 @@ void main(void){
 const lightFrag =
 `#version 300 es
 precision mediump float;
+
+// -------------------- ライティング関連 -------------------- //
 // ビュー行列
 uniform mat4 uViewMatrix;
+
+// 汎用色
+uniform vec3 uAmbientColor;
+uniform float uShininess; // specularに使う、まあこれが大きくないと見栄えが悪いのです。光が集中する。
+
 // directionalLight関連
 uniform vec3 uLightingDirection;
 uniform vec3 uDirectionalDiffuseColor;
+uniform vec3 uDirectionalSpecularColor; // specular用
+
+// pointLight関連
 uniform vec3 uPointLightLocation;
 uniform vec3 uPointLightDiffuseColor;
+uniform vec3 uPointLightSpecularColor; // specular用
 uniform vec3 uAttenuation; // デフォルトは1,0,0.
-// pointLight関連
+
+// light flag.
 uniform bool uUseDirectionalLight; // デフォルトはfalse.
 uniform bool uUsePointLight; // デフォルトはfalse;
+uniform bool uUseSpecular; // デフォルトはfalse;
+
+// 係数
+const float diffuseCoefficient = 0.73;
+const float specularCoefficient = 2.0;
+
+// -------------------- マテリアル関連 -------------------- //
+
 // 描画フラグ各種
-const float diffuseFactor = 0.73;
 const int USE_VERTEX_COLOR = 0;
 const int USE_MONO_COLOR = 1;
 const int USE_UV_COLOR = 2; // そのうち。
@@ -113,54 +140,90 @@ uniform sampler2D uTex; // uvColorの場合
 in vec3 vVertexColor;
 in vec3 vNormal;
 in vec3 vViewPosition;
-in vec3 vAmbientColor;
 in vec2 vTexCoord; // テクスチャ
+
+// -------------------- その他 -------------------- //
 
 in vec3 vPickColor;
 
 out vec4 fragColor; // 出力。
 
-// DirectionalLight項の計算。
-vec3 getDirectionalLightDiffuseColor(vec3 normal){
-  vec3 lightVector = (uViewMatrix * vec4(uLightingDirection, 0.0)).xyz;
-  vec3 lightDir = normalize(lightVector);
-  vec3 lightColor = uDirectionalDiffuseColor;
-  float diffuse = max(0.0, dot(-lightDir, normal));
-  return diffuse * lightColor;
+// -------------------- ライティング処理 -------------------- //
+
+float lambertDiffuse(vec3 lightDirection, vec3 surfaceNormal){
+  return max(0.0, dot(-lightDirection, surfaceNormal));
 }
+
+// 要は目に飛び込んでくるなら明るくなるでしょって話
+float phongSpecular(vec3 lightDirection, vec3 viewDirection, vec3 surfaceNormal){
+  vec3 R = reflect(lightDirection, surfaceNormal);
+  return pow(max(0.0, dot(R, viewDirection)), uShininess); // shininessはuniformでいいや。
+}
+
+// DirectionalLight項の計算。
+void applyDirectionalLightDiffuseColor(vec3 direction, vec3 diffuseColor, vec3 specularColor,
+                                       vec3 modelPosition, vec3 normal, out vec3 diffuse, out vec3 specular){
+  vec3 viewDirection = normalize(-modelPosition);
+  vec3 lightVector = (uViewMatrix * vec4(direction, 0.0)).xyz;
+  vec3 lightDir = normalize(lightVector);
+  vec3 lightColor = diffuseColor;
+  // 色計算
+  float diffuseFactor = lambertDiffuse(lightDir, normal);
+  diffuse += diffuseFactor * lightColor; // diffuse成分を足す。
+  if(uUseSpecular){
+    float specularFactor = phongSpecular(lightDir, viewDirection, normal);
+    specular += specularFactor * lightColor * specularColor;
+  }
+}
+
 // PointLight項の計算。attenuationも考慮。
-vec3 getPointLightDiffuseColor(vec3 modelPosition, vec3 normal){
-  vec3 lightPosition = (uViewMatrix * vec4(uPointLightLocation, 1.0)).xyz;
+void applyPointLightDiffuseColor(vec3 location, vec3 diffuseColor, vec3 specularColor,
+                                 vec3 modelPosition, vec3 normal, out vec3 diffuse, out vec3 specular){
+  vec3 viewDirection = normalize(-modelPosition);
+  vec3 lightPosition = (uViewMatrix * vec4(location, 1.0)).xyz;
   vec3 lightVector = modelPosition - lightPosition;
   vec3 lightDir = normalize(lightVector);
   float lightDistance = length(lightVector);
   float d = lightDistance;
   float lightFallOff = 1.0 / dot(uAttenuation, vec3(1.0, d, d*d));
-  vec3 lightColor = lightFallOff * uPointLightDiffuseColor;
-  float diffuse = max(0.0, dot(-lightDir, normal));
-  return diffuse * lightColor;
+  // 色計算
+  vec3 lightColor = lightFallOff * diffuseColor;
+  float diffuseFactor = lambertDiffuse(lightDir, normal);
+  diffuse += diffuseFactor * lightColor; // diffuse成分を足す。
+  if(uUseSpecular){
+    float specularFactor = phongSpecular(lightDir, viewDirection, normal);
+    specular += specularFactor * lightColor * specularColor;
+  }
 }
+
 // _lightはこれで。
-vec3 totalLight(vec3 modelPosition, vec3 normal){
-  vec3 result = vec3(0.0); // 0.0で初期化
+vec3 totalLight(vec3 modelPosition, vec3 normal, vec3 materialColor){
+  vec3 diffuse = vec3(0.0); // diffuse成分
+  vec3 specular = vec3(0.0); // ついでに
 // directionalLightの影響を加味する
   if(uUseDirectionalLight){
-    result += getDirectionalLightDiffuseColor(normal);
+    applyDirectionalLightDiffuseColor(uLightingDirection, uDirectionalDiffuseColor, uDirectionalSpecularColor,
+                                      modelPosition, normal, diffuse, specular);
   }
 // pointLightの影響を加味する
   if(uUsePointLight){
-    result += getPointLightDiffuseColor(modelPosition, normal);
+    applyPointLightDiffuseColor(uPointLightLocation, uPointLightDiffuseColor, uPointLightSpecularColor,
+                                modelPosition, normal, diffuse, specular);
   }
-  result *= diffuseFactor;
+  diffuse *= diffuseCoefficient;
+  specular *= specularCoefficient;
+  vec3 result = diffuse + uAmbientColor;
+  result *= materialColor;
+  result += specular;
   return result;
 }
-// include lighting.glsl
 
-// メインコード
+// -------------------- メインコード -------------------- //
+
 void main(void){
-  vec3 diffuse = totalLight(vViewPosition, normalize(vNormal));
+  // 白。デフォルト。
   vec4 col = vec4(1.0);
-
+  // マテリアルカラーの計算
   if(uUseColorFlag == USE_VERTEX_COLOR){
     col.rgb = vVertexColor; // 頂点色
   }
@@ -173,8 +236,15 @@ void main(void){
     col = texture(uTex, tex);
     if(col.a < 0.1){ discard; }
   }
-  // diffuseの分にambient成分を足してrgbに掛けて色を出してspecular成分を足して完成みたいな（？？）
-  col.rgb *= (diffuse + vAmbientColor);
+  // ライティングの計算
+  // diffuseの分にambient成分を足してrgbに掛けて色を出してspecular成分を足して完成
+  // この中でrgb関連の処理を実行しrgbをそれで置き換える。
+  vec3 result = totalLight(vViewPosition, normalize(vNormal), col.rgb);
+
+  // ディファードの場合、この計算前のcol(rgba)と、normal, vViewPosition, 場合によってはvTexCoordが
+  // MRTで送られる対象になる。もしくはついでにデプスなど。doxasさんのサイトではこれらが可視化されていましたね。
+
+  col.rgb = result;
   fragColor = col;
 }
 `;
@@ -239,12 +309,27 @@ function draw(){
   // 射影
   const projMat = cam.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
+
+  // どうもこの辺かな。この辺りをまとめて...そうね...
+  // ライティング、TF, CAMERAが別々の概念。で、ライティングは切り離してメソッド化。
   // ライティングユニフォーム
-  const {front} = cam.getLocalAxes(); // frontから視線方向に光を当てる。
   _node.setUniform("uAmbientColor", [64.0/255.0, 64.0/255.0, 64.0/255.0]);
+  _node.setUniform("uShininess", 40);
+  // フラグ
   _node.setUniform("uUseDirectionalLight", true);
+  _node.setUniform("uUsePointLight", true);
+  _node.setUniform("uUseSpecular", true);
+  // directionalLight.
+  const {front} = cam.getLocalAxes(); // frontから視線方向に光を当てる。
   _node.setUniform("uLightingDirection", [-front.x, -front.y, -front.z]);
   _node.setUniform("uDirectionalDiffuseColor", [1, 1, 1]);
+  _node.setUniform("uDirectionalSpecularColor", [1,0.5,1]);
+  // pointLight.
+  _node.setUniform("uPointLightLocation", [0,0,1.5]);
+  _node.setUniform("uPointLightDiffuseColor", [1,1,1]);
+  _node.setUniform("uPointLightSpecularColor", [1, 0.5, 1]);
+  _node.setUniform("uAttenuation", [1,0,0]);
+
   // 彩色方法指定（単色）
   _node.setUniform("uUseColorFlag", 1);
 
@@ -261,8 +346,7 @@ function draw(){
 
   // 射影
   _node.setUniform("uProjectionMatrix", projMat);
-  // ライティングユニフォーム
-  _node.setUniform("uAmbientColor", [64.0/255.0, 64.0/255.0, 64.0/255.0]); // 使わないが仕方なく放り込む...
+  // ライティングユニフォームなんか要るかばーか
 
   _node.drawFigure("cube")
        .bindIBO("cubeIBO");
