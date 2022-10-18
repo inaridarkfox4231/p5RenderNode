@@ -35,6 +35,8 @@
 // この3つの情報があれば復元できるわけ。そして爆速になると。
 // で、テクスチャペイントとかしたいんならuv座標も、ってわけ。
 
+// 配列にすることでフラグは不要となるわけ。
+
 // global
 const ex = p5wgex;
 let _node;
@@ -105,21 +107,23 @@ uniform mat4 uViewMatrix;
 // 汎用色
 uniform vec3 uAmbientColor;
 uniform float uShininess; // specularに使う、まあこれが大きくないと見栄えが悪いのです。光が集中する。
+uniform vec3 uAttenuation; // デフォルトは1,0,0. pointLightで使う
 
 // directionalLight関連
-uniform vec3 uLightingDirection;
-uniform vec3 uDirectionalDiffuseColor;
-uniform vec3 uDirectionalSpecularColor; // specular用
+uniform int uDirectionalLightCount; // デフォ0なのでフラグ不要
+uniform vec3 uLightingDirection[5];
+uniform vec3 uDirectionalDiffuseColor[5];
+uniform vec3 uDirectionalSpecularColor[5]; // specular用
 
 // pointLight関連
-uniform vec3 uPointLightLocation;
-uniform vec3 uPointLightDiffuseColor;
-uniform vec3 uPointLightSpecularColor; // specular用
-uniform vec3 uAttenuation; // デフォルトは1,0,0.
+uniform int uPointLightCount; // これがデフォルトゼロであることによりフラグが不要となる。
+uniform vec3 uPointLightLocation[5];
+uniform vec3 uPointLightDiffuseColor[5];
+uniform vec3 uPointLightSpecularColor[5]; // specular用
 
 // light flag.
-uniform bool uUseDirectionalLight; // デフォルトはfalse.
-uniform bool uUsePointLight; // デフォルトはfalse;
+//uniform bool uUseDirectionalLight; // デフォルトはfalse.
+//uniform bool uUsePointLight; // デフォルトはfalse;
 uniform bool uUseSpecular; // デフォルトはfalse;
 
 // 係数
@@ -200,14 +204,14 @@ void applyPointLightDiffuseColor(vec3 location, vec3 diffuseColor, vec3 specular
 vec3 totalLight(vec3 modelPosition, vec3 normal, vec3 materialColor){
   vec3 diffuse = vec3(0.0); // diffuse成分
   vec3 specular = vec3(0.0); // ついでに
-// directionalLightの影響を加味する
-  if(uUseDirectionalLight){
-    applyDirectionalLightDiffuseColor(uLightingDirection, uDirectionalDiffuseColor, uDirectionalSpecularColor,
+  // directionalLightの影響を加味する
+  for(int i=0; i<uDirectionalLightCount; i++){
+    applyDirectionalLightDiffuseColor(uLightingDirection[i], uDirectionalDiffuseColor[i], uDirectionalSpecularColor[i],
                                       modelPosition, normal, diffuse, specular);
   }
-// pointLightの影響を加味する
-  if(uUsePointLight){
-    applyPointLightDiffuseColor(uPointLightLocation, uPointLightDiffuseColor, uPointLightSpecularColor,
+  // pointLightの影響を加味する
+  for(int i=0; i<uPointLightCount; i++){
+    applyPointLightDiffuseColor(uPointLightLocation[i], uPointLightDiffuseColor[i], uPointLightSpecularColor[i],
                                 modelPosition, normal, diffuse, specular);
   }
   diffuse *= diffuseCoefficient;
@@ -306,47 +310,43 @@ function draw(){
   _node.bindFBO(null).clearColor(0,0,0,1).clear()
        .usePainter("light");
 
-  // 射影
+  // 射影（モードをいじらないならtfやcamとは区別されるため共通の処理となる）
   const projMat = cam.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
 
-  // どうもこの辺かな。この辺りをまとめて...そうね...
-  // ライティング、TF, CAMERAが別々の概念。で、ライティングは切り離してメソッド化。
-  // ライティングユニフォーム
-  _node.setUniform("uAmbientColor", [64.0/255.0, 64.0/255.0, 64.0/255.0]);
-  _node.setUniform("uShininess", 40);
-  // フラグ
-  _node.setUniform("uUseDirectionalLight", true);
-  _node.setUniform("uUsePointLight", true);
-  _node.setUniform("uUseSpecular", true);
-  // directionalLight.
+  // ライティング整理した。すっきり！
+  setLight(_node, {useSpecular:true});
   const {front} = cam.getLocalAxes(); // frontから視線方向に光を当てる。
-  _node.setUniform("uLightingDirection", [-front.x, -front.y, -front.z]);
-  _node.setUniform("uDirectionalDiffuseColor", [1, 1, 1]);
-  _node.setUniform("uDirectionalSpecularColor", [1,0.5,1]);
-  // pointLight.
-  _node.setUniform("uPointLightLocation", [0,0,1.5]);
-  _node.setUniform("uPointLightDiffuseColor", [1,1,1]);
-  _node.setUniform("uPointLightSpecularColor", [1, 0.5, 1]);
-  _node.setUniform("uAttenuation", [1,0,0]);
+  setDirectionalLight(_node, {
+    count:2,
+    direction:[-front.x, -front.y, -front.z, 0, 0, -1],
+    diffuseColor:[1, 1, 1, 1, 1, 1],
+    specularColor:[0.5,1,1, 1, 0.5, 1]
+  });
+  setPointLight(_node, {
+    count:2,
+    location:[0,0,1.5, 3, 0, 1.5],
+    diffuseColor:[1,1,1,1,1,1],
+    specularColor:[1, 0.5, 1,1,0.5,1]
+  });
 
   // 彩色方法指定（単色）
   _node.setUniform("uUseColorFlag", 1);
-
   _node.drawFigure("cube")
        .bindIBO("cubeIBO");
-
   // あとはtfと色を変えて何回もレンダリングするだけ
   setCube(1, -3, 3, 64, 64, 192);
   setCube(0, 0, 0, 64, 192, 64);
   setCube(-1, 3, -3, 192, 64, 64);
 
+  // それではお待ちかね、オフスクリーンレンダリングの時間です。
   _node.bindFBO("pick").clearColor(0,0,0,0).clear()
        .usePainter("pick");
 
-  // 射影
+  // 射影（略）
   _node.setUniform("uProjectionMatrix", projMat);
-  // ライティングユニフォームなんか要るかばーか
+
+  // ライティングしません！
 
   _node.drawFigure("cube")
        .bindIBO("cubeIBO");
@@ -356,14 +356,15 @@ function draw(){
   setCube2(0, 0, 0, 64, 192, 64);
   setCube2(-1, 3, -3, 192, 64, 64);
 
-  // じゃあメインイベント
+  _node.unbind();
+
+  // readPixelsでマウス位置の色を取得
   const gl = this._renderer.GL;
   const mx = Math.max(0, Math.min(mouseX, 800));
   const my = Math.max(0, Math.min(mouseY, 640));
-  gl.readPixels(mx, 640-my, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, spoit); // 露骨！！！！
-  //if(frameCount%30==0){console.log(spoit[0], spoit[1], spoit[2], spoit[3]);}
+  gl.readPixels(mx, 640-my, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, spoit); // 露骨！
 
-  // じゃあ表示するか
+  // 色表示
   const gr = _node.getTextureSource("info");
   gr.clear();
   if(spoit[3] > 0){
@@ -374,7 +375,45 @@ function draw(){
   _node.updateTexture("info");
   ex.copyProgram(_node, null, "info");
 
-  _node.unbind().flush();
+  _node.flush();
+}
+
+
+// ライティング関連. これでいいと思う。nodeを引数に取らないと汎用性が死ぬ。
+// diffuseは一応デフォfalseで。
+function setLight(node, info = {}){
+  if(info.ambient === undefined){ info.ambient = [64.0/255.0, 64.0/255.0, 64.0/255.0]; }
+  if(info.shininess === undefined){ info.shininess = 40; }
+  if(info.attenuation === undefined){ info.attenuation = [1, 0, 0]; }
+  if(info.useSpecular === undefined){ info.useSpecular = false; }
+  node.setUniform("uAmbientColor", info.ambient);
+  node.setUniform("uShininess", info.shininess);
+  node.setUniform("uAttenuation", info.attenuation);
+  node.setUniform("uUseSpecular", info.useSpecular);
+}
+
+function setDirectionalLight(node, info = {}){
+  if(info.count === undefined){ info.count = 1; } // 使わないならそもそも呼び出すな
+  if(info.direction === undefined){ info.direction = [0, 0, -1]; } // まあ、指定しようよ。
+  if(info.diffuseColor === undefined){ info.diffuseColor = [1, 1, 1]; } // 白一色。
+  if(info.specularColor === undefined){ info.specularColor = [1, 1, 1]; } // 白。
+  // 2以上の場合は配列で長さを増やせばいい。
+  node.setUniform("uDirectionalLightCount", info.count);
+  node.setUniform("uLightingDirection", info.direction);
+  node.setUniform("uDirectionalDiffuseColor", info.diffuseColor);
+  node.setUniform("uDirectionalSpecularColor", info.specularColor);
+}
+
+function setPointLight(node, info = {}){
+  if(info.count === undefined){ info.count = 1; } // 使わないならそもそも呼び出すな
+  if(info.location === undefined){ info.location = [0, 0, 0]; } // これが未定義ならそもそもどうして利用するのか
+  if(info.diffuseColor === undefined){ info.diffuseColor = [1, 1, 1]; } // 白一色。
+  if(info.specularColor === undefined){ info.specularColor = [1, 1, 1]; } // 白。
+  // 2以上の場合は配列で長さを増やせばいい。
+  node.setUniform("uPointLightCount", info.count);
+  node.setUniform("uPointLightLocation", info.location);
+  node.setUniform("uPointLightDiffuseColor", info.diffuseColor);
+  node.setUniform("uPointLightSpecularColor", info.specularColor);
 }
 
 // 行列関連はまとめとこうか

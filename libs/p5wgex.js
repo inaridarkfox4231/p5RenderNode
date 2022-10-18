@@ -1523,10 +1523,9 @@ const p5wgex = (function(){
       try{
         this.currentPainter.setUniform(name, data);
       }catch(error){
-        window.alert("setUniform method error!.");
+        window.alert("setUniform method error!. " + name);
         console.log(error.message);
         console.log(error.stack);
-        console.log("error uniform name: " + name);
       }
       return this;
     }
