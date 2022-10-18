@@ -14,7 +14,8 @@
 const ex = p5wgex;
 let gr0, gr1;
 let _node0, _node1;
-let _startTime;
+//let _startTime;
+const _timer = new ex.Timer();
 
 // -------shaders------- //
 // webgl2なのでESSL300で書いてみる。
@@ -87,7 +88,8 @@ void main(){
 // -------setup------- //
 function setup(){
   createCanvas(800, 640);
-  _startTime = performance.now();
+  //_startTime = performance.now();
+  _timer.initialize("slot0");
   gr0 = createGraphics(400, 320, WEBGL);
   gr1 = createGraphics(400, 320, WEBGL);
   _node0 = new ex.RenderNode(gr0._renderer.GL);
@@ -108,15 +110,16 @@ function setup(){
 
 // -------draw------- //
 function draw(){
-  const _time = (performance.now() - _startTime) / 1000;
+  //const _time = (performance.now() - _startTime) / 1000;
+  const currentTime = _timer.getDelta("slot0");
 
   background(0);
   _node0.use("test0", "board")
-        .setUniform("uTime", _time)
+        .setUniform("uTime", currentTime)
         .drawArrays("triangle_strip")
         .unbind().flush();
   _node1.use("test1", "board")
-        .setUniform("uTime", _time)
+        .setUniform("uTime", currentTime)
         .drawArrays("triangle_strip")
         .unbind().flush();
 

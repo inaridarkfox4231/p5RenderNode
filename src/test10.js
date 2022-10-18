@@ -23,31 +23,10 @@
 // ---global
 const ex = p5wgex;
 let _node;
-let bgTex, foxTex;
+//let bgTex, foxTex;
 
 // ---shaders
 // いつものcopy.
-const copyVert =
-`#version 300 es
-in vec2 aPosition;
-out vec2 vUv;
-void main(){
-  vUv = (aPosition + 1.0) * 0.5;
-  vUv.y = 1.0 - vUv.y;
-  gl_Position = vec4(aPosition, 0.0, 1.0);
-}
-`;
-
-const copyFrag =
-`#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uTex;
-out vec4 color;
-void main(){
-  color = texture(uTex, vUv);
-}
-`;
 
 // 点描画
 const pointVert =
@@ -78,25 +57,25 @@ function setup(){
   const _gl = this._renderer;
   _node = new ex.RenderNode(_gl.GL);
 
-  _node.registPainter("bg", copyVert, copyFrag);
-  _node.registFigure("board", [{name:"aPosition", size:2, data:[-1,-1,1,-1,-1,1,1,1]}]);
+  //_node.registPainter("bg", copyVert, copyFrag);
+  //_node.registFigure("board", [{name:"aPosition", size:2, data:[-1,-1,1,-1,-1,1,1,1]}]);
   _node.registPainter("point", pointVert, pointFrag);
   _node.registFigure("fox", [{name:"aPosition", size:3, data:[0,0,0]}]);
 
-  bg = createGraphics(400, 400);
+  const bg = createGraphics(400, 400);
   bg.noStroke();
   for(let i = 0; i < 400; i++){
     bg.fill(i*255/400);
     bg.rect(0, i, 400, 1);
   }
 
-  fox = createGraphics(100, 100);
-  fox.textSize(50);
+  const fox = createGraphics(64, 64);
+  fox.textSize(32);
   fox.textAlign(CENTER, CENTER);
-  fox.text("🦊", 50, 50);
+  fox.text("🦊", 32, 32);
 
-  bgTex = new p5.Texture(_gl, bg);
-  foxTex = new p5.Texture(_gl, fox);
+  _node.registTexture("bg", {src:bg});
+  _node.registTexture("fox", {src:fox});
 
   // 点の最大ピクセル数をコンソールに出力
   // 調べたところ1～1024ですね。てか、何の数字？？
@@ -110,16 +89,13 @@ function setup(){
 function draw(){
   _node.clear();
 
-  _node.use("bg", "board")
-       .setTexture2D("uTex", bgTex.glTex)
-       .drawArrays("triangle_strip")
-       .unbind();
+  ex.copyProgram(_node, null, "bg");
 
   _node.enable("blend")
        .blendFunc("src_alpha", "one_minus_src_alpha");
 
   _node.use("point", "fox")
-       .setTexture2D("uTex", foxTex.glTex)
+       .setTexture2D("uTex", "fox")
        .drawArrays("points")
        .unbind()
        .flush();

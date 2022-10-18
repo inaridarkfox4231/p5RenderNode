@@ -23,13 +23,13 @@
 // クワドだったら「-1,-1,1,-1,-1,1,1,1」ってやるとBACKカリングで消えない平面になるわけ（左下、右下、左上、右上）。
 // まあ、基本FRONTでいきましょう。BACKカリングがデフォルトである以上そうしないといろいろと面倒ですからね。
 
+// お待たせ。20221018 Textureできたよ。苦労したぜ。
+
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
 
 const ex = p5wgex; // alias.
 let _node; // RenderNode.
-
-let bg, bgTex;
 
 // ------------------------------------------------------------------------------------------------------------ //
 // shaders.
@@ -78,9 +78,9 @@ const simpleFrag =
 
 function setup(){
   createCanvas(800, 640, WEBGL);
-  const _gl = this._renderer; // レンダラーを取得
-  const gl = _gl.GL;
-  _node = new ex.RenderNode(gl); // レンダーノード
+  //const _gl = this._renderer; // レンダラーを取得
+  //const gl = _gl.GL;
+  _node = new ex.RenderNode(this._renderer.GL); // レンダーノード
 
   let meshData = []; // 汎用メッシュ配列。今回は点のデータと色のデータを入れるつもり。
   const hsv = ex.hsv2rgb;
@@ -97,21 +97,22 @@ function setup(){
   _node.registFigure("points", meshData);
   _node.registPainter("simple", simpleVert, simpleFrag);
 
-
+/*
   meshData = [{name:"aPosition", size:2, data:[-1,1,-1,-1,1,1,1,-1]}]; // 指定の仕方が難しい。
   _node.registFigure("board", meshData);
   _node.registPainter("copy", copyVert, copyFrag);
-
+*/
   _node.clearColor(0.6, 0.4, 0.2, 1);
 
-  bg = createGraphics(800, 640);
+  const bg = createGraphics(800, 640);
   bg.background(128);
   bg.noStroke();
   bg.fill(0);
   bg.textAlign(CENTER, CENTER);
   bg.textSize(32);
   bg.text("test",400,80);
-  bgTex = new p5.Texture(_gl, bg);
+  //bgTex = new p5.Texture(_gl, bg);
+  _node.registTexture("bg", {src:bg}); // srcがある場合wとhは不要になったよ
 }
 
 function draw(){
@@ -119,11 +120,13 @@ function draw(){
 
   _node.enable("cull_face");
   _node.cullFace("back");
-
+/*
   _node.use("copy", "board");
-  _node.setTexture2D("uTex", bgTex.glTex);
+  _node.setTexture2D("uTex", "bg"); // やったぜ
   _node.drawArrays("triangle_strip");
   _node.unbind();
+*/
+  ex.copyProgram(_node, null, "bg"); // 簡略化
 
   _node.enable("blend");
   _node.blendFunc("one", "one"); // 加算合成的な

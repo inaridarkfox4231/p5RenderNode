@@ -25,7 +25,7 @@
 // -------global------- //
 const ex = p5wgex;
 let _node;
-let _timer; // 使ってみる
+const _timer = new ex.Timer(); // 使ってみる
 const NUM = 1024;
 let posiData = new Array(NUM*2*3).fill(0);
 let posiDataTyped = new Float32Array(NUM*2*3);
@@ -60,7 +60,7 @@ void main(){
 function setup(){
   createCanvas(640, 640, WEBGL);
   //_startTime = performance.now();
-  _timer = new ex.Timer();
+  //_timer = new ex.Timer();
   _timer.initialize("duration");
   const gl = this._renderer.GL;
   _node = new ex.RenderNode(gl);

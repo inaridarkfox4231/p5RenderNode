@@ -577,6 +577,12 @@ const p5wgex = (function(){
     // textureWrap. "clamp", "repeat", "mirror"で指定
     if(info.wrap === undefined){ info.wrap = "clamp"; }
     if(info.mipmap === undefined){ info.mipmap = false; } // mipmapはデフォルトfalseで。
+    // srcがnullでない場合に限りwとhは未定義でもOK
+    if(info.src !== undefined){
+      const td = _getTextureDataFromSrc(info.src); // テクスチャデータから設定されるようにする。
+      if(info.w === undefined){ info.w = td.width; }
+      if(info.h === undefined){ info.h = td.height; }
+    }
   }
 
   // info.srcが用意されてないならnullを返す。一種のバリデーション。
@@ -625,14 +631,13 @@ const p5wgex = (function(){
 
   // というわけでレンダーバッファ作成関数。まあ、そうなるわな。
   function _createRenderbuffer(gl, info, dict){
-    //_validateForRenderbuffer(info); // もう終わってるからな..framebufferと合わせてしか使わないからな。
-    // まず深度レンダーバッファを用意する
+    // まずレンダーバッファを用意する
     let renderbuffer = gl.createRenderbuffer();
-    // 深度レンダーバッファをバインド
+    // レンダーバッファをバインド
     gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer);
-    // 深度レンダーバッファを深度バッファとして設定(32F使えるそうです)
+    // レンダーバッファを深度バッファとして設定(32F使えるそうです)
     gl.renderbufferStorage(gl.RENDERBUFFER, dict[info.internalFormat], info.w, info.h);
-    // 深度レンダーバッファのバインドを解除
+    // レンダーバッファのバインドを解除
     gl.bindRenderbuffer(gl.RENDERBUFFER, null);
     return renderbuffer;
   }
@@ -749,57 +754,17 @@ const p5wgex = (function(){
     const colorBuffer = _createEachBuffer(gl, info.color.attachType, info.color.info, dict);
     const stencilBuffer = _createEachBuffer(gl, info.stencil.attachType, info.stencil.info, dict);
 
-/*
-    // まず深度レンダーバッファを用意する
-    let depthRenderbuffer = gl.createRenderbuffer();
-    // 深度レンダーバッファをバインド
-    gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderbuffer);
-    // 深度レンダーバッファを深度バッファとして設定(32F使えるそうです)
-    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT32F, info.w, info.h);
-    // 深度レンダーバッファのバインドを解除
-    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
-
-    // 次に色テクスチャを生成する
-    let colorTexture = gl.createTexture();
-    // 色テクスチャをバインド
-    gl.bindTexture(gl.TEXTURE_2D, colorTexture);
-    // 色テクスチャにメモリ領域を確保
-    // internalFormat, Format, Typeの組み合わせが限定されているので注意
-    // ちなみに0のところはmipmapのレベルを指定していてこれを1とか2にする、と。
-    const data = _getTextureDataFromSrc(info.src);
-    gl.texImage2D(gl.TEXTURE_2D, 0, dict[info.textureInternalFormat], info.w, info.h, 0,
-                  dict[info.textureFormat], dict[info.textureType], data);
-    // mipmapの作成
-    if(info.mipmap){ gl.generateMipmap(gl.TEXTURE_2D); }
-    // 色テクスチャのフィルタ設定（サンプリングの仕方を決める）
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[info.textureFilter]); // 拡大表示用
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[info.textureFilter]); // 縮小表示用
-    // 色テクスチャのラッピング設定（範囲外のUV値に対する挙動を決める）
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, dict[info.textureWrap]);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[info.textureWrap]);
-    // テクスチャのバインドを解除
-    gl.bindTexture(gl.TEXTURE_2D, null);
-*/
-
     // フレームバッファを生成。怖くないよ！！
     const framebuffer = gl.createFramebuffer();
 
     // フレームバッファをバインド
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-
-
-    // 色テクスチャをフレームバッファに関連付ける
-    //gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, colorTexture, 0);
-    // 深度レンダーバッファをフレームバッファに関連付ける
-    //gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRenderbuffer);
-
+    // 関連付け
     _connectWithFramebuffer(gl, gl.DEPTH_ATTACHMENT, info.depth.attachType, depthBuffer);
     _connectWithFramebuffer(gl, gl.COLOR_ATTACHMENT0, info.color.attachType, colorBuffer);
     _connectWithFramebuffer(gl, gl.STENCIL_ATTACHMENT, info.stencil.attachType, stencilBuffer);
-
     // フレームバッファのバインドを解除
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
 
     // オブジェクトを返して終了。
     const result = {};
@@ -811,13 +776,6 @@ const p5wgex = (function(){
     result.h = info.h;
     result.double = false;
     return result;
-    // まじか...
-    /*
-    return {
-      f: framebuffer, d: depthRenderbuffer, t: colorTexture,
-      name: info.name, w: info.w, h: info.h, double: false, // texelSizeってwとhで割るだけでしょ？どうでもいいよ。
-    }
-    */
   }
 
   // テクスチャはクラスにするつもり。もう少々お待ちを...canvas要素から生成できるように作るつもり。
@@ -905,7 +863,7 @@ const p5wgex = (function(){
     }
   }
 
-  // ----------------------------------------
+  // ---------------------------------------------------------------------------------------------- //
   // Vec3. normalの計算でもこれ使おう。
 
   // とりあえずこんなもんかな。まあ難しいよねぇ。
@@ -1130,6 +1088,57 @@ const p5wgex = (function(){
   }
 
   // ---------------------------------------------------------------------------------------------- //
+  // defaultPainter.
+  // まあ、なんかあった方がいいよね。
+
+  // copy.
+  // 役割：nullもしくは文字列を受け取りフレームバッファの、複数ある場合はどれかに、
+  // uTexで受け取ったテクスチャを縮尺してそのまま貼り付ける形
+  // src_alpha, one_minus_src_alphaのblendなのであとから貼り付けるのに適している。
+  function getCopyShader(){
+    // copyShaderのペアを返す
+    const copyVert =
+    `#version 300 es
+    in vec2 aPosition;
+    out vec2 vUv;
+    void main(){
+      vUv = (aPosition + 1.0) * 0.5;
+      vUv.y = 1.0 - vUv.y;
+      gl_Position = vec4(aPosition, 0.0, 1.0);
+    }
+    `;
+
+    const copyFrag =
+    `#version 300 es
+    precision highp float;
+    in vec2 vUv;
+    uniform sampler2D uTex;
+    out vec4 color;
+    void main(){
+      color = texture(uTex, vUv);
+    }
+    `;
+    return {v:copyVert, f:copyFrag};
+  }
+
+  function copyProgram(node, fboName, texName){
+    // 一時的にfbを変えないといけないのだけど...あれ使うか。
+    const currentFBO = node.getCurrentFBO();
+    node.enable("blend")
+        .blendFunc("src_alpha", "one_minus_src_alpha");
+
+    node.bindFBO(fboName)
+        .use("foxCopyPainter", "foxCopyBoard")
+        .setTexture2D("uTex", texName)
+        .drawArrays("triangle_strip")
+        .unbind();
+
+    node.disable("blend")
+        .bindFBO(currentFBO);
+  }
+  // 例えば単純背景なら(_node, null, texName)で事足りる。
+
+  // ---------------------------------------------------------------------------------------------- //
   // Figure.
   // いろいろやることあるんかなぁ。今はこんな感じ。dict渡したけどまあ、何かに使えるでしょう...分かんないけど。
 
@@ -1264,8 +1273,10 @@ const p5wgex = (function(){
       this.currentPainter = undefined;
       this.currentFigure = undefined;
       this.currentIBO = undefined; // このくらいはいいか。
+      this.currentFBO = null; // これがないとfbの一時的な切り替えができないので。文字列またはnull.
       this.enableExtensions(); // 拡張機能
       this.dict = getDict(this.gl); // 辞書を生成
+      this.prepareDefaultShader(); // defaultShaderの構築
     }
     enableExtensions(){
       // color_buffer_floatのEXT処理。pavelさんはこれ使ってwebgl2でもfloatへの書き込みが出来るようにしてた。
@@ -1273,6 +1284,12 @@ const p5wgex = (function(){
       // 書き込み可能になるInternalFormatは「gl.R16F, gl.RG16F, gl.RGBA16F, gl.R32F, gl.RG32F, gl.RGBA32F, gl.R11FG11FB10F」？
       // 最後のはなんじゃい...
       this.gl.getExtension('EXT_color_buffer_float');
+    }
+    prepareDefaultShader(){
+      // copy.
+      const _copy = getCopyShader();
+      this.registPainter("foxCopyPainter", _copy.v, _copy.f)
+          .registFigure("foxCopyBoard", [{size:2, name:"aPosition", data:[-1,-1,1,-1,-1,1,1,1]}]);
     }
     clearColor(r, g, b, a){
       // clearに使う色を決めるところ
@@ -1470,11 +1487,13 @@ const p5wgex = (function(){
           // doubleの場合はwriteをbind
           gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.write.f);
           gl.viewport(0, 0, fbo.w, fbo.h);
+          this.currentFBO = target;
           return this;
         }
         // 通常時
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.f);
         gl.viewport(0, 0, fbo.w, fbo.h);
+        this.currentFBO = target;
         return this;
       }
       if(target == null){
@@ -1483,11 +1502,13 @@ const p5wgex = (function(){
         // drawingBufferWidthとdrawingBufferHeightってやらないとpixelDensityに邪魔されて
         // 全画面になってくれないようです...気を付けないと。これも確かpavelさんやってたな...
         gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+        this.currentFBO = null;
         return this;
       }
       // targetがfboそのものの場合。
       gl.bindFramebuffer(gl.FRAMEBUFFER, target.f);
       gl.viewport(0, 0, target.w, target.h);
+      this.currentFBO = target.name;
       return this;
     }
     clearFBO(){
@@ -1495,6 +1516,10 @@ const p5wgex = (function(){
       this.gl.clearColor(0, 0, 0, 0);
       this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
       return this;
+    }
+    getCurrentFBO(){
+      // 現在bindしているfboの名前を返す
+      return this.currentFBO;
     }
     setFBOtexture2D(uniformName, fboName, kind = "color", index = 0){
       // FBOを名前経由でセット。ダブルの場合はreadをセット。
@@ -2297,6 +2322,10 @@ const p5wgex = (function(){
   ex.CameraEx = CameraEx;
   ex.TransformEx = TransformEx;
   ex.Vec3 = Vec3;
+
+  // defaultShader.
+  ex.getCopyShader = getCopyShader; // copyShaderの取得
+  ex.copyProgram = copyProgram; // textureの中身を直に貼り付ける。縮小拡大でべったり。
 
   return ex;
 })();

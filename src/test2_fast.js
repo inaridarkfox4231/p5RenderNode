@@ -66,6 +66,7 @@
 // 20221018
 // お久しぶりです。MRTひっさげて帰ってきました...（まだだけど）
 // fbの仕様変更です。とはいえコードサイドは指定の仕方を変えるだけですが。
+// Textureも仕様変えるわ
 
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
@@ -75,10 +76,10 @@ let _node; // RenderNode.
 
 let tf;
 let cam;
-let _timer = new ex.Timer();
+const _timer = new ex.Timer();
 //let _time = 0;
 
-let info, infoTex;
+//let info, infoTex; // Textureで...
 
 // ------------------------------------------------------------------------------------------------------------ //
 // shaders.
@@ -284,21 +285,21 @@ void main(void){
   vUv.y = 1.0 - vUv.y;
   gl_Position = vec4(aPosition, 0.0, 1.0);
 }`;
-
+/*
 let copyFrag =
 `#version 300 es
 precision highp float;
 precision highp sampler2D;
 
-in vec2 vUv; // fragmentStageのinと呼応するシステム。vertexStageのinはattributeなので
+in vec2 vUv;
 uniform sampler2D uTex;
 out vec4 fragColor;
 
 void main(void){
-  fragColor = texture(uTex, vUv); // なんとtextureでいいらしい...！
+  fragColor = texture(uTex, vUv);
 }
 `;
-
+*/
 // ------------------------------------------------------------------------------------------------------------ //
 // main code.
 
@@ -369,6 +370,7 @@ function setup(){
 
   // データ計算用
   _node.registPainter("calc", calcVert, calcFrag);
+  _node.registFigure("board", [{name:"aPosition", size:2, data:[-1,-1,1,-1,-1,1,1,1]}]);
   // vec4のfloatのframebuffer.
   //_node.registFBO("param", {w:200, h:20, textureType:"float"});
   _node.registFBO("param", {w:200, h:20, color:{info:{type:"float"}}}); // はてさて...
@@ -376,15 +378,15 @@ function setup(){
   // こんな感じ？ですね。次。
 
   // info用
-  _node.registPainter("copy", copyVert, copyFrag);
-  _node.registFigure("board", [{name:"aPosition", size:2, data:[-1,-1,1,-1,-1,1,1,1]}]);
+  //_node.registPainter("copy", copyVert, copyFrag);
 
-  info = createGraphics(width, height);
+  const info = createGraphics(width, height);
   info.fill(255);
   info.noStroke();
   info.textSize(16);
   info.textAlign(LEFT, TOP);
-  infoTex = new p5.Texture(this._renderer, info);
+  //infoTex = new p5.Texture(this._renderer, info);
+  _node.registTexture("info", {src:info});
 
 	_timer.initialize("fps", {scale:1000/60}); // スケールを1フレームのミリ秒にしました(fps60前提)
 
@@ -462,18 +464,20 @@ function draw(){
   _node.drawArrays("triangle_strip");
   _node.unbind();
 
-  _node.enable("blend")
-       .blendFunc("one", "one_minus_src_alpha");
+  ex.copyProgram(_node, null, "info"); // infoを貼り付ける
 
-  _node.use("copy", "board")
-       .setTexture2D("uTex", infoTex.glTex)
-       .drawArrays("triangle_strip")
-       .unbind()
-       .flush()
-       .disable("blend");
+  _node.flush();
 
+  informationUpdate(fps);
+}
+
+function informationUpdate(fps){
+  // 若干手間だけどきれいに書く方法がこれしかなくて。ごめんね。
+  // てかね。基本textureの内容ってshaderで変化させるんよ...まあでも2Dとの共存はp5js最大の武器。
+  // 上手に活用しましょう。
+  const info = _node.getTextureSource("info");
   info.clear();
   info.text("fpsRate:" + fps.toFixed(3), 5, 5);
   info.text("frameRate:" + frameRate().toFixed(2), 5, 25);
-  infoTex.update();
+  _node.updateTexture("info");
 }

@@ -23,7 +23,7 @@ const ex = p5wgex; // alias.
 let _node; // RenderNode.
 
 let tf, cam;
-let _timer = new ex.Timer();
+const _timer = new ex.Timer();
 
 // ------------------------------------------------------------------------------------------------------------ //
 // shaders.

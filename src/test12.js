@@ -82,9 +82,9 @@ function setup(){
   gr0.noStroke();
   gr0.fill(255);
   gr0.circle(128,128,128);
-  _node.registFBO("test0", {w:gr0.elt.width, h:gr0.elt.height, src:gr0}); // createGraphicsで作ったやつ
-  _node.registFBO("test1", {w:gr1.width, h:gr1.height, src:gr1}); // ロードした画像1
-  _node.registFBO("test2", {w:gr2.width, h:gr2.height, src:gr2}); // ロードした画像2
+  _node.registFBO("test0", {w:gr0.elt.width, h:gr0.elt.height, color:{info:{src:gr0}}}); // createGraphicsで作ったやつ
+  _node.registFBO("test1", {w:gr1.width, h:gr1.height, color:{info:{src:gr1}}}); // ロードした画像1
+  _node.registFBO("test2", {w:gr2.width, h:gr2.height, color:{info:{src:gr2}}}); // ロードした画像2
 
   // 最後に...
   const data = new Uint8Array(256*256*4);
@@ -97,7 +97,7 @@ function setup(){
       data[i + 3] = 255;
     }
   }
-  _node.registFBO("test3", {w:256, h:256, src:data}); // Uint8Array.
+  _node.registFBO("test3", {w:256, h:256, color:{info:{src:data}}}); // Uint8Array.
 }
 
 // ----draw

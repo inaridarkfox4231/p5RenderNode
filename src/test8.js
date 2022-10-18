@@ -39,10 +39,10 @@
 
 // -------global------- //
 const ex = p5wgex;
-let gr0, gr1;
-let _node0, _node1;
+let gr;
+let _node;
 let _timer = new ex.Timer();
-let info, infoTex;
+//let info, infoTex;
 
 // -------shaders------- //
 // webgl2なのでESSL300で書いてみる。
@@ -200,24 +200,25 @@ void main(void){
 function setup(){
   createCanvas(640, 640);
   _timer.initialize("slot0");
-  gr0 = createGraphics(width, height, WEBGL);
-  _node0 = new ex.RenderNode(gr0._renderer.GL);
+  gr = createGraphics(width, height, WEBGL);
+  _node = new ex.RenderNode(gr._renderer.GL);
 
   // まあ難しくなく、板ポリで。
   const positions = [-1, -1, 1, -1, -1, 1, 1, 1];
-  _node0.registPainter("test0", copyVert, testFrag0);
-  _node0.registPainter("copy", copyVert, copyFrag);
+  _node.registPainter("test0", copyVert, testFrag0);
+  _node.registPainter("copy", copyVert, copyFrag);
 
-  _node0.registFigure("board", [{name:"aPosition", size:2, data:positions}]);
+  _node.registFigure("board", [{name:"aPosition", size:2, data:positions}]);
 
   // うまくいくんかな～
-  prepareRandomTable(_node0);
+  prepareRandomTable(_node);
 
-  info = createGraphics(640, 640);
+  const info = createGraphics(640, 640);
   info.fill(0);
   info.textSize(16);
   info.textAlign(LEFT, TOP);
-  infoTex = new p5.Texture(gr0._renderer, info);
+  //infoTex = new p5.Texture(gr0._renderer, info);
+  _node.registTexture("info", {src:info});
 
 	_timer.initialize("fps", {scale:1000/60}); // 最初に1回だけ
 }
@@ -229,29 +230,30 @@ function draw(){
 	_timer.set("fps");
 
   background(0);
-  _node0.bindFBO(null)
+  _node.bindFBO(null)
         .use("test0", "board")
         .setUniform("uTime", currentTime)
         .setFBOtexture2D("uRandom", "rdm")
         .drawArrays("triangle_strip")
         .unbind().flush();
 
-  _node0.enable("blend")
+  _node.enable("blend")
         .blendFunc("one", "one_minus_src_alpha");
 
-  _node0.use("copy", "board")
-        .setTexture2D("uTex", infoTex.glTex)
+  _node.use("copy", "board")
+        .setTexture2D("uTex", "info")
         .drawArrays("triangle_strip")
         .unbind()
         .flush()
         .disable("blend");
 
-  image(gr0, 0, 0);
+  image(gr, 0, 0);
 
+  const info = _node.getTextureSource("info");
   info.clear();
   info.text("fpsRate:" + fps, 5, 5);
   info.text("frameRate:" + frameRate().toFixed(2), 5, 25);
-  infoTex.update();
+  _node.updateTexture("info");
 }
 
 // nodeに対して512x512x4の乱数テーブルを用意させる感じ

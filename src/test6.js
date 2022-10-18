@@ -26,7 +26,8 @@
 // -------global------- //
 const ex = p5wgex;
 let _node;
-let _startTime;
+let _timer = new ex.Timer();
+//let _startTime;
 
 // -------constants------- //
 const SIZE = 32;
@@ -137,6 +138,7 @@ function setup(){
   createCanvas(640, 640, WEBGL);
   const gl = this._renderer.GL;
   _node = new ex.RenderNode(gl);
+  _timer.initialize("slot0");
 
   _startTime = performance.now();
 
@@ -199,6 +201,8 @@ function draw(){
   _node.enable("blend")
        .blendFunc("one", "one");
 
+  const currentTime = _timer.getDelta("slot0");
+
   // メインコード。データを元に三角形を大量に描画する。
   _node.bindFBO(null)
        .clear()
@@ -207,7 +211,7 @@ function draw(){
        .bindIBO("triangleIBO")
        .setUniform("uSize", SIZE)
        .setUniform("uRadius", 0.03)
-       .setUniform("uTime", (performance.now() - _startTime) / 1000)
+       .setUniform("uTime", currentTime)
        .drawElements("triangles")
        .unbind()
        .flush();

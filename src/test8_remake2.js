@@ -27,8 +27,8 @@
 // ----global---- //
 const ex = p5wgex;
 let _node;
-let _timer = new ex.Timer();
-let info, infoTex;
+const _timer = new ex.Timer();
+//let info, infoTex;
 
 const OCTAVE = 6;
 
@@ -210,33 +210,7 @@ vec3 finalColor = skyColor + (fireColor - skyColor) * smoothstep(0.44, 0.56, val
 fragColor = vec4(finalColor, 1.0);
 */
 
-// copy.
-// webgl2なのでESSL300で書いてみる。
-let copyVert =
-`#version 300 es
-
-in vec2 aPosition;
-out vec2 vUv; // vertexStageのvaryingはoutで、
-
-void main(void){
-  vUv = aPosition * 0.5 + 0.5;
-  vUv.y = 1.0 - vUv.y;
-  gl_Position = vec4(aPosition, 0.0, 1.0);
-}`;
-
-let copyFrag =
-`#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 vUv; // fragmentStageのinと呼応するシステム。vertexStageのinはattributeなので
-uniform sampler2D uTex;
-out vec4 fragColor;
-
-void main(void){
-  fragColor = texture(uTex, vUv); // なんとtextureでいいらしい...！
-}
-`;
+// copy. 不要になった。
 
 // ----setup---- //
 function setup(){
@@ -247,7 +221,7 @@ function setup(){
   _node.registPainter("clear", dataVert, clearFrag); // 初期化用
   _node.registPainter("fbmIter", dataVert, fbmIterFrag);
   _node.registPainter("color", colorVert, colorFrag);
-  _node.registPainter("copy", copyVert, copyFrag);
+  //_node.registPainter("copy", copyVert, copyFrag);
   _node.registFigure("board", [{name:"aPosition", size:2, data:[-1,-1,1,-1,-1,1,1,1]}]);
 
   // ダブルにする
@@ -256,11 +230,12 @@ function setup(){
 
   prepareRandomTable(_node);
 
-  info = createGraphics(640, 640);
+  const info = createGraphics(640, 640);
   info.fill(0);
   info.textSize(16);
   info.textAlign(LEFT, TOP);
-  infoTex = new p5.Texture(this._renderer, info);
+  // infoTex = new p5.Texture(this._renderer, info);
+  _node.registTexture("info", {src:info});
 
 	_timer.initialize("fps", {scale:1000/60}); // 最初に1回だけ
 }
@@ -304,19 +279,17 @@ function draw(){
        .unbind();
 
   _node.enable("blend")
-       .blendFunc("one", "one_minus_src_alpha");
+       .blendFunc("src_alpha", "one_minus_src_alpha"); // src_alphaなら変な白い輪郭が出ない
 
-  _node.use("copy", "board")
-       .setTexture2D("uTex", infoTex.glTex)
-       .drawArrays("triangle_strip")
-       .unbind()
-       .flush()
-       .disable("blend");
+  ex.copyProgram(_node, null, "info"); // info直に貼り付け
+  _node.flush();
 
+  const info = _node.getTextureSource("info");
   info.clear();
   info.text("fpsRate:" + fps, 5, 5);
   info.text("frameRate:" + frameRate().toFixed(2), 5, 25);
-  infoTex.update();
+  //infoTex.update();
+  _node.updateTexture("info");
 }
 
 // nodeに対して512x512x4の乱数テーブルを用意させる感じ
