@@ -106,16 +106,18 @@ const p5wgex = (function(){
     }
     initialize(keyName, info = {}){
       if(info.stump === undefined){ info.stump = window.performance.now(); } // 未定義の場合は現在の時刻
-      if(info.durationTime === undefined){ info.durationTime = Infinity; } // 未定義の場合は無限
+      if(info.duration === undefined){ info.duration = Infinity; } // 未定義の場合は無限
       if(info.scale === undefined){ info.scale = 1000; } // 返すときに何かで割りたいときにどうぞ。未定義の場合は1000.
       // なぜならほとんどの場合秒数として使用するので（メトロノームなどの場合は具体的に指定するだろう）
       // 最後に発火したタイミングと、次の発火までの時間間隔(duration)を設定（Infinityの場合は間隔を用意しない感じで）
-      this.timers[keyName] = {stump:info.stump, durationTime:info.durationTime, scale:info.scale};
+      this.timers[keyName] = {stump:info.stump, duration:info.duration, scale:info.scale};
     }
-    set(keyName){
+    set(keyName, duration){
       // 意図的にstumpの値を現在の時刻にすることで、こちらで何かあってからの経過時間を計測する、
       // 従来の使い方もできるようにしよう。
       this.timers[keyName].stump = window.performance.now();
+      // durationを決めることでsetしてからの時間経過を取得。
+      if(duration !== undefined){ this.timers[keyName].duration = duration; }
     }
     getDelta(keyName){
       // 最後に発火してからの経過時間をscaleで割った値を返す感じ。
@@ -125,6 +127,18 @@ const p5wgex = (function(){
         return null;
       }
       return (window.performance.now() - this.timers[keyName].stump) / this.timers[keyName].scale;
+    }
+    getProgress(keyName){
+      // stumpからの経過時間をdurationで割ることで進捗を調べるのに使う感じ
+      if(this.timers[keyName] === undefined){
+        window.alert("getProgress failure: invalid name");
+        return null;
+      }
+      const _timer = this.timers[keyName];
+      if(_timer.duration > 0){
+        return Math.min(1, (performance.now() - _timer.stump) / _timer.duration);
+      }
+      return 1; // durationが0の場合...つまり無限大ということ。
     }
     getDeltaMillis(keyName){
       // 最後に発火してからの経過時間を生のミリ秒表示で取得する。使い道は検討中。
@@ -749,15 +763,15 @@ const p5wgex = (function(){
     let depthBuffer, colorBuffer, stencilBuffer;
     let colorBuffers = [];
 
-    depthBuffer = _createEachBuffer(gl, info.depth.attachType, depthinfo, dict);
+    depthBuffer = _createEachBuffer(gl, info.depth.attachType, depthInfo, dict);
     if(!info.MRT){
-      colorBuffer = _createEachBuffer(gl, info.color.attachType, colorinfo, dict);
+      colorBuffer = _createEachBuffer(gl, info.color.attachType, colorInfo, dict);
     }else{
       for(let i=0, N=colorInfo.length; i<N-1; i++){
         colorBuffers.push(_createEachBuffer(gl, info.color.attachType, colorInfo[i], dict));
       }
     }
-    stencilBuffer = _createEachBuffer(gl, info.stencil.attachType, stencilinfo, dict);
+    stencilBuffer = _createEachBuffer(gl, info.stencil.attachType, stencilInfo, dict);
 
     // フレームバッファを生成。怖くないよ！！
     const framebuffer = gl.createFramebuffer();
@@ -1162,7 +1176,7 @@ const p5wgex = (function(){
     node.enable("blend")
         .blendFunc("src_alpha", "one_minus_src_alpha");
 
-    node.bindFBO(fboName)
+    node.bindFBO(bindingFBO)
         .use("foxCopyPainter", "foxCopyBoard")
         .setFBOtexture2D("uTex", settingFBO, kind, index)
         .drawArrays("triangle_strip")
@@ -1392,7 +1406,7 @@ const p5wgex = (function(){
     registFBO(name, info){
       // nameはここで付ける。wとhは必ず指定してください。
       info.name = name;
-      if(Array.isArray(info.color.info)){
+      if(info.color !== undefined && Array.isArray(info.color.info)){
         info.MRT = true; // MRTフラグ
       }else{
         info.MRT = false; // デフォルト
