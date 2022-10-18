@@ -203,25 +203,6 @@ const p5wgex = (function(){
     d.rgba4 = gl.RGBA4;
     d.rgba8 = gl.RGBA8;
     d.stencil8 = gl.STENCIL_INDEX8;
-    // -------attachment-------//
-    d.att_depth = gl.DEPTH_ATTACHMENT;
-    d.att_color0 = gl.COLOR_ATTACHMENT0;
-    d.att_color1 = gl.COLOR_ATTACHMENT1;
-    d.att_color2 = gl.COLOR_ATTACHMENT2;
-    d.att_color3 = gl.COLOR_ATTACHMENT3;
-    d.att_color4 = gl.COLOR_ATTACHMENT4;
-    d.att_color5 = gl.COLOR_ATTACHMENT5;
-    d.att_color6 = gl.COLOR_ATTACHMENT6;
-    d.att_color7 = gl.COLOR_ATTACHMENT7;
-    d.att_color8 = gl.COLOR_ATTACHMENT8;
-    d.att_color9 = gl.COLOR_ATTACHMENT9;
-    d.att_color10 = gl.COLOR_ATTACHMENT10;
-    d.att_color11 = gl.COLOR_ATTACHMENT11;
-    d.att_color12 = gl.COLOR_ATTACHMENT12;
-    d.att_color13 = gl.COLOR_ATTACHMENT13;
-    d.att_color14 = gl.COLOR_ATTACHMENT14;
-    d.att_color15 = gl.COLOR_ATTACHMENT15;
-    d.att_stencil = gl.STENCIL_ATTACHMENT;
     // -------drawCall-------//
     d.points = gl.POINTS;
     d.lines = gl.LINES;
@@ -704,11 +685,25 @@ const p5wgex = (function(){
     const stencilInfo = info.stencil.info;
     // wとhはここで付与してしまおう。なお全体のinfoにnameはもう付与済み（のはず）
     depthInfo.w = info.w;   depthInfo.h = info.h;
-    colorInfo.w = info.w;   colorInfo.h = info.h;    // colorで配列の場合これを全部に適用
+    if(!info.MRT){
+      colorInfo.w = info.w;   colorInfo.h = info.h;
+    }else{
+      // 配列の場合
+      for(let eachInfo of colorInfo){
+        eachInfo.w = info.w; eachInfo.h = info.h;
+      }
+    }
     stencilInfo.w = info.w; stencilInfo.h = info.h;
     // ここでバリデーション掛ければいいのか
     _validateForEachInfo(info.depth.attachType, depthInfo);
-    _validateForEachInfo(info.color.attachType, colorInfo); // colorで配列の場合これを全部に適用
+    if(!info.MRT){
+      _validateForEachInfo(info.color.attachType, colorInfo);
+    }else{
+      // 配列の場合
+      for(let eachInfo of colorInfo){
+        _validateForEachInfo(info.color.attachType, eachInfo);
+      }
+    }
     _validateForEachInfo(info.stencil.attachType, stencilInfo);
   }
 
@@ -746,13 +741,23 @@ const p5wgex = (function(){
   // 2DをCUBE_MAPや2D_ARRAYにしても大丈夫っていうのは...まあ、まだ無理ね...
   // ちょっと内容整理。デプス、色、関連付け。くっきりはっきり。この方が分かりやすい。
   function _createFBO(gl, info, dict){
-    //_validateForTexture(info);
     _validateForFramebuffer(gl, info, dict);
+    const depthInfo = info.depth.info;
+    const colorInfo = info.color.info;
+    const stencilInfo = info.stencil.info;
     // ここでバリデーションは終わってて、あとは...
+    let depthBuffer, colorBuffer, stencilBuffer;
+    let colorBuffers = [];
 
-    const depthBuffer = _createEachBuffer(gl, info.depth.attachType, info.depth.info, dict);
-    const colorBuffer = _createEachBuffer(gl, info.color.attachType, info.color.info, dict);
-    const stencilBuffer = _createEachBuffer(gl, info.stencil.attachType, info.stencil.info, dict);
+    depthBuffer = _createEachBuffer(gl, info.depth.attachType, depthinfo, dict);
+    if(!info.MRT){
+      colorBuffer = _createEachBuffer(gl, info.color.attachType, colorinfo, dict);
+    }else{
+      for(let i=0, N=colorInfo.length; i<N-1; i++){
+        colorBuffers.push(_createEachBuffer(gl, info.color.attachType, colorInfo[i], dict));
+      }
+    }
+    stencilBuffer = _createEachBuffer(gl, info.stencil.attachType, stencilinfo, dict);
 
     // フレームバッファを生成。怖くないよ！！
     const framebuffer = gl.createFramebuffer();
@@ -761,7 +766,14 @@ const p5wgex = (function(){
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     // 関連付け
     _connectWithFramebuffer(gl, gl.DEPTH_ATTACHMENT, info.depth.attachType, depthBuffer);
-    _connectWithFramebuffer(gl, gl.COLOR_ATTACHMENT0, info.color.attachType, colorBuffer);
+    if(!info.MRT){
+      _connectWithFramebuffer(gl, gl.COLOR_ATTACHMENT0, info.color.attachType, colorBuffer);
+    }else{
+      // 複数の場合はあそこをインクリメントする
+      for(let i=0, N=colorInfo.length; i<N-1; i++){
+        _connectWithFramebuffer(gl, gl.COLOR_ATTACHMENT0 + i, info.color.attachType, colorBuffers[i]);
+      }
+    }
     _connectWithFramebuffer(gl, gl.STENCIL_ATTACHMENT, info.stencil.attachType, stencilBuffer);
     // フレームバッファのバインドを解除
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -770,7 +782,12 @@ const p5wgex = (function(){
     const result = {};
     result.f = framebuffer;
     if(depthBuffer !== null){ result.depth = depthBuffer; }
-    if(colorBuffer !== null){ result.color = colorBuffer; }
+    if(!info.MRT){
+      if(colorBuffer !== null){ result.color = colorBuffer; }
+    }else{
+      // この場合、前提としてnullでないのです。
+      result.color = colorBuffers;
+    }
     if(stencilBuffer !== null){ result.stencil = stencilBuffer; }
     result.w = info.w;
     result.h = info.h;
@@ -1121,15 +1138,15 @@ const p5wgex = (function(){
     return {v:copyVert, f:copyFrag};
   }
 
-  function copyProgram(node, fboName, texName){
+  function copyProgram(node, bindingFBO, settingTexture){
     // 一時的にfbを変えないといけないのだけど...あれ使うか。
     const currentFBO = node.getCurrentFBO();
     node.enable("blend")
         .blendFunc("src_alpha", "one_minus_src_alpha");
 
-    node.bindFBO(fboName)
+    node.bindFBO(bindingFBO)
         .use("foxCopyPainter", "foxCopyBoard")
-        .setTexture2D("uTex", texName)
+        .setTexture2D("uTex", settingTexture)
         .drawArrays("triangle_strip")
         .unbind();
 
@@ -1137,6 +1154,23 @@ const p5wgex = (function(){
         .bindFBO(currentFBO);
   }
   // 例えば単純背景なら(_node, null, texName)で事足りる。
+
+  // FBO用のマイナーチェンジ
+  function copyProgramFBO(node, bindingFBO, settingFBO, kind = "color", index = 0){
+    // 一時的にfbを変えないといけないのだけど...あれ使うか。
+    const currentFBO = node.getCurrentFBO();
+    node.enable("blend")
+        .blendFunc("src_alpha", "one_minus_src_alpha");
+
+    node.bindFBO(fboName)
+        .use("foxCopyPainter", "foxCopyBoard")
+        .setFBOtexture2D("uTex", settingFBO, kind, index)
+        .drawArrays("triangle_strip")
+        .unbind();
+
+    node.disable("blend")
+        .bindFBO(currentFBO);
+  }
 
   // ---------------------------------------------------------------------------------------------- //
   // Figure.
@@ -1358,6 +1392,11 @@ const p5wgex = (function(){
     registFBO(name, info){
       // nameはここで付ける。wとhは必ず指定してください。
       info.name = name;
+      if(Array.isArray(info.color.info)){
+        info.MRT = true; // MRTフラグ
+      }else{
+        info.MRT = false; // デフォルト
+      }
       const newFBO = _createFBO(this.gl, info, this.dict);
       if(newFBO === undefined){
         window.alert("failure to create framebuffer.");
@@ -2326,6 +2365,7 @@ const p5wgex = (function(){
   // defaultShader.
   ex.getCopyShader = getCopyShader; // copyShaderの取得
   ex.copyProgram = copyProgram; // textureの中身を直に貼り付ける。縮小拡大でべったり。
+  ex.copyProgramFBO = copyProgramFBO; // たとえばdepthやstencilに落とした内容を取り扱うのとかに使えそう
 
   return ex;
 })();
