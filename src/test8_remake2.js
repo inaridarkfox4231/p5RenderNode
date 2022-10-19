@@ -281,7 +281,8 @@ function draw(){
   _node.enable("blend")
        .blendFunc("src_alpha", "one_minus_src_alpha"); // src_alphaなら変な白い輪郭が出ない
 
-  ex.copyProgram(_node, null, "info"); // info直に貼り付け
+  //ex.copyProgram(_node, null, "info"); // info直に貼り付け
+  ex.copyPainter(_node, {src:{name:"info"}});
   _node.flush();
 
   const info = _node.getTextureSource("info");

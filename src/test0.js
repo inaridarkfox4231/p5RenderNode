@@ -60,7 +60,8 @@ function setup(){
 function draw(){
   // ごくごく普通の板ポリ芸
   _node.clear();
-  ex.copyProgram(_node, null, "bg");
+  //ex.copyProgram(_node, null, "bg");
+  ex.copyPainter(_node, {src:{name:"bg"}});
   _node.flush();
 }
 

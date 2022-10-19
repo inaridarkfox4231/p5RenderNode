@@ -34,8 +34,8 @@ let tf;
 let cam;
 // 手動で動かすのでタイマーは無しで。とりあえずズームとスライド。余裕があったらアライズ、
 // あとヨーイングローリングピッチング（おいおいおいおーーーい）
-let bg, bgTex; // ていうかテクスチャ実装はよ（3Dテクスチャ実装はよ）
-let img;
+//let bg, bgTex; // ていうかテクスチャ実装...できたよ。
+//let img; // これもいらんね。
 
 // ------------------------------------------------------------------------------------------------------------ //
 // shaders.
@@ -214,21 +214,8 @@ function setup(){
     proj:{near:0.1, far:10}, ortho:{left:-5, right:5, bottom:-4, top:4, near:0, far:4}
   });
 
-  // bg.
-  bg = createGraphics(width, height);
-  bg.background(0);
-  bg.fill(255);
-  bg.textSize(16);
-  bg.textAlign(LEFT, TOP);
-  bgTex = new p5.Texture(this._renderer, bg);
-  _node.registPainter("bg", copyVert, copyFrag);
-  _node.registFigure("bg", [{name:"aPosition", size:2, data:[-1, -1, 1, -1, -1, 1, 1, 1]}]);
-  img = createGraphics(width, height);
-  img.noStroke();
-  for(i=0;i<img.height;i++){
-    img.fill(i*255/img.height);
-    img.rect(0,i,img.width,1);
-  }
+  // info.
+  prepareBackground();
 
   // ライティングシェーダー
   _node.registPainter("light", lightVert, lightFrag);
@@ -273,12 +260,9 @@ function setup(){
 function draw(){
   _node.bindFBO(null).clear(); // これ癖にするといいかも。
 
-  // 背景...
-  // デプステストで挟む。これを使うと、板ポリを描画する際に
-  // 深度が記録されないので、ああいった問題が起こらなくなる...ようです。そうね。
-  _node.disable("depth_test");
-  drawBG();
-  _node.enable("depth_test");
+  // 背景
+  // depthOffをtrueにするときはblendをfalseにします。
+  ex.copyPainter(_node, {src:{name:"bg"}, blend:false, depthOff:true});
 
   /*
     おおまかな手順
@@ -321,8 +305,19 @@ function draw(){
   _node.flush();
 }
 
-function drawBG(){
-  bg.image(img, 0, 0);
+// info.
+function prepareBackground(){
+  const bg = createGraphics(width, height);
+  bg.noStroke();
+  for(i=0;i<bg.height;i++){
+    bg.fill(i*255/bg.height);
+    bg.rect(0,i,bg.width,1);
+  }
+
+  bg.fill(255);
+  bg.textSize(16);
+  bg.textAlign(LEFT, TOP);
+
   bg.text("UP_ARROW: zoom in", 5, 5);
   bg.text("DOWN_ARROW: zoom out", 5, 30);
   bg.text("RIGHT_ARROW: spin right", 5, 55);
@@ -342,12 +337,7 @@ function drawBG(){
   bg.text("N key: roll left", 5, 405);
   bg.text("B key: top reset", 5, 430);
 
-  bgTex.update();
-
-  _node.use("bg", "bg")
-       .setTexture2D("uTex", bgTex.glTex)
-       .drawArrays("triangle_strip")
-       .unbind();
+  _node.registTexture("bg", {src:bg}); // bgを渡そうね。
 }
 
 // 行列関連はまとめとこうか

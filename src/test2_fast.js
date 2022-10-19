@@ -464,7 +464,8 @@ function draw(){
   _node.drawArrays("triangle_strip");
   _node.unbind();
 
-  ex.copyProgram(_node, null, "info"); // infoを貼り付ける
+  //ex.copyProgram(_node, null, "info"); // infoを貼り付ける
+  ex.copyPainter(_node, {src:{name:"info"}});
 
   _node.flush();
 

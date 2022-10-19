@@ -89,7 +89,8 @@ function setup(){
 function draw(){
   _node.clear();
 
-  ex.copyProgram(_node, null, "bg");
+  //ex.copyProgram(_node, null, "bg");
+  ex.copyPainter(_node, {src:{name:"bg"}});
 
   _node.enable("blend")
        .blendFunc("src_alpha", "one_minus_src_alpha");

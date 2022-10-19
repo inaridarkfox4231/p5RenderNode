@@ -383,6 +383,7 @@ function draw(){
 
   // readPixelsでマウス位置の色を取得
   const gl = this._renderer.GL;
+  // 0.5を足せば640から引いてもOK
   const mx = Math.max(0, Math.min(mouseX, 800)) + 0.5;
   const my = Math.max(0, Math.min(mouseY, 640)) + 0.5;
   gl.readPixels(mx, 640-my, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, spoit); // 露骨！
@@ -396,7 +397,8 @@ function draw(){
     gr.text("立方体が選択されていません", width/2, height*7/8);
   }
   _node.updateTexture("info");
-  ex.copyProgram(_node, null, "info");
+  //ex.copyProgram(_node, null, "info");
+  ex.copyPainter(_node, {src:{name:"info"}});
 
   _node.flush();
 }

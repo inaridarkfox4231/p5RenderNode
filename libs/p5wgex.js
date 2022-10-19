@@ -587,7 +587,7 @@ const p5wgex = (function(){
     if(src instanceof HTMLImageElement){ return src; }
     if(src instanceof p5.Graphics){ return src.elt; }
     if(src instanceof p5.Image){ return src.canvas; }
-    window.error("sorry, I don't know how to.");
+    window.alert("sorry, I don't know how to.");
     return null;
   }
 
@@ -957,7 +957,7 @@ const p5wgex = (function(){
     divide(a, b, c){
       const r = _getValidation(a, b, c, 1); // 割り算のデフォも1でしょう
       if(r.x === 0.0 || r.y === 0.0 || r.z === 0.0){
-        window.error("Vec3 divide: zero division error!");
+        window.alert("Vec3 divide: zero division error!");
         return;
       }
       this.x /= r.x;
@@ -1009,7 +1009,7 @@ const p5wgex = (function(){
     normalize(){
       const L = this.mag();
       if(L == 0.0){
-        window.error("Vec3 normalize: zero division error!");
+        window.alert("Vec3 normalize: zero division error!");
         return this;
       }
       this.divide(L);
@@ -1130,10 +1130,83 @@ const p5wgex = (function(){
   // defaultPainter.
   // まあ、なんかあった方がいいよね。
 
+  // 大幅に書き直し。まあ、そういうものです。
+  // copyProgram.
+  // 統一します。textureはtextureなのかfbなのか。まとめよう。ついでにblendとdepthについても。
+  // {dst:{type:null/"fb", name:"dstName"},
+  //  src:{type:"tex"/"fb", name:"srcName", flip:true/false, attach:"color", index:0},
+  //  blend:true/false, blendFunc:{src:"src_alpha", dst:"one_minus_src_alpha"},
+  //  depthOff:false/true} // ノーブレンドでデプスオフだと背景描画になるわけ。
+
+  // MRTと併用する場合、面倒でも同じfboNameをコピーする形になるわね。
+  // [{type:"fb", name:fboName, index:0}, {type:"fb", name:fboName, index:1}, ...]
+  // まあレアケースだしどうでもいいか。だってこうしないときちんとアクセスできないんだから仕方ないでしょ。
+  function _validateForCopyProgramSource(info = {}){
+    if(info.type === undefined){
+      info.type = "tex"; // デフォはテクスチャ
+    }
+    if(info.name === undefined){
+      window.alert("validateForCopyProgramSource error: invalid source name.");
+      return;
+    }
+    if(info.flip === undefined){
+      if(info.type === "tex"){ info.flip = true; } // textureはflipするのが基本
+      else if(info.type === "fb"){ info.flip = false; } // framebufferはflipしないのが基本
+      else{
+        window.alert("validateForCopyProgramSource error: invalid type.");
+        return;
+      }
+    }
+    if(info.type === "fb"){
+      // fbのcolor, depth, stencilのどれを使うか、colorであればindexはどれか、を指定。
+      if(info.attach === undefined){ info.attach = "color"; }
+      if(info.attach === "color"){
+        if(info.index === undefined){ info.index = 0; } // たとえばindexだけ指定するような場合「attach:"color"」は不要。
+      }
+    }
+    // 以上です。
+  }
+
+  function _validateForCopyProgram(info = {}){
+    // dstは無ければnull描画となる
+    if(info.dst === undefined){
+      info.dst = {type:null}; // デフォはnullで名前の指定は不要。"fb"でフレームバッファ。
+      // その場合普通に0番に描き込まれる。
+    }
+    const _dst = info.dst;
+    if(_dst.type === "fb" && _dst.name === undefined){
+      window.alert("validateForCopyProgram error: invalid fbo name.");
+      return;
+    }
+    // srcは配列の場合もあるので然るべく対応する
+    // srcは常に指定してください。でなきゃ何がしたいのかって話なので。
+    if(Array.isArray(info.src)){
+      for(let _src of info.src){ _validateForCopyProgramSource(_src); }
+    }else{
+      _validateForCopyProgramSource(info.src);
+    }
+    // blendは基本trueでsrc_alphaとone_minus_src_alphaで上から貼り付ける感じで使います
+    if(info.blend === undefined){
+      info.blend = true;
+    }
+    // まあ使い方によっては乗算とかね。使うのか知らんけど。
+    if(info.blend === true && info.blendFunc === undefined){
+      info.blendFunc = {src:"src_alpha", dst:"one_minus_src_alpha"};
+    }
+    // depthOffも基本無しで。この場合blendは切るのが基本です。そしてこれをtrueにすると。
+    // depthに何も描き込まれないので背景の描画に適していますね。
+    if(info.depthOff === undefined){
+      info.depthOff = false;
+    }
+  }
+  // たとえば普通にname:texNameのp5.Graphicsをスクリーンに貼り付けるだけなら
+  // {src:{name:texName}}
+  // で足りる。簡単でしょ？
+
   // copy.
-  // 役割：nullもしくは文字列を受け取りフレームバッファの、複数ある場合はどれかに、
-  // uTexで受け取ったテクスチャを縮尺してそのまま貼り付ける形
-  // src_alpha, one_minus_src_alphaのblendなのであとから貼り付けるのに適している。
+  // 役割：nullもしくは文字列を受け取りフレームバッファに、
+  // uTexで受け取ったテクスチャを縮尺してそのまま貼り付ける.
+  // flipはtextureなら逆向き、framebuffer内のtextureなら順向きで貼り付ける（のがデフォルト、というだけで、選べる。）
   function getCopyShader(){
     // copyShaderのペアを返す
     const copyVert =
@@ -1159,6 +1232,57 @@ const p5wgex = (function(){
     }
     `;
     return {v:copyVert, f:copyFrag};
+  }
+
+  // 内容。info.srcの内容をdstに落とす。たとえばdstがnullならスクリーンに落とす。
+  // srcは配列であってはいけないので気を付けてね。srcが配列なのはそのうち作る...
+  function copyPainter(node, info = {}){
+    // バリデーション
+    _validateForCopyProgram(info);
+    // 一時的にfboを変更するのでキャッシュしとく
+    const currentFBO = node.getCurrentFBO();
+    // blendがある場合は適用、最後に戻す。
+    if(info.blend){
+      node.enable("blend")
+          .blendFunc(info.blendFunc.src, info.blendFunc.dst); // blendFuncのsrcとdstだったね。ばか。
+    }
+    // depthOffがある場合はdepthを切る
+    if(info.depthOff){
+      node.disable("depth_test");
+    }
+
+    // srcは配列じゃないので注意です。
+    const {dst:_dst, src:_src} = info;
+
+    // fboのbind
+    if(_dst.type === null){
+      node.bindFBO(null);
+    }else{
+      node.bindFBO(_dst.name);
+    }
+    // painter準備
+    node.use("foxCopyPainter", "foxCopyBoard");
+    // textureの準備
+    if(_src.type === "tex"){
+      node.setTexture2D("uTex", _src.name);
+    }
+    if(_src.type === "fb"){
+      node.setFBOtexture2D("uTex", _src.name, _src.attach, _src.index);
+    }
+    // flipの設定
+    node.setUniform("uFlip", _src.flip);
+    // 描画
+    node.drawArrays("triangle_strip");
+
+    // 戻す
+    if(info.depthOff){
+      node.enable("depth_test");
+    }
+    if(info.blend){
+      node.disable("blend");
+    }
+    // 後始末
+    node.unbind().bindFBO(currentFBO);
   }
 
   // こっちのflipのデフォルトはtrueにする。理由は基本的にテクスチャデータを扱うので。
@@ -2406,6 +2530,7 @@ const p5wgex = (function(){
   ex.getCopyShader = getCopyShader; // copyShaderの取得
   ex.copyProgram = copyProgram; // textureの中身を直に貼り付ける。縮小拡大でべったり。
   ex.copyProgramFBO = copyProgramFBO; // たとえばdepthやstencilに落とした内容を取り扱うのとかに使えそう
+  ex.copyPainter = copyPainter; // これで置き換える。Painterはそのままでいいです。上記2つは廃止予定。
 
   return ex;
 })();

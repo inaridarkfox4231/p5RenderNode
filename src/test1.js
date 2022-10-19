@@ -126,7 +126,8 @@ function draw(){
   _node.drawArrays("triangle_strip");
   _node.unbind();
 */
-  ex.copyProgram(_node, null, "bg"); // 簡略化
+  //ex.copyProgram(_node, null, "bg"); // 簡略化
+  ex.copyPainter(_node, {src:{name:"bg"}});
 
   _node.enable("blend");
   _node.blendFunc("one", "one"); // 加算合成的な

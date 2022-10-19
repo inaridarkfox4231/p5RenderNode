@@ -85,9 +85,11 @@ function setup(){
 
 function draw(){
   _node.clearColor(0,0,0,0).clear();
-  ex.copyProgramFBO(_node, null, "tex");
+  //ex.copyProgramFBO(_node, null, "tex");
+  ex.copyPainter(_node, {src:{type:"fb", name:"tex"}});
   updateInfo();
-  ex.copyProgram(_node, null, "info");
+  //ex.copyProgram(_node, null, "info");
+  ex.copyPainter(_node, {src:{name:"info"}});
   _node.flush();
 }
 
