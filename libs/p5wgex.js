@@ -180,6 +180,7 @@ const p5wgex = (function(){
     d.half_float = gl.HALF_FLOAT;
     d.ubyte = gl.UNSIGNED_BYTE;
     d.uint = gl.UNSIGNED_INT;
+    d.rgb = gl.RGB;
     d.rgba = gl.RGBA; // rgba忘れてたっ
     d.rgba16f = gl.RGBA16F;
     d.rgba32f = gl.RGBA32F;
@@ -189,6 +190,8 @@ const p5wgex = (function(){
     d.short = gl.SHORT;
     d.ushort = gl.UNSIGNED_SHORT;
     d.int = gl.INT;
+    d.alpha = gl.ALPHA;
+    d.red_integer = gl.RED_INTEGER;
     // -------usage-------//
     d.static_draw = gl.STATIC_DRAW;
     d.dynamic_draw = gl.DYNAMIC_DRAW;
@@ -775,7 +778,7 @@ const p5wgex = (function(){
     if(!info.MRT){
       colorBuffer = _createEachBuffer(gl, info.color.attachType, colorInfo, dict);
     }else{
-      for(let i=0, N=colorInfo.length; i<N-1; i++){
+      for(let i=0, N=colorInfo.length; i<N; i++){
         colorBuffers.push(_createEachBuffer(gl, info.color.attachType, colorInfo[i], dict));
       }
     }
@@ -792,9 +795,13 @@ const p5wgex = (function(){
       _connectWithFramebuffer(gl, gl.COLOR_ATTACHMENT0, info.color.attachType, colorBuffer);
     }else{
       // 複数の場合はあそこをインクリメントする
-      for(let i=0, N=colorInfo.length; i<N-1; i++){
+      let enums = [];
+      for(let i=0, N=colorInfo.length; i<N; i++){
         _connectWithFramebuffer(gl, gl.COLOR_ATTACHMENT0 + i, info.color.attachType, colorBuffers[i]);
+        enums.push(gl.COLOR_ATTACHMENT0 + i);
       }
+      // 配列の場合はdrawBuffersを使って書き込まれるバッファを決める感じ。基本、すべて。まあそうよね。
+      gl.drawBuffers(enums); // これでいいらしい。んー。
     }
     _connectWithFramebuffer(gl, gl.STENCIL_ATTACHMENT, info.stencil.attachType, stencilBuffer);
     // フレームバッファのバインドを解除
@@ -1198,6 +1205,10 @@ const p5wgex = (function(){
     if(info.depthOff === undefined){
       info.depthOff = false;
     }
+    // viewport指定。わかりづらいが、左下指定となっている。wだけ右、hだけ上。
+    if(info.view === undefined){
+      info.view = [0, 0, 1, 1];
+    }
   }
   // たとえば普通にname:texNameのp5.Graphicsをスクリーンに貼り付けるだけなら
   // {src:{name:texName}}
@@ -1236,6 +1247,7 @@ const p5wgex = (function(){
 
   // 内容。info.srcの内容をdstに落とす。たとえばdstがnullならスクリーンに落とす。
   // srcは配列であってはいけないので気を付けてね。srcが配列なのはそのうち作る...
+  // viewportは自由にいじれるようにしよう。
   function copyPainter(node, info = {}){
     // バリデーション
     _validateForCopyProgram(info);
@@ -1260,6 +1272,12 @@ const p5wgex = (function(){
     }else{
       node.bindFBO(_dst.name);
     }
+    // viewport指定
+    const {w, h} = node.getDrawingBufferSize((_dst.type === null ? null : _dst.name));
+    const ratios = info.view;
+    // たとえば0,0,0.5,0.5なら左下～
+    node.setViewport(ratios[0] * w, ratios[1] * h, ratios[2] * w, ratios[3] * h);
+
     // painter準備
     node.use("foxCopyPainter", "foxCopyBoard");
     // textureの準備
@@ -1284,7 +1302,7 @@ const p5wgex = (function(){
     // 後始末
     node.unbind().bindFBO(currentFBO);
   }
-
+/*
   // こっちのflipのデフォルトはtrueにする。理由は基本的にテクスチャデータを扱うので。
   // テクスチャデータは基本的に(0,0)左上でやるときちんと表示されるものなのですよ...読み込んだ画像とか。p5.Graphicsとか。
   function copyProgram(node, bindingFBO, settingTexture, flip = true){
@@ -1325,7 +1343,7 @@ const p5wgex = (function(){
     node.disable("blend")
         .bindFBO(currentFBO);
   }
-
+*/
   // ---------------------------------------------------------------------------------------------- //
   // Figure.
   // いろいろやることあるんかなぁ。今はこんな感じ。dict渡したけどまあ、何かに使えるでしょう...分かんないけど。
@@ -1490,9 +1508,19 @@ const p5wgex = (function(){
       this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
       return this;
     }
-    getDrawingBufferSize(){
-      // drawingBufferのsizeを取得する関数
-      return {w:this.gl.drawingBufferWidth, h:this.gl.drawingBufferHeight};
+    getDrawingBufferSize(fboName = null){
+      // drawingBufferのsizeを取得する関数.
+      // fboの名前の場合はそれを返す。スクリーンの場合はdrawingBufferWidthとdrawingBufferHeight.
+      if(fboName === null){
+        return {w:this.gl.drawingBufferWidth, h:this.gl.drawingBufferHeight};
+      }
+      let fbo = this.fbos[fboName];
+      if(!fbo){
+        // fboが無い場合の警告
+        window.alert("bind failure: The corresponding framebuffer does not exist.");
+        return null;
+      }
+      return {w:fbo.w, h:fbo.h};
     }
     enable(name){
       if(this.dict[name] === undefined){
@@ -1798,6 +1826,37 @@ const p5wgex = (function(){
     flush(){
       this.gl.flush();
       return this;
+    }
+    readPixels(x, y, w, h, format, type, pixels){
+      // bindされているfbの「color, texture, index:0」から読みだす。ピクセル値指定、
+      // xから右へ、wだけ行ったら下へ。
+      // x,yは読み出しのスタートでformatは読みだされる側のformat,たとえば色やvec4であればgl.RGBAでいいっぽい。
+      // 色だけならgl.RGBで透明度だけならgl.ALPHAで数値ならgl.REDでいいのかなぁ知らんけど。typeは格納する側の
+      // まあ色ならgl.UNSIGNED_BYTEとか小数ならgl.FLOATかな。INTやUNSIGNED_INTやHALF_FLOATも使えるみたい。
+      this.gl.readPixels(x, y, w, h, this.dict[format], this.dict[type], pixels);
+      // これで格納されます。pixelsは事前に用意しておきましょう。
+      // ubyteならUint8Array, floatならFloat32Arrayがいいでしょう。
+    }
+    getAttrInfo(painterName){
+      // デバッグ用。PainterのAttrに関する情報を取得しようかと。Program側の「このattr使う！」の指定方法が処理系依存なので。
+      const _painter = this.painters[painterName];
+      if(_painter === undefined){
+        window.alert("getAttrInfo failure: The corresponding painter does not exist.");
+        return null;
+      }
+      const attrs = _painter.getAttributes();
+      // とりあえず配列形式
+      const infoArray = [];
+      for(let _key of Object.keys(attrs)){
+        infoArray.push({name:_key, location:attrs[_key].location});
+      }
+      // おそらくこっちの方が使いやすいテキスト形式
+      let infoText = painterName + ":";
+      for(let eachInfo of infoArray){
+        infoText += "[" + eachInfo.name + ": " + eachInfo.location + "] ";
+      }
+      // そのまま貼り付けてもいいしarrayの方をいじってもいい。選択肢があるのは大事なことです。
+      return {array:infoArray, text:infoText};
     }
   }
 
@@ -2528,8 +2587,8 @@ const p5wgex = (function(){
 
   // defaultShader.
   ex.getCopyShader = getCopyShader; // copyShaderの取得
-  ex.copyProgram = copyProgram; // textureの中身を直に貼り付ける。縮小拡大でべったり。
-  ex.copyProgramFBO = copyProgramFBO; // たとえばdepthやstencilに落とした内容を取り扱うのとかに使えそう
+  //ex.copyProgram = copyProgram; // textureの中身を直に貼り付ける。縮小拡大でべったり。
+  //ex.copyProgramFBO = copyProgramFBO; // たとえばdepthやstencilに落とした内容を取り扱うのとかに使えそう
   ex.copyPainter = copyPainter; // これで置き換える。Painterはそのままでいいです。上記2つは廃止予定。
 
   return ex;

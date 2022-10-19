@@ -320,9 +320,8 @@ function setup(){
 
   // じゃあいつものinfoよろしくね
   const gr = createGraphics(800, 640); gr.noStroke(); gr.fill(255);
-  gr.textSize(16); gr.textAlign(CENTER, CENTER);
+  gr.textSize(16);
   _node.registTexture("info", {src:gr});
-
 }
 
 function draw(){
@@ -382,22 +381,30 @@ function draw(){
   _node.unbind();
 
   // readPixelsでマウス位置の色を取得
-  const gl = this._renderer.GL;
   // 0.5を足せば640から引いてもOK
   const mx = Math.max(0, Math.min(mouseX, 800)) + 0.5;
   const my = Math.max(0, Math.min(mouseY, 640)) + 0.5;
-  gl.readPixels(mx, 640-my, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, spoit); // 露骨！
+  _node.readPixels(mx, 640-my, 1, 1, "rgba", "ubyte", spoit);
 
   // 色表示
   const gr = _node.getTextureSource("info");
   gr.clear();
+  gr.textAlign(CENTER, CENTER);
   if(spoit[3] > 0){
     gr.text("(" + spoit[0] + ", " + spoit[1] + ", " + spoit[2] + ")", width/2, height*7/8);
   }else{
     gr.text("立方体が選択されていません", width/2, height*7/8);
   }
+
+  // attr情報も書いちゃおう
+  const lightInfo = _node.getAttrInfo("light"); // パソコンでもスマホでも4つ
+  const pickInfo = _node.getAttrInfo("pick"); // パソコンだと4つ全部。スマホだとaPositionしか出てこない。1つ。
+  gr.textAlign(LEFT, TOP);
+  // 使いやすいtextの方で情報開示しましょう。
+  gr.text(lightInfo.text, 5, 5);
+  gr.text(pickInfo.text, 5, 25);
+
   _node.updateTexture("info");
-  //ex.copyProgram(_node, null, "info");
   ex.copyPainter(_node, {src:{name:"info"}});
 
   _node.flush();

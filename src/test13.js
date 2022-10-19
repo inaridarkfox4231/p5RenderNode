@@ -39,10 +39,16 @@
 
 // 0.5を足すと256から引いてもよくなるのでそれでいこう。
 
+// linear用意して。
+// 結論。wrap:"repeat"は無意味。自動的にクランプされる。
+// シェーダー内のフェッチとは本質的に異なるのね。
+// linearとかも全然関係ないみたい。もういいや。
+
 // ----global
 const ex = p5wgex;
 let _node;
 let spoit = new Uint8Array(1*1*4);
+let spoitF = new Float32Array(1*1*4);
 // ----shaders
 const colorVert =
 `#version 300 es
@@ -73,13 +79,15 @@ function setup(){
   const gl = this._renderer.GL;
   _node = new ex.RenderNode(gl);
   _node.registFBO("tex", {w:256, h:256});
+  _node.registFBO("texFloat", {w:256, h:256, color:{info:{type:"float"}}});
   _node.registPainter("color", colorVert, colorFrag).registFigure("board", [{size:2, data:[-1,-1,1,-1,-1,1,1,1], name:"aPosition"}]);
   _node.bindFBO("tex").use("color", "board").drawArrays("triangle_strip").unbind().bindFBO(null);
+  _node.bindFBO("texFloat").use("color", "board").drawArrays("triangle_strip").unbind().bindFBO(null);
   // この時点で入ってるわけだが...どういうこと？？
   // (0,0)でアクセスできるのは左上なのか左下なのかという問題。さてと。
 
   const gr = createGraphics(256, 256); gr.noStroke(); gr.fill(255);
-  gr.textSize(24); gr.textAlign(CENTER, CENTER); // 文字
+  gr.textSize(16); gr.textAlign(CENTER, CENTER); // 文字
   _node.registTexture("info", {src:gr});
 }
 
@@ -98,14 +106,18 @@ function draw(){
 function updateInfo(){
   const gr = _node.getTextureSource("info");
   gr.clear();
-  const gl = this._renderer.GL;
+  //const gl = this._renderer.GL;
   // 0.5を足せば256から引いてもよくなる。ああそうか、Nearestだからか...そこら辺かもしれない。
   const x = Math.min(255, Math.max(0, mouseX)) + 0.5;
   const y = Math.min(255, Math.max(0, mouseY)) + 0.5;
   _node.bindFBO("tex");
-  gl.readPixels(x, 256-y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, spoit); // yだけ逆で。
+  //gl.readPixels(x, 256-y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, spoit); // yだけ逆で。
+  _node.readPixels(x, 256-y, 1, 1, "rgba", "ubyte", spoit);
+  _node.bindFBO("texFloat");
+  _node.readPixels(x, 256-y, 1, 1, "rgba", "float", spoitF);
   _node.bindFBO(null);
-  gr.text("(" + spoit[0] + ", " + spoit[1] + ", " + spoit[2] + ")", 128, 224);
+  gr.text("(" + spoit[0] + ", " + spoit[1] + ", " + spoit[2] + ")", 128, 194);
+  gr.text("(" + spoitF[0].toFixed(3) + ", " + spoitF[1].toFixed(3) + ", " + spoitF[2].toFixed(3) + ")", 128, 224);
   _node.updateTexture("info");
 }
 /*
