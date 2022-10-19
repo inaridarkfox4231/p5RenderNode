@@ -644,4 +644,92 @@ TODO
 
 // 配列にする準備が整った。さてと。
 // あれに倣って5つまで...まあそんなたくさんあっても仕方ないのよ。
-// 
+
+// TODO
+// 簡単なMRTのテスト
+// ピッキングMRT
+// 深度可視化MRT
+// ディファードMRT
+// テクスチャペイントMRT, ただし平面で。立方体、トーラス、ゆくゆくはモデル、objの解析方法などなどetc
+// どんどん知っていこう。
+// あとTimerのduration機能で遊びたい。以上。シャドウマッピングはまたいつか。
+
+// 理解不足。Program差し替えても同じvboが使えるっぽいですね。
+// attributeが中で使われてなくても問題ないそうです。
+// これは何がまずいかというと
+/*
+this.gl.bindBuffer(this.gl.ARRAY_BUFFER, vbo.buf);
+// attributeLocationを有効にする
+this.gl.enableVertexAttribArray(attr.location);
+// attributeLocationを通知し登録する
+this.gl.vertexAttribPointer(attr.location, vbo.size, vbo.type, false, 0, 0);
+*/
+
+// ここの理解が中途半端なんですよね。
+// https://qiita.com/emadurandal/items/5966c8374f03d4de3266 （みんな大好きエマさんのわかりやすいattributeに関する記事）
+// この記事で...（ていうかこういう厨二っぽいノリ苦手だからこういう記事あんま読めないっていうか普通に要領よく説明して
+// ほしいってつい思ってしまうんだけどまあいいや）
+
+// シェーダーのattribute変数は、GPU上のレジスタと対応付けられる ようです。
+// programから問い合わせるが...programとは関係ない？programから問い合わせるのに？？
+// gl.enableVertexAttribArrayはgl.useProgramとは何の関係もない ようです。
+// locationはprogramから問い合わせるのに？？
+
+// （いくら調べてもスマホだけエラーになる理由が分かりそうにないけれど...まあいいか）
+
+// gl.useProgramでのシェーダープログラムの切り替えにかかわらず、
+// gl.enableVertexAttribArrayによるレジスタの有効化、gl.disableVertexAttribArrayによるレジスタの無効化は、
+// 効果が持続する のだそうです。ほうほう。uniformと同じで0詰めみたいになってるんかな
+
+// ここuniformみたいに整理して書けるようにしないとねぇ...uniformは完全にprogramのみのお話だから分かりやすいんだけど。
+// vboは...attributeは...
+
+// WebGLの実装系によっては、シェーダーで実際に使っていないのに有効化されているレジスタ番号があるとワーニングが出るケースもある
+
+// これですかね。それでdisable?
+
+// gl.vertexAttribPointerを呼ぶ前に、gl.bindBufferの呼び出しによってバインド状態になっていたVBOこそが、
+// gl.vertexAttribPointerによって指定されたレジスタへアタッチされる、という仕組みになっている
+
+// それで先にbindする必要があるのか～unbindでnullにしたら効果がなくなると。
+
+// 問題の詳細："pick"のpainterは_loadAttributesでaPositionしか入手できなかったんよ。
+// スマホだと。それでエラーになったわけ。
+
+// 調べました～
+// _loadAttributesでgl.getProgramParameter(pg, gl.ACTIVE_ATTRIBUTES);を実行していますが、
+// これの結果がスマホだと、その、pickで、なんですが、lightと異なるんですよ...
+// パソコン：lightと一緒で4つ（cubeが持ってるのは2つだけど）
+// スマホ：aPositionのひとつだけ。わぁ。
+// そういうわけでaNormalでエラーになったわけね。そういうことらしいです。わぁ。。。
+
+// 気を付けないと。ほんとに。要するにactiveの判定の仕方が処理系によって異なるようです。
+
+// gl.getAttribLocationにしても、これシェーダープログラムを指定しますけど、
+// 結局のところこのシェーダープログラムのこのattribute変数に割り当てられているレジスタ番号はいくつ？ っていう、
+// レジスタ番号を問い合わせるためのただの便利機能（実際は異なる）
+
+// 今回のことを知らない人がこのgl.getAttribLocationの関数仕様を見ると、
+// シェーダープログラムの切り替えで頂点アトリビュート（レジスタ）の状態も切り替わるって思っちゃっても
+// 不思議はないですよ。実際は違うわけですが
+
+// VAOってuniformのあれと同じなのかな...
+
+// なんかあんま参考になってないけど、いいか。
+
+// 登場するすべてのattributeに出現順に0詰めで番号を付与してそれを使うようにすれば
+// もはやprogramは不要で
+// つまりどっかのProgramには登場するから登場した際にそのlocationをattributeに記録させれば
+// もはや問い合わせは不要で...
+// 今回みたいなことが起こるんだったらgetProgramParameterベースであの処理を書いた方が良さそうね
+// ただそこに現れるのに存在しないattributeについてはどうする？programサイドはlocationを提供してくれているが
+// エラーになるね。
+// 結局のところ、あそこに「どっちもundefinedでない場合だけ有効化しなさい」って書けば済む話なのでは？
+
+// if(vbo === undefined || attr === undefined){ continue; } // これを追加する
+// これで行けると思う。てかこれがあれば何も起きなかった。それはそれで怖いわね。
+
+// おそらく既知情報なんですけどuniformのlocationはオブジェクトなんですね。ほんとうにprogramごと。
+// 対してattributeのlocationはレジスタ番号。整数。しかもさっきの話だとprogram関係なくて、出現するattributeごとに用意されるっぽいね。
+// 違うaPositionが出てくる場合は...調査中。
+// 今回は同じvboで違うprogramってケースだから。違う図形とか扱う場合はまた別の問題が生じるのかも？さっきの話また読んで勉強しないと。

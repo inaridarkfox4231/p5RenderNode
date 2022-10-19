@@ -19,7 +19,7 @@
 
 // やっぱ上下逆で格納されてますね...ひっくり返さないとダメね...
 
-// 露骨に640から引きました。いぇい！マウス値なら640でいいと思う。
+// 露骨に640から引きました。いぇい！マウス値なら640でいいと思う。→だめでした。639でないとだめ。
 // どうせMRTで書き直すんだからいいんだよ...
 
 // 大量、でやるならまあ、個別に...ってなるでしょうね。で、まあ、id持たせるか、あるいはVertexID使って割り算で、
@@ -36,6 +36,27 @@
 // で、テクスチャペイントとかしたいんならuv座標も、ってわけ。
 
 // 配列にすることでフラグは不要となるわけ。
+
+// スマホの方で2回cubeの...その、attribute関連の登録作業したらエラー出されたので、...
+// shaderだけ差し替えても同じvbo使えるみたいです（bindを解除しなければ）。
+// bind...textureの方は理解したけどこっちの理解は不充分。
+// 勉強しないと。
+
+// まずuniformを用意する行為。これはFigure関係ないですね、shaderごと。だからshaderを差し替えたら
+// というかProgramか。Programを差し替えたら再び同じuniformでもセットしないといけないわけね。
+// 必要なものだけ一通り。このときProgram内部で使われないuniformをセットするとエラーになる（それはそう）。
+// なぜなら...おそらくだけど、何処で使われてるのか分からないから。ですね。
+// attributeはそれとは別。そう。attributeが問題。
+
+// 問題の詳細
+// cubeのvbosをPainterを差し替えてから再びbindというかenableAttributesか、それを実行したと
+// こっちでは問題なかったけどスマホの方ではどうなったかというと
+// aNormalが中で使われてるのにそれが...attrがundefinedになった。というかattributes.aNormalが。
+// attributesは"aPosition"だけであった。んー。
+// そこで色々試した結果、最終的にPainter差し替え後のもう一度drawFigure, これをやめたらうまく動いた（スマホでも）。
+// これからは気を付けよう、ていうか似たようなコード書いて詳細を確かめる必要があるか...
+
+// 0.5を足せば640から引いても大丈夫。まあこのサイズだとぶっちゃけ差が分からんね...
 
 // global
 const ex = p5wgex;
@@ -310,11 +331,13 @@ function draw(){
   _node.bindFBO(null).clearColor(0,0,0,1).clear()
        .usePainter("light");
 
+  moveCamera(); // カメラをいじってみよう
+
   // 射影（モードをいじらないならtfやcamとは区別されるため共通の処理となる）
   const projMat = cam.getProjMat().m;
   _node.setUniform("uProjectionMatrix", projMat);
 
-  // ライティング整理した。すっきり！
+  // ライティング整理した。すっきり！てかp5jsもこのくらいすっきりしてたらいいのにねぇ。
   setLight(_node, {useSpecular:true});
   const {front} = cam.getLocalAxes(); // frontから視線方向に光を当てる。
   setDirectionalLight(_node, {
@@ -348,8 +371,8 @@ function draw(){
 
   // ライティングしません！
 
-  _node.drawFigure("cube")
-       .bindIBO("cubeIBO");
+//  _node.drawFigure("cube")
+//       .bindIBO("cubeIBO"); // ここ要らないですね。要らないんです。
 
   // あとはtfと色を変えて何回もレンダリングするだけ
   setCube2(1, -3, 3, 64, 64, 192);
@@ -360,8 +383,8 @@ function draw(){
 
   // readPixelsでマウス位置の色を取得
   const gl = this._renderer.GL;
-  const mx = Math.max(0, Math.min(mouseX, 800));
-  const my = Math.max(0, Math.min(mouseY, 640));
+  const mx = Math.max(0, Math.min(mouseX, 800)) + 0.5;
+  const my = Math.max(0, Math.min(mouseY, 640)) + 0.5;
   gl.readPixels(mx, 640-my, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, spoit); // 露骨！
 
   // 色表示
@@ -442,4 +465,11 @@ function setCube2(x, y, z, r, g, b){
   _node.setUniform("uModelViewMatrix", modelViewMat);
   _node.setUniform("uPickColor", [r/255.0, g/255.0, b/255.0])
        .drawElements("triangles");
+}
+
+function moveCamera(){
+  if(keyIsDown(RIGHT_ARROW)){ cam.spin(0.03); }
+  if(keyIsDown(LEFT_ARROW)){ cam.spin(-0.03); }
+  if(keyIsDown(UP_ARROW)){ cam.arise(0.04); } // 上
+  if(keyIsDown(DOWN_ARROW)){ cam.arise(-0.04); } // 下
 }

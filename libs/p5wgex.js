@@ -1140,9 +1140,10 @@ const p5wgex = (function(){
     `#version 300 es
     in vec2 aPosition;
     out vec2 vUv;
+    uniform bool uFlip;
     void main(){
       vUv = (aPosition + 1.0) * 0.5;
-      vUv.y = 1.0 - vUv.y;
+      if(uFlip){ vUv.y = 1.0 - vUv.y; }
       gl_Position = vec4(aPosition, 0.0, 1.0);
     }
     `;
@@ -1160,7 +1161,9 @@ const p5wgex = (function(){
     return {v:copyVert, f:copyFrag};
   }
 
-  function copyProgram(node, bindingFBO, settingTexture){
+  // こっちのflipのデフォルトはtrueにする。理由は基本的にテクスチャデータを扱うので。
+  // テクスチャデータは基本的に(0,0)左上でやるときちんと表示されるものなのですよ...読み込んだ画像とか。p5.Graphicsとか。
+  function copyProgram(node, bindingFBO, settingTexture, flip = true){
     // 一時的にfbを変えないといけないのだけど...あれ使うか。
     const currentFBO = node.getCurrentFBO();
     node.enable("blend")
@@ -1169,6 +1172,7 @@ const p5wgex = (function(){
     node.bindFBO(bindingFBO)
         .use("foxCopyPainter", "foxCopyBoard")
         .setTexture2D("uTex", settingTexture)
+        .setUniform("uFlip", flip)
         .drawArrays("triangle_strip")
         .unbind();
 
@@ -1178,8 +1182,11 @@ const p5wgex = (function(){
   // 例えば単純背景なら(_node, null, texName)で事足りる。
 
   // FBO用のマイナーチェンジ
-  function copyProgramFBO(node, bindingFBO, settingFBO, kind = "color", index = 0){
-    // 一時的にfbを変えないといけないのだけど...あれ使うか。
+  // たとえばこれによりdepthやstencilを可視化できる...はず。その場合flipはしない方がいいと思う。
+  // というかレンダリング結果もflipはしない方がいいね。
+  // というわけでこっちのデフォルトはfalseにします。
+  function copyProgramFBO(node, bindingFBO, settingFBO, flip = false, kind = "color", index = 0){
+    // 一時的にfbを変えないといけないのです。
     const currentFBO = node.getCurrentFBO();
     node.enable("blend")
         .blendFunc("src_alpha", "one_minus_src_alpha");
@@ -1187,6 +1194,7 @@ const p5wgex = (function(){
     node.bindFBO(bindingFBO)
         .use("foxCopyPainter", "foxCopyBoard")
         .setFBOtexture2D("uTex", settingFBO, kind, index)
+        .setUniform("uFlip", flip)
         .drawArrays("triangle_strip")
         .unbind();
 
@@ -1485,6 +1493,9 @@ const p5wgex = (function(){
       for(let attrName of Object.keys(vbos)){
         const vbo = vbos[attrName];
         const attr = attributes[attrName];
+        // 処理系によってはattrが取得できない（処理系がvbosサイドのattributeの一部を不要と判断するケースがある）ので、
+        // その場合は処理をスキップするようにしましょう。ただ、なるべく過不足のない記述をしたいですね。
+        if(vbo === undefined || attr === undefined){ continue; }
         // vboをbindする
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, vbo.buf);
         // attributeLocationを有効にする
