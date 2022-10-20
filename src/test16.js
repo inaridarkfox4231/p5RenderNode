@@ -11,6 +11,23 @@
 // shaderによっては一部のバッファにしか描き込みたくないかも、そういう使い方もできるみたい。
 // そうしないでやろうとするとエラーになるようですね...
 
+// MRTのやり方まとめ。
+// fb作るときにcolorのinfoを配列にする。
+// プログラムによっては一部のバッファに描画しないかも？その場合はdrawBuffersの01指定で。
+// ただしプログラム内で描画可否を選ぶことはできないので注意。
+// layoutで描画する対象を指定してそれぞれのoutに放り込めばOK!
+// サイズ異なるように出来るのかは知らんけど。どうだろう。できるんかね。一枚だから無理じゃないかな...
+// ------ 実験中 ------ //
+// はい！
+// 無理でした。そりゃそうか。fb内のtextureもrenderbufferもすべて同じサイズじゃないとだめですね。当たり前だ。
+// あそこ書き換えないとなぁ...
+// つまりMRTでピッキングする場合、同じサイズに放り込む必要があると。んー。
+// MRTでなければ通常サイズに落とせる。んー。んーー。
+// ディファードなら普通に、まあ、そう。
+
+// いいよ。
+// drawingBufferSize取得して掛け算して横幅縦幅で割ってってやればいいよ。どうせ厳密な指定は必要ないのだ。
+
 const ex = p5wgex;
 let _node;
 
@@ -33,7 +50,7 @@ layout (location = 2) out vec4 color2;
 layout (location = 3) out vec4 color3;
 void main(){
   color0 = vec4(0.0, 0.0, 0.5, 1.0); // navy.
-  //color1 = vec4(0.18, 0.54, 0.34, 1.0); // sea green. // 下にあるように...
+  //color1 = vec4(0.18, 0.54, 0.34, 1.0); // sea green. // NONEを指定しましょう
   color2 = vec4(0.62, 0.32, 0.18, 1.0); // sienna.
   color3 = vec4(1.0, 0.54, 0.0, 1.0); // dark orange.
 }
@@ -70,8 +87,8 @@ function draw(){
   // 事前にこれをやることで。
   // つまり1のところだけNONEにすることで、そこには何も描き込まれないようにできるのさ。
   //　そういうことみたいです。もちろんMRTのFBOがbindされていること前提。
-  const gl = this._renderer.GL;
-  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.NONE, gl.COLOR_ATTACHMENT2, gl.COLOR_ATTACHMENT3]);
+  _node.drawBuffers([1,0,1,1]);
+  // BACKはやめてね。0と1で。
 
   _node.use("test", "board")
        .drawArrays("triangle_strip")
@@ -84,5 +101,6 @@ function draw(){
   ex.copyPainter(_node, {view:[0.5, 0, 0.5, 0.5], src:{type:"fb", name:"mrt", index:3}});
   ex.copyPainter(_node, {src:{name:"gr"}});
   _node.flush();
+  noLoop();
 }
 // いけるの？？

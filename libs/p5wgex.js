@@ -703,21 +703,17 @@ const p5wgex = (function(){
     const stencilInfo = info.stencil.info;
 
     // wとhはここで付与してしまおう。なお全体のinfoにnameはもう付与済み（のはず）
-    // 未定義の場合だけにするか...ピッキングとか同じサイズじゃないとやばいし。
-    if(depthInfo.w === undefined){ depthInfo.w = info.w; }
-    if(depthInfo.h === undefined){ depthInfo.h = info.h; }
+    // 全部一緒じゃないとエラーになるのです。
+    depthInfo.w = info.w;   depthInfo.h = info.h;
     if(!info.MRT){
-      if(colorInfo.w === undefined){ colorInfo.w = info.w; }
-      if(colorInfo.h === undefined){ colorInfo.h = info.h; }
+      colorInfo.w = info.w;   colorInfo.h = info.h;
     }else{
       // 配列の場合
       for(let eachInfo of colorInfo){
-        if(eachInfo.w === undefined){ eachInfo.w = info.w; }
-        if(eachInfo.h === undefined){ eachInfo.h = info.h; }
+        eachInfo.w = info.w;   eachInfo.h = info.h;
       }
     }
-    if(stencilInfo.w === undefined){ stencilInfo.w = info.w; }
-    if(stencilInfo.h === undefined){ stencilInfo.h = info.h; }
+    stencilInfo.w = info.w;   stencilInfo.h = info.h;
 
     // ここでバリデーション掛ければいいのか
     _validateForEachInfo(info.depth.attachType, depthInfo);
@@ -813,9 +809,11 @@ const p5wgex = (function(){
     if(depthBuffer !== null){ result.depth = depthBuffer; }
     if(!info.MRT){
       if(colorBuffer !== null){ result.color = colorBuffer; }
+      result.MRT = false;
     }else{
       // この場合、前提としてnullでないのです。
       result.color = colorBuffers;
+      result.MRT = true;
     }
     if(stencilBuffer !== null){ result.stencil = stencilBuffer; }
     result.w = info.w;
@@ -840,6 +838,7 @@ const p5wgex = (function(){
         this.write = tmp;
       },
       name: info.name, w: info.w, h: info.h, double: true, // texelSizeこれが持つ必要ないな。カット。wとhはbindで使うので残す。
+      MRT:false,
     }
     // infoの役割終了
   }
@@ -1828,7 +1827,8 @@ const p5wgex = (function(){
       return this;
     }
     readPixels(x, y, w, h, format, type, pixels){
-      // bindされているfbの「color, texture, index:0」から読みだす。ピクセル値指定、
+      // bindされているfbの「color, texture, index:0」から読みだす。
+      // xとyは0～1指定にしよう。どうせマウスでしか使わない...し。
       // xから右へ、wだけ行ったら下へ。
       // x,yは読み出しのスタートでformatは読みだされる側のformat,たとえば色やvec4であればgl.RGBAでいいっぽい。
       // 色だけならgl.RGBで透明度だけならgl.ALPHAで数値ならgl.REDでいいのかなぁ知らんけど。typeは格納する側の
@@ -1857,6 +1857,36 @@ const p5wgex = (function(){
       }
       // そのまま貼り付けてもいいしarrayの方をいじってもいい。選択肢があるのは大事なことです。
       return {array:infoArray, text:infoText};
+    }
+    drawBuffers(flags){
+      // MRTに適したfbに対して描画するか否かの命令を下す。0:NONE, 1:然るべきATTACHMENT定数, -1:BACK（指定するなよ）
+      // よく考えたらbindされてるfboにしか効果が無いからこれでいいんだったわ。（うっかり！）
+      let fbo = this.fbos[this.currentFBO];
+      if(!fbo){
+        // fboが無い場合の警告
+        window.alert("drawBuffers failure: The corresponding framebuffer does not exist.");
+        return this;
+      }else if(!fbo.MRT){
+        // MRTでない場合は適用されない
+        window.alert("drawBuffers failure: The corresponding framebuffer is not for MRT.");
+        return this;
+      }
+      const N = fbo.color.length; // 色only.
+      const commandArray = new Array(N);
+      // undefinedなら1が入るので、全部描画させたいならdrawBuffers([])でOK.
+      for(let i=0; i<N; i++){
+        const flag = (flags[i] !== undefined ? flags[i] : 1); // デフォは描画命令
+        switch(flag){
+          case 1:
+            commandArray[i] = this.gl.COLOR_ATTACHMENT0 + i; break;
+          case 0:
+            commandArray[i] = this.gl.NONE; break;
+          case -1:
+            commandArray[i] = this.gl.BACK; break; // よくわからんので指定するなよ
+        }
+      }
+      this.gl.drawBuffers(commandArray);
+      return this;
     }
   }
 

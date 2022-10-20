@@ -104,7 +104,11 @@ function setup(){
 // ---draw
 function draw(){
   _node.clearColor(0,0,0,1).clear();
+  const {w, h} = _node.getDrawingBufferSize();
+  _node.setViewport(0, 0, w/2, h);
   _node.use("test0", "bd").drawArrays("triangle_strip").unbind();
+  _node.setViewport(w/2, 0, w/2, h);
+  _node.use("test1", "bd").drawArrays("triangle_strip").unbind();
   ex.copyPainter(_node, {src:{name:"gr"}});
   _node.flush();
 }
