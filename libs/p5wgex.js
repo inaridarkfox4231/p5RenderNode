@@ -273,7 +273,6 @@ const p5wgex = (function(){
     // コンパイル
     gl.shaderSource(_shader, source);
     gl.compileShader(_shader);
-
     // 結果のチェック
     if(!gl.getShaderParameter(_shader, gl.COMPILE_STATUS)){
       console.error(gl.getShaderInfoLog(_shader));
@@ -606,7 +605,7 @@ const p5wgex = (function(){
     // テクスチャにメモリ領域を確保
     gl.texImage2D(gl.TEXTURE_2D, 0, dict[info.internalFormat], info.w, info.h, 0,
                   dict[info.format], dict[info.type], data);
-    // mipmapの作成
+    // mipmapの作成はどうも失敗してるみたいです。原因は調査中。とりあえず使わないで。
     if(info.mipmap){ gl.generateMipmap(gl.TEXTURE_2D); }
 
     // テクスチャのフィルタ設定（サンプリングの仕方を決める）
@@ -1204,7 +1203,7 @@ const p5wgex = (function(){
     if(info.depthOff === undefined){
       info.depthOff = false;
     }
-    // viewport指定。わかりづらいが、左下指定となっている。wだけ右、hだけ上。
+    // viewport指定。左上指定。右にw, 下にh進む。なお、全体に対する比率なので0～1指定。
     if(info.view === undefined){
       info.view = [0, 0, 1, 1];
     }
@@ -1244,14 +1243,11 @@ const p5wgex = (function(){
     return {v:copyVert, f:copyFrag};
   }
 
-  // 内容。info.srcの内容をdstに落とす。たとえばdstがnullならスクリーンに落とす。
-  // srcは配列であってはいけないので気を付けてね。srcが配列なのはそのうち作る...
-  // viewportは自由にいじれるようにしよう。
-  function copyPainter(node, info = {}){
+  // たとえば2枚の画像データに対して合成とかね。そういう話になった時に対応できるよう、
+  // beforeとafterはメソッド化した方がいいよね。
+  function _beforeProcess(node, info = {}){
     // バリデーション
     _validateForCopyProgram(info);
-    // 一時的にfboを変更するのでキャッシュしとく
-    const currentFBO = node.getCurrentFBO();
     // blendがある場合は適用、最後に戻す。
     if(info.blend){
       node.enable("blend")
@@ -1263,7 +1259,7 @@ const p5wgex = (function(){
     }
 
     // srcは配列じゃないので注意です。
-    const {dst:_dst, src:_src} = info;
+    const {dst:_dst} = info;
 
     // fboのbind
     if(_dst.type === null){
@@ -1274,12 +1270,34 @@ const p5wgex = (function(){
     // viewport指定
     const {w, h} = node.getDrawingBufferSize((_dst.type === null ? null : _dst.name));
     const ratios = info.view;
-    // たとえば0,0,0.5,0.5なら左下～
-    node.setViewport(ratios[0] * w, ratios[1] * h, ratios[2] * w, ratios[3] * h);
+    // たとえば [0, 0.5, 0.5, 0.5] なら左下～
+    node.setViewport(ratios[0], ratios[1], ratios[2], ratios[3]);
+  }
+
+    function _afterProcess(node, info = {}){
+    // 戻す
+    if(info.depthOff){
+      node.enable("depth_test");
+    }
+    if(info.blend){
+      node.disable("blend");
+    }
+    // 後始末
+    node.unbind();
+  }
+
+  // 内容。info.srcの内容をdstに落とす。たとえばdstがnullならスクリーンに落とす。
+  // srcは配列であってはいけないので気を付けてね。srcが配列なのはそのうち作る...
+  // viewportは自由にいじれるようにしよう。
+  function copyPainter(node, info = {}){
+    // 一時的にfboを変更するのでキャッシュしとく
+    const currentFBO = node.getCurrentFBO();
+    _beforeProcess(node, info);
 
     // painter準備
-    node.use("foxCopyPainter", "foxCopyBoard");
+    node.use("foxCopyPainter", "foxBoard");
     // textureの準備
+    const {src:_src} = info;
     if(_src.type === "tex"){
       node.setTexture2D("uTex", _src.name);
     }
@@ -1291,58 +1309,11 @@ const p5wgex = (function(){
     // 描画
     node.drawArrays("triangle_strip");
 
-    // 戻す
-    if(info.depthOff){
-      node.enable("depth_test");
-    }
-    if(info.blend){
-      node.disable("blend");
-    }
-    // 後始末
-    node.unbind().bindFBO(currentFBO);
+    // fboを戻す。
+    _afterProcess(node, info);
+    node.bindFBO(currentFBO);
   }
-/*
-  // こっちのflipのデフォルトはtrueにする。理由は基本的にテクスチャデータを扱うので。
-  // テクスチャデータは基本的に(0,0)左上でやるときちんと表示されるものなのですよ...読み込んだ画像とか。p5.Graphicsとか。
-  function copyProgram(node, bindingFBO, settingTexture, flip = true){
-    // 一時的にfbを変えないといけないのだけど...あれ使うか。
-    const currentFBO = node.getCurrentFBO();
-    node.enable("blend")
-        .blendFunc("src_alpha", "one_minus_src_alpha");
 
-    node.bindFBO(bindingFBO)
-        .use("foxCopyPainter", "foxCopyBoard")
-        .setTexture2D("uTex", settingTexture)
-        .setUniform("uFlip", flip)
-        .drawArrays("triangle_strip")
-        .unbind();
-
-    node.disable("blend")
-        .bindFBO(currentFBO);
-  }
-  // 例えば単純背景なら(_node, null, texName)で事足りる。
-
-  // FBO用のマイナーチェンジ
-  // たとえばこれによりdepthやstencilを可視化できる...はず。その場合flipはしない方がいいと思う。
-  // というかレンダリング結果もflipはしない方がいいね。
-  // というわけでこっちのデフォルトはfalseにします。
-  function copyProgramFBO(node, bindingFBO, settingFBO, flip = false, kind = "color", index = 0){
-    // 一時的にfbを変えないといけないのです。
-    const currentFBO = node.getCurrentFBO();
-    node.enable("blend")
-        .blendFunc("src_alpha", "one_minus_src_alpha");
-
-    node.bindFBO(bindingFBO)
-        .use("foxCopyPainter", "foxCopyBoard")
-        .setFBOtexture2D("uTex", settingFBO, kind, index)
-        .setUniform("uFlip", flip)
-        .drawArrays("triangle_strip")
-        .unbind();
-
-    node.disable("blend")
-        .bindFBO(currentFBO);
-  }
-*/
   // ---------------------------------------------------------------------------------------------- //
   // Figure.
   // いろいろやることあるんかなぁ。今はこんな感じ。dict渡したけどまあ、何かに使えるでしょう...分かんないけど。
@@ -1493,8 +1464,8 @@ const p5wgex = (function(){
     prepareDefaultShader(){
       // copy.
       const _copy = getCopyShader();
-      this.registPainter("foxCopyPainter", _copy.v, _copy.f)
-          .registFigure("foxCopyBoard", [{size:2, name:"aPosition", data:[-1,-1,1,-1,-1,1,1,1]}]);
+      this.registPainter("foxCopyPainter", _copy.v, _copy.f);
+      this.registFigure("foxBoard", [{size:2, name:"aPosition", data:[-1,-1,1,-1,-1,1,1,1]}]);
     }
     clearColor(r, g, b, a){
       // clearに使う色を決めるところ
@@ -1692,7 +1663,13 @@ const p5wgex = (function(){
       return this;
     }
     setViewport(x, y, w, h){
-      // フレームバッファ扱うにしても何するにしても必須
+      // 仕様変更で(x,y)は左上の割合座標、wだけそこから右、hだけそこから下にしよう。分かりづらいから。
+      // currentのFBOの概念があれば簡単でしょ。たとえば0, 0, 0.5, 0.5なら左上1/4領域。
+      const _size = this.getDrawingBufferSize(this.currentFBO);
+      x *= _size.w;
+      y = (1-y-h)*_size.h;
+      w *= _size.w;
+      h *= _size.h;
       this.gl.viewport(x, y, w, h);
       return this;
     }
@@ -1794,6 +1771,10 @@ const p5wgex = (function(){
     drawArrays(mode, first, count){
       // modeは文字列指定でドローの仕方を指定する(7種類)。
       // 残りの引数は0とMAXでいいです。
+      // firstはvertexのスタート、countはそこからの個数なので、たとえば8つあって
+      // 終わりの4つだけ使う場合は(4,4)のように指定する。4,5,6,7というわけ。
+      // こういうのは説明きちんとしないと混乱するわね...英語見ろよって話ではあるんだけど、
+      // fool proofって大事だと思うので。誤解の原因は常に撲滅すべきだと思う。
       if(arguments.length === 1){
         first = 0;
         // countの計算は...vboで。
@@ -1802,7 +1783,6 @@ const p5wgex = (function(){
         count = vbos[name].count / vbos[name].size;
       }
       // modeの文字列からgl定数を取得
-      //mode = _parseDrawMode(this.gl, mode);
       // 実行
       this.gl.drawArrays(this.dict[mode], first, count);
       return this;
@@ -2616,10 +2596,7 @@ const p5wgex = (function(){
   ex.Vec3 = Vec3;
 
   // defaultShader.
-  ex.getCopyShader = getCopyShader; // copyShaderの取得
-  //ex.copyProgram = copyProgram; // textureの中身を直に貼り付ける。縮小拡大でべったり。
-  //ex.copyProgramFBO = copyProgramFBO; // たとえばdepthやstencilに落とした内容を取り扱うのとかに使えそう
-  ex.copyPainter = copyPainter; // これで置き換える。Painterはそのままでいいです。上記2つは廃止予定。
+  ex.copyPainter = copyPainter; // 単純にtextureの内容を出力。
 
   return ex;
 })();

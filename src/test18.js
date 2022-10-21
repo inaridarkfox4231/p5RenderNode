@@ -1,31 +1,26 @@
-// MRTピッキング。やるぜ。
-// コピペ。
-// pickは0番に据える。でないとreadPixelsで読み出せない。
+// depthの可視化
+// ディファードへの応用？...待って...
 
-// 全部OKです。すげぇな。
-// MRTすげぇ
-// ていうかどんなエラーが出るかと期待してたのに凡ミス2個とかまじかよ。手ごたえ無いな～～
-// ちゃんと0番にpicker据えたのでそこから読みだされていますね。
-// 0～1指定は保留で。
-// いや...すご...すごー...
-// ほんとに1回しかレンダリングしてない...！すごい！！
-// てかあれ、fbからのcopyPainterで反転しないのとか地味に効いてるのが嬉しい。
+// いつものように光源と立方体
+// 立方体は不規則に回転し続ける
+// 頂点色
+// マテリアルカラーと法線とデプスをそれぞれ出力
+// copyShaderで可視化
+// ついでに全体の結果も可視化
+// 以上。
 
-// z軸周りで回転させる
-// 選択した対象をカメラに対して上下左右に動かす（upとside使えば余裕）
-// できれば選択していることが分かるサインがあると望ましい
-// あるいは一定の範囲を上下してクリックで止めるなど。
-// 数が増えてきたら動かすには動的更新に頼る必要があるかもしれない。マウス入力を元にスワップバッファリングで更新してもいいかも。
-// スワップバッファリングって要するにdoxasさんのパーティクルアニメーションね。
+// EとDでドリー、これはカメラを近づけたり離したりする。
+// まあいいでしょう。
 
-// global
+// MIPMAPが作成されない謎のエラーについてはまた今度考えます。
+// copyPainterのグレードアップ（複数対応）の方が先
+// vertex増やせば簡単にできる。ついでに簡単なレイヤー機能も実装するか。簡単なblend機能付けてもいい。
+
 const ex = p5wgex;
 let _node;
-
-let spoit = new Uint8Array(4*1*1);
-
 let cam;
 const tf = new ex.TransformEx();
+let _timer = new ex.Timer();
 
 // ------------------------------------------------------------------------------------------------------------ //
 // shaders.
@@ -51,7 +46,7 @@ out vec3 vNormal;
 out vec3 vViewPosition;
 out vec2 vTexCoord;
 
-out vec3 vPickColor;
+out float vDepth;
 
 void main(void){
   // 場合によってはaPositionをいじる（頂点位置）
@@ -60,7 +55,9 @@ void main(void){
 
   // Pass varyings to fragment shader
   vViewPosition = viewModelPosition.xyz;
-  gl_Position = uProjectionMatrix * viewModelPosition;
+  vec4 NDcoord = uProjectionMatrix * viewModelPosition; // 正規化デバイス座標
+  NDcoord /= NDcoord.w; // wで割る
+  gl_Position = NDcoord;
 
   mat3 normalMatrix; // こうしよう。[0]で列ベクトルにアクセス。
   normalMatrix[0] = uModelViewMatrix[0].xyz;
@@ -72,7 +69,7 @@ void main(void){
   vVertexColor = aVertexColor;
   vTexCoord = aTexCoord;
 
-  vPickColor = uPickColor;
+  vDepth = 0.5 * (NDcoord.z + 1.0);
 }
 `;
 
@@ -129,10 +126,12 @@ in vec2 vTexCoord; // テクスチャ
 
 // -------------------- その他 -------------------- //
 
-in vec3 vPickColor; // これをMRTで出力する。
+in float vDepth;
 
-layout (location = 0) out vec4 pickColor; // ピッキング用出力。
-layout (location = 1) out vec4 fragColor; // 色出力。
+layout (location = 0) out vec4 materialColor; // 今回は頂点色
+layout (location = 1) out vec4 normalColor; // 法線
+layout (location = 2) out vec4 depthColor; // デプス
+layout (location = 3) out vec4 finalColor;
 
 // -------------------- ライティング処理 -------------------- //
 
@@ -208,7 +207,8 @@ vec3 totalLight(vec3 modelPosition, vec3 normal, vec3 materialColor){
 
 void main(void){
 
-  pickColor = vec4(vPickColor, 1.0); // これを追加するだけ。
+  normalColor = vec4(vNormal, 1.0);
+  depthColor = vec4(vDepth);
 
   // 白。デフォルト。
   vec4 col = vec4(1.0);
@@ -225,6 +225,9 @@ void main(void){
     col = texture(uTex, tex);
     if(col.a < 0.1){ discard; }
   }
+
+  materialColor = col;
+
   // ライティングの計算
   // diffuseの分にambient成分を足してrgbに掛けて色を出してspecular成分を足して完成
   // この中でrgb関連の処理を実行しrgbをそれで置き換える。
@@ -234,23 +237,22 @@ void main(void){
   // MRTで送られる対象になる。もしくはついでにデプスなど。doxasさんのサイトではこれらが可視化されていましたね。
 
   col.rgb = result;
-  fragColor = col;
+  finalColor = col;
 }
 `;
 
-// setup
+
 function setup(){
   createCanvas(800, 640, WEBGL);
   _node = new ex.RenderNode(this._renderer.GL);
+  _timer.initialize("slot0");
 
   // z軸上向きが天井、x=10, z=5が視点。中心向き。
   cam = new ex.CameraEx({
-    w:10, h:8, top:[0, 0, 1], eye:[10, 0, 5],
-    proj:{near:0.1, far:5}, ortho:{left:-5, right:5, bottom:-4, top:4, near:0, far:5}
+    w:10, h:8, top:[0, 0, 1], eye:[4, 0, 5],
+    proj:{near:0.1, far:2}, ortho:{left:-5, right:5, bottom:-4, top:4, near:0, far:5}
   });
-
   _node.registPainter("light", lightVert, lightFrag);
-  //_node.registPainter("pick", lightVert, pickFrag);
 
   const cubePosition = [-1,-1,1,  1,-1,1,  1,1,1,  -1,1,1, -1,-1,-1, 1,-1,-1, 1,1,-1, -1,1,-1];
   const cubeFaces = [0,1,2,  0,2,3,  1,5,6,  1,6,2,  5,4,7,  5,7,6,  4,0,3,  4,3,7,  3,2,6,  3,6,7,  4,5,1,  4,1,0];
@@ -261,25 +263,23 @@ function setup(){
   ]);
   _node.registIBO("cubeIBO", {data:cubeFaces});
 
-  // picking用
-  //_node.registFBO("pick", {w:800, h:640}); // これでcolorのRGBAになる。
-  //_node.bindFBO("pick").clearColor(0,0,0,0).clear().bindFBO(null);
-
-  // MRT用意。どっちも普通の色でOK.
-  const {w, h} = _node.getDrawingBufferSize(null);
-  _node.registFBO("picker", {w:w, h:h, color:{info:[{}, {}]}});
-
-  // じゃあいつものinfoよろしくね
-  const gr = createGraphics(800, 640); gr.noStroke(); gr.fill(255);
-  gr.textSize(16);
-  _node.registTexture("info", {src:gr});
+  _node.registFBO("quad", {w:800, h:640, color:{info:[{}, {}, {}, {}]}});
 }
 
 function draw(){
   _node.bindFBO(null).clearColor(0,0,0,1).clear();
 
+  render();
+
+  ex.copyPainter(_node, {view:[0, 0, 0.5, 0.5], src:{type:"fb", name:"quad", index:0}});
+  ex.copyPainter(_node, {view:[0.5, 0, 0.5, 0.5], src:{type:"fb", name:"quad", index:1}});
+  ex.copyPainter(_node, {view:[0, 0.5, 0.5, 0.5], src:{type:"fb", name:"quad", index:2}});
+  ex.copyPainter(_node, {view:[0.5, 0.5, 0.5, 0.5], src:{type:"fb", name:"quad", index:3}});
+}
+
+function render(){
   // まず普通に3つ描く感じで
-  _node.bindFBO("picker").clearColor(0,0,0,0).clear();;
+  _node.bindFBO("quad").clearColor(0,0,0,0).clear();;
   _node.usePainter("light");
 
   moveCamera(); // カメラをいじってみよう
@@ -314,41 +314,7 @@ function draw(){
   setCube(-1, 3, -3, 192, 64, 64);
 
   _node.unbind();
-
-  // readPixelsでマウス位置の色を取得
-  // 0.5を足せば640から引いてもOK
-  const mx = (Math.max(0, Math.min(mouseX, 800)) + 0.5)/800;
-  const my = 1.0 - (Math.max(0, Math.min(mouseY, 640)) + 0.5)/640;
-  const {w, h} = _node.getDrawingBufferSize("picker");
-  _node.readPixels(mx*w, my*h, 1, 1, "rgba", "ubyte", spoit);
-
-  // おわったので
-  _node.bindFBO(null);
-
-  // 色表示
-  const gr = _node.getTextureSource("info");
-  gr.clear();
-  gr.textAlign(CENTER, CENTER);
-  if(spoit[3] > 0){
-    gr.text("(" + spoit[0] + ", " + spoit[1] + ", " + spoit[2] + ")", width/2, height*7/8);
-  }else{
-    gr.text("立方体が選択されていません", width/2, height*7/8);
-  }
-  // attr情報も書いちゃおう
-  const lightInfo = _node.getAttrInfo("light"); // パソコンでもスマホでも4つ
-  //const pickInfo = _node.getAttrInfo("pick"); // パソコンだと4つ全部。スマホだとaPositionしか出てこない。1つ。
-  gr.textAlign(LEFT, TOP);
-  // 使いやすいtextの方で情報開示しましょう。
-  gr.text(lightInfo.text, 5, 5);
-  _node.updateTexture("info");
-
-  // 最終描画。pickerの1, 次いでinfo.
-  ex.copyPainter(_node, {src:{type:"fb", name:"picker", index:1}}); // 色が入ってるのは1の方。
-  ex.copyPainter(_node, {src:{name:"info"}});
-
-  _node.flush();
 }
-
 
 // ライティング関連. これでいいと思う。nodeを引数に取らないと汎用性が死ぬ。
 // diffuseは一応デフォfalseで。
@@ -401,8 +367,7 @@ function setCube(x, y, z, r, g, b){
   tf.initialize().translate(x, y, z).rotateZ(0.3);
   setModelView();
   _node.setUniform("uMonoColor", [r/255.0, g/255.0, b/255.0]);
-  _node.setUniform("uPickColor", [r/255.0, g/255.0, b/255.0])
-       .drawElements("triangles");
+  _node.drawElements("triangles");
 }
 
 function moveCamera(){
@@ -410,4 +375,6 @@ function moveCamera(){
   if(keyIsDown(LEFT_ARROW)){ cam.spin(-0.03); }
   if(keyIsDown(UP_ARROW)){ cam.arise(0.04); } // 上
   if(keyIsDown(DOWN_ARROW)){ cam.arise(-0.04); } // 下
+  if(keyIsDown(69)){ cam.dolly(0.05); } // Eキー
+  if(keyIsDown(68)){ cam.dolly(-0.05); } // Dキー
 }
