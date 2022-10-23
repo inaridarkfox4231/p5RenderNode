@@ -271,15 +271,27 @@ function draw(){
 
   render();
 
-  ex.copyPainter(_node, {view:[0, 0, 0.5, 0.5], src:{type:"fb", name:"quad", index:0}});
-  ex.copyPainter(_node, {view:[0.5, 0, 0.5, 0.5], src:{type:"fb", name:"quad", index:1}});
-  ex.copyPainter(_node, {view:[0, 0.5, 0.5, 0.5], src:{type:"fb", name:"quad", index:2}});
-  ex.copyPainter(_node, {view:[0.5, 0.5, 0.5, 0.5], src:{type:"fb", name:"quad", index:3}});
+  // まとめて描画するとエラーになる
+  // しかし解決しました（ログは末尾に記載）。PainterがすべてのtextureUnitをnullにできていなかったのが原因でした。
+  // 申し訳なかったです。
+  ex.copyPainter(_node, {src:[
+    {type:"fb", name:"quad", index:0, view:{x:0, y:0, w:0.5, h:0.5}},
+    {type:"fb", name:"quad", index:1, view:{x:0.5, y:0, w:0.5, h:0.5}},
+    {type:"fb", name:"quad", index:2, view:{x:0, y:0.5, w:0.5, h:0.5}},
+    {type:"fb", name:"quad", index:3, view:{x:0.5, y:0.5, w:0.5, h:0.5}}
+  ]});
+
+  _node.flush();
 }
 
 function render(){
+
   // まず普通に3つ描く感じで
-  _node.bindFBO("quad").clearColor(0,0,0,0).clear();;
+  _node.bindFBO("quad");
+
+  _node.drawBuffers([1,1,1,1]);
+
+  _node.clearColor(0,0,0,0).clear();
   _node.usePainter("light");
 
   moveCamera(); // カメラをいじってみよう
@@ -378,3 +390,54 @@ function moveCamera(){
   if(keyIsDown(69)){ cam.dolly(0.05); } // Eキー
   if(keyIsDown(68)){ cam.dolly(-0.05); } // Dキー
 }
+
+// エラーログ
+
+// 個別に描画するとエラーにならない
+// しかしなぜかひとつだけ実行するとエラーが発生しない（下の1回だけ）
+// そして同じ見た目、ということは残り3つの描画には成功しているということ。どういうことだ...？？
+// indexはいくつにしても一緒（3でもいい）
+// だからここでしている何らかの処理が影響しているのだ。多分。
+// 描画命令をスキップしても描画されるので描画云々は関係ないと思う
+// 何らかの処理が原因でエラーが出ないようになっているのだ
+// おそらく特定した...setTextureだ。これを「やらない」とエラーが発生する。
+// 厳密には0番のtextureに
+// だめだ
+// これだけ実行してもだめだ。
+// え？？unbindだけ？？だってこれ実行してるよ...？？なんで？？
+// unbindの前でreturn → うざいエラー（formed loop active 云々）
+// unbindの直後でreturn（何もしてない）→ エラーなし
+
+// 0番テクスチャをセットしてunbind処理を行なったらエラーが出なくなった
+// ということはMRTの場合に0番を最後にセットしてあれすればいい？
+// いけました...つまりMRTの場合には、MRTかどうかはフラグを取得できるんだけど、
+// MRTの場合には最後にbindしないといけないみたい。0番を。0番をセットしたうえで...
+// ていうか0番がactiveである必要がある？0番をactiveTextureしたうえで0番テクスチャをbindしてそのあと
+// unbindで...
+// じゃああれか。unbindの方に「0番をactiveTextureしてください」ってお願いすれば足りる？
+//ex.copyPainter(_node, {src:{view:{x:0, y:0, w:0.1, h:0.1}, type:"fb", name:"quad", index:0}});
+
+// コメントアウトしてももうエラーは出ない
+// スパゲティにならないようにきちんと見極めよう
+// 変更は小さく、運用上の面倒が生じないようにしないといけない
+// エラー全文：Feedback loop formed between Framebuffer and active Texture.
+// あれをしない場合0番になんかtextureが入ったままになるのよね
+// こないだ仕組み見たでしょ
+// 0番でactiveTextureしてbindTextureでnull
+// あれが無修正の場合最後にactiveになっている番号は（activeTextureIndexならわかりやすいのに！！！！）
+// 3番
+// しかしあれをやることで0番がactiveTextureされるのでこれで0番がからっぽに
+// ていうか全部からっぽに出来ればいいのに
+
+// ていうかtextureのunbindはPainterの仕事でしょ。で、PainterはいくつまでtextureIndexを使うのかの情報を持ってる。
+// 職務怠慢！！！
+// 全部からっぽにしろよ！
+
+// activeTextureはgl.TEXTURE0が33984でそこから33984,33985,33986,33987,...
+// gl.getParameter(gl.ACTIVE_TEXTURE)でそのときactiveになってるtextureIndexを取得できる
+// 調べたら3番だった
+// じゃあまあえーと...
+// samplerIndexが存在するすべての（以下略）
+// そういうことです
+// 3番がactiveされた状態でbind-nullしても3番しかからっぽにならない
+// 0番をactiveしないと0番をからっぽにできないということ

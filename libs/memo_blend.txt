@@ -25,3 +25,8 @@
 // これは描画先の分だけ描画内容を減算。逆にFUNC_REVERSE_SUBTRACTは描画先 - 描画元、描画してある結果からマイナス。
 // 加えてMINとMAXが追加されました...！これでDARKESTやLIGHTESTを実現できるというわけ。
 // blendEquationSeparateはRGBとAで個別に計算方法を変えることができるよ。そんなところ。
+
+// 簡単なケース
+// ADD: DST_COLOR, ZERO
+// SCREEN: ONE_MINUS_DST_COLOR, ONE
+// そんくらいか。

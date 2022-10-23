@@ -352,6 +352,7 @@ const p5wgex = (function(){
       // isArrayの情報...は、いいや。普通に書く。それで問題が生じないか見る。
       uniforms[name] = uniform;
     }
+    uniforms.maxSamplerIndex = samplerIndex; // samplerIndexの上限を取得して格納する
     return uniforms;
   }
 
@@ -365,7 +366,11 @@ const p5wgex = (function(){
 
     switch(uniform.type){
       case gl.BOOL:
-        if(data === true){ gl.uniform1i(location, 1); }else{ gl.uniform1i(location, 0); } break;
+        if(uniform.size > 1){
+          gl.uniform1fv(location, data.map((value) => (value ? 1 : 0))); break;
+        }else{
+          if(data === true){ gl.uniform1i(location, 1); }else{ gl.uniform1i(location, 0); } break;
+        }
       case gl.INT:
         if(uniform.size > 1){
           gl.uniform1iv(location, data);
@@ -554,6 +559,9 @@ const p5wgex = (function(){
   // ここで設定する項目一覧
   // format関連3つとwrap1つとfilter1つ。んー...mipmap...で、全部かな。今んとこ。実は8つだけど...wとhも...
   // wとhはframebufferのものを使うのでここ、そうね。
+  // mipmapは縮小コピーで縮小時の精度を上げるためのものなのでMINfilterオンリーのfilter指定になります。静止画用ってわけ。
+  // そういうことでこれからはmag, min, sWrap, tWrapという指定にする...（片方が未指定ならもう片方は合わせる形）
+  // 双方未指定なら双方nearest/clampとする。あちこち変えないといけない。
   function _validateForTexture(info){
     // textureType. "ubyte", "half_float", "float"で指定
     if(info.type === undefined){ info.type = "ubyte"; }
@@ -570,10 +578,22 @@ const p5wgex = (function(){
     }
     if(info.format === undefined){ info.format = "rgba"; } // とりあえずこれで。あの3種類みんなこれ。
     // textureFilter. "nearest", "linear"で指定
-    if(info.filter === undefined){ info.filter = "nearest"; }
+    if(info.magFilter === undefined && info.minFilter === undefined){
+      info.magFilter = info.minFilter = "nearest";
+    }else{
+      if(info.magFilter === undefined){ info.magFilter = info.minFilter; }
+      else if(info.minFilter === undefined){ info.minFilter = info.magFilter; }
+    }
     // textureWrap. "clamp", "repeat", "mirror"で指定
-    if(info.wrap === undefined){ info.wrap = "clamp"; }
-    if(info.mipmap === undefined){ info.mipmap = false; } // mipmapはデフォルトfalseで。
+    if(info.sWrap === undefined && info.tWrap === undefined){
+      info.sWrap = info.tWrap = "clamp";
+    }else{
+      if(info.sWrap === undefined){ info.sWrap = info.tWrap; }
+      else if(info.tWrap === undefined){ info.tWrap = info.sWrap; }
+    }
+    //if(info.wrap === undefined){ info.wrap = "clamp"; }
+    // mipmapはデフォルトfalseで。一応後から作れるようにしといた（null引数だと作られ無さそだし、実際作れないだろ。）
+    if(info.mipmap === undefined){ info.mipmap = false; }
     // srcがnullでない場合に限りwとhは未定義でもOK
     if(info.src !== undefined){
       const td = _getTextureDataFromSrc(info.src); // テクスチャデータから設定されるようにする。理由：めんどくさいから！！
@@ -609,11 +629,11 @@ const p5wgex = (function(){
     if(info.mipmap){ gl.generateMipmap(gl.TEXTURE_2D); }
 
     // テクスチャのフィルタ設定（サンプリングの仕方を決める）
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[info.filter]); // 拡大表示用
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[info.filter]); // 縮小表示用
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[info.magFilter]); // 拡大表示用
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[info.minFilter]); // 縮小表示用
     // テクスチャのラッピング設定（範囲外のUV値に対する挙動を決める）
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, dict[info.wrap]);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[info.wrap]);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, dict[info.sWrap]);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[info.tWrap]);
     // テクスチャのバインドを解除
     gl.bindTexture(gl.TEXTURE_2D, null);
     return tex;
@@ -867,28 +887,35 @@ const p5wgex = (function(){
       // infoのバリデーションが済んだので各種情報を格納
       this.w = (info.w !== undefined ? info.w : 1);
       this.h = (info.h !== undefined ? info.h : 1);
-      this.wrapParam = {s:info.wrap, t:info.wrap};
-      this.filterParam = {mag:info.filter, min:info.filter};
+      this.wrapParam = {s:info.sWrap, t:info.tWrap}; // → info.sWrap, info.tWrap
+      this.filterParam = {magFilter:info.magFilter, minFilter:info.minFilter}; // → info.mag, info.min
       this.formatParam = {internalFormat:info.internalFormat, format:info.format, type:info.type};
+    }
+    generateMipmap(){
+      // mipmap作るやつ。使うかどうかは、知らん。
+      const {gl} = this;
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.generateMipmap();
+      gl.bindTexture(gl.TEXTURE_2D,null);
     }
     setFilterParam(param = {}){
       const {gl, dict} = this;
-      if(param.mag !== undefined){ this.filterParam.mag = param.mag; }
-      if(param.min !== undefined){ this.filterParam.min = param.min; }
+      if(param.magFilter !== undefined){ this.filterParam.magFilter = param.magFilter; }
+      if(param.minFilter !== undefined){ this.filterParam.minFilter = param.minFilter; }
       // フィルタ設定関数
       gl.bindTexture(gl.TEXTURE_2D, this.tex);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[this.filterParam.mag]); // 拡大表示用
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[this.filterParam.min]); // 縮小表示用
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, dict[this.filterParam.magFilter]); // 拡大表示用
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, dict[this.filterParam.minFilter]); // 縮小表示用
       gl.bindTexture(gl.TEXTURE_2D, null);
     }
     setWrapParam(param = {}){
       const {gl, dict} = this;
-      if(param.s !== undefined){ this.wrapParam.s = param.s; }
-      if(param.t !== undefined){ this.wrapParam.t = param.t; }
+      if(param.sWrap !== undefined){ this.wrapParam.sWrap = param.sWrap; }
+      if(param.tWrap !== undefined){ this.wrapParam.tWrap = param.tWrap; }
       // ラッピング設定関数
       gl.bindTexture(gl.TEXTURE_2D, this.tex);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, dict[this.wrapParam.s]);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[this.wrapParam.t]);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, dict[this.wrapParam.sWrap]);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, dict[this.wrapParam.tWrap]);
       gl.bindTexture(gl.TEXTURE_2D, null);
     }
     getTextureSource(){
@@ -1123,9 +1150,12 @@ const p5wgex = (function(){
       gl.bindTexture(gl.TEXTURE_2D, _texture);
       gl.uniform1i(uniform.location, uniform.samplerIndex);
     }
-    unbind(){
+    unbindTexture2D(){
       // 2Dや3Dのテクスチャがbindされていたら解除(今は2D only.)
-      if(this.gl.getParameter(this.gl.TEXTURE_BINDING_2D) !== null){
+      // maxSamplerIndexでサンプラーインデックスの上限が分かる
+      // そこまでのすべてのtextureUnitの中身をからっぽにする（従来の処理ではひとつしかnullにできなかった）
+      for(let i=0; i<this.uniforms.maxSamplerIndex; i++){
+        this.gl.activeTexture(this.gl.TEXTURE0 + i);
         this.gl.bindTexture(this.gl.TEXTURE_2D, null);
       }
     }
@@ -1135,62 +1165,66 @@ const p5wgex = (function(){
   // defaultPainter.
   // まあ、なんかあった方がいいよね。
 
-  // 大幅に書き直し。まあ、そういうものです。
-  // copyProgram.
-  // 統一します。textureはtextureなのかfbなのか。まとめよう。ついでにblendとdepthについても。
-  // {dst:{type:null/"fb", name:"dstName"},
-  //  src:{type:"tex"/"fb", name:"srcName", flip:true/false, attach:"color", index:0},
-  //  blend:true/false, blendFunc:{src:"src_alpha", dst:"one_minus_src_alpha"},
-  //  depthOff:false/true} // ノーブレンドでデプスオフだと背景描画になるわけ。
+  function _validateForView(view, align = "left_top"){
+    // viewをいじって左下ベースにする。この処理は汎用的かもしれない。
+    const alignText = align.split("_");
+    const xAlign = alignText[0];
+    const yAlign = alignText[1];
+    const {x, y, w, h} = view;
+    switch(xAlign){
+      case "left": view.x = x; break;
+      case "right": view.x = x-w; break;
+      case "center": view.x = x-w/2; break;
+    }
+    switch(yAlign){
+      case "top": view.y = 1-y-h; break;
+      case "bottom": view.y = 1-y; break;
+      case "center": view.y = 1-y-h/2; break;
+    }
+  }
 
-  // MRTと併用する場合、面倒でも同じfboNameをコピーする形になるわね。
-  // [{type:"fb", name:fboName, index:0}, {type:"fb", name:fboName, index:1}, ...]
-  // まあレアケースだしどうでもいいか。だってこうしないときちんとアクセスできないんだから仕方ないでしょ。
-  function _validateForCopyProgramSource(info = {}){
+  function _validateForSrc(info = {}){
+    // textureかframebufferか。
     if(info.type === undefined){
-      info.type = "tex"; // デフォはテクスチャ
+      info.type = "tex";
     }
-    if(info.name === undefined){
-      window.alert("validateForCopyProgramSource error: invalid source name.");
-      return;
-    }
+    // flipはtextureの場合trueでframebufferの場合falseが基本
     if(info.flip === undefined){
-      if(info.type === "tex"){ info.flip = true; } // textureはflipするのが基本
-      else if(info.type === "fb"){ info.flip = false; } // framebufferはflipしないのが基本
-      else{
-        window.alert("validateForCopyProgramSource error: invalid type.");
-        return;
-      }
+      if(info.type === "tex"){ info.flip = true; }
+      else if(info.type === "fb"){ info.flip = false; }
+      else{ window.alert("validateForCopySrcInfo error: invalid type."); return; }
     }
+    // align.
+    if(info.align === undefined){
+      info.align = "left_top";
+    }
+    // view.
+    if(info.view === undefined){
+      info.view = {x:0, y:0, w:1, h:1};
+    }
+    // 汎用処理。左下ベースにする。
+    _validateForView(info.view, info.align);
+
+    // attachとcolorはfbの場合。indexはMRTの場合。
     if(info.type === "fb"){
-      // fbのcolor, depth, stencilのどれを使うか、colorであればindexはどれか、を指定。
+      // fbのcolor, depth, stencilのどれを使うか、colorであればindexはどれか、を指定。depthが見たいのよね。
       if(info.attach === undefined){ info.attach = "color"; }
       if(info.attach === "color"){
         if(info.index === undefined){ info.index = 0; } // たとえばindexだけ指定するような場合「attach:"color"」は不要。
       }
     }
-    // 以上です。
   }
 
-  function _validateForCopyProgram(info = {}){
-    // dstは無ければnull描画となる
+  function _validateForCopy(info = {}){
     if(info.dst === undefined){
-      info.dst = {type:null}; // デフォはnullで名前の指定は不要。"fb"でフレームバッファ。
-      // その場合普通に0番に描き込まれる。
+      info.dst = {type:null, swap:false};
     }
-    const _dst = info.dst;
-    if(_dst.type === "fb" && _dst.name === undefined){
-      window.alert("validateForCopyProgram error: invalid fbo name.");
+    if(info.dst.type === "fb" && info.dst.name === undefined){
+      window.alert("validateForCopy error: invalid fbo name.");
       return;
     }
-    // srcは配列の場合もあるので然るべく対応する
-    // srcは常に指定してください。でなきゃ何がしたいのかって話なので。
-    if(Array.isArray(info.src)){
-      for(let _src of info.src){ _validateForCopyProgramSource(_src); }
-    }else{
-      _validateForCopyProgramSource(info.src);
-    }
     // blendは基本trueでsrc_alphaとone_minus_src_alphaで上から貼り付ける感じで使います
+    // falseにする場合もある。floatの場合とか。使うか知らないけど。floatだと切らないといろいろまずい。
     if(info.blend === undefined){
       info.blend = true;
     }
@@ -1198,83 +1232,145 @@ const p5wgex = (function(){
     if(info.blend === true && info.blendFunc === undefined){
       info.blendFunc = {src:"src_alpha", dst:"one_minus_src_alpha"};
     }
-    // depthOffも基本無しで。この場合blendは切るのが基本です。そしてこれをtrueにすると。
-    // depthに何も描き込まれないので背景の描画に適していますね。
+    // depthOffは板ポリ描画の際は常に切るようにするか～ていうかblendが機能する場合これは常に切るんよね（本来）
+    // 重ねることができるのはLEQUALだから。同じ場合は上書きする。LESSだと上書きできない。p5.jsの厚意。
     if(info.depthOff === undefined){
-      info.depthOff = false;
+      info.depthOff = true;
     }
-    // viewport指定。左上指定。右にw, 下にh進む。なお、全体に対する比率なので0～1指定。
-    if(info.view === undefined){
-      info.view = [0, 0, 1, 1];
+    // info.srcは一つの場合でも配列化する。
+    if(Array.isArray(info.src)){
+      for(let srcInfo of info.src){
+        // 長くなるので別立て。
+        _validateForSrc(srcInfo);
+      }
+    }else{
+      _validateForSrc(info.src); // 戻り値はないので...
+      info.src = [info.src]; // まあ、infoを返してもいいんだけどね。今更統一できないので。
     }
+    // 以上。swapはメインコードで。
   }
-  // たとえば普通にname:texNameのp5.Graphicsをスクリーンに貼り付けるだけなら
-  // {src:{name:texName}}
-  // で足りる。簡単でしょ？
 
   // copy.
-  // 役割：nullもしくは文字列を受け取りフレームバッファに、
-  // uTexで受け取ったテクスチャを縮尺してそのまま貼り付ける.
-  // flipはtextureなら逆向き、framebuffer内のtextureなら順向きで貼り付ける（のがデフォルト、というだけで、選べる。）
-  function getCopyShader(){
-    // copyShaderのペアを返す
-    const copyVert =
+  function getCopyShaders(){
+    // flipとviewを配列にして渡す。あとはシェーダの仕事。
+    const vs =
     `#version 300 es
-    in vec2 aPosition;
+    in float aIndex;
+    in vec2 aUv;
+    uniform bool uFlips[8];
+    uniform vec4 uViews[8];
     out vec2 vUv;
-    uniform bool uFlip;
+    out float vBoardIndex; // intを渡す場合、flat修飾子が無いとエラーになるようです。
     void main(){
-      vUv = (aPosition + 1.0) * 0.5;
-      if(uFlip){ vUv.y = 1.0 - vUv.y; }
-      gl_Position = vec4(aPosition, 0.0, 1.0);
+      float boardIndex = floor(aIndex / 4.0);
+      bool flip = uFlips[int(boardIndex)];
+      vec4 view = uViews[int(boardIndex)];
+      float pointIndex = mod(aIndex, 4.0);
+      vec2 p;
+      // -1.0～1.0ベースで考えるんだっけね...つまり2倍して1を引く。
+      p.x = view.x + (mod(pointIndex, 2.0) == 0.0 ? 0.0 : view.z);
+      p.y = view.y + (floor(pointIndex / 2.0) == 0.0 ? 0.0 : view.w);
+      p.x = 2.0 * p.x - 1.0;
+      p.y = 2.0 * p.y - 1.0;
+      if(flip){
+        vUv = vec2(aUv.x, 1.0 - aUv.y);
+      }else{
+        vUv = aUv;
+      }
+      gl_Position = vec4(p, 0.0, 1.0);
+      vBoardIndex = boardIndex;
     }
     `;
-
-    const copyFrag =
+    // テクスチャを配列にするのはめんどくさい処理なので直書きでOKです。
+    const fs =
     `#version 300 es
-    precision highp float;
+    precision mediump float;
     in vec2 vUv;
-    uniform sampler2D uTex;
-    out vec4 color;
+    in float vBoardIndex;
+    uniform sampler2D uTex0;
+    uniform sampler2D uTex1;
+    uniform sampler2D uTex2;
+    uniform sampler2D uTex3;
+    uniform sampler2D uTex4;
+    uniform sampler2D uTex5;
+    uniform sampler2D uTex6;
+    uniform sampler2D uTex7;
+    out vec4 fragColor;
     void main(){
-      color = texture(uTex, vUv);
+      float i = vBoardIndex;
+      if(i == 0.0){ fragColor = texture(uTex0, vUv); }
+      if(i == 1.0){ fragColor = texture(uTex1, vUv); }
+      if(i == 2.0){ fragColor = texture(uTex2, vUv); }
+      if(i == 3.0){ fragColor = texture(uTex3, vUv); }
+      if(i == 4.0){ fragColor = texture(uTex4, vUv); }
+      if(i == 5.0){ fragColor = texture(uTex5, vUv); }
+      if(i == 6.0){ fragColor = texture(uTex6, vUv); }
+      if(i == 7.0){ fragColor = texture(uTex7, vUv); }
     }
     `;
-    return {v:copyVert, f:copyFrag};
+    return {v:vs, f:fs};
   }
 
-  // たとえば2枚の画像データに対して合成とかね。そういう話になった時に対応できるよう、
-  // beforeとafterはメソッド化した方がいいよね。
-  function _beforeProcess(node, info = {}){
+  // infoの仕様(example)
+  // swapはnodeが要るのでここで判断に入れるのはやめよう
+  // {dst:{type:null/"fb", name:dstName},
+  //  src:{type:"tex"/"fb", name:srcName, flip:true/false(typeによりデフォ分岐),
+  //       view:[0,0,0.5,0.5], align:"left_top" ,attach:"color", index:0},
+  //  blend:true/false, blendFunc:{src:"src_alpha", dst:"one_minus_src_alpha"}, depthOff:false/true}
+
+  // 第一弾。copyPainter.（苦労したぜ...）
+  // info.dstで描画先のframebufferを指定
+  // そこにinfo.srcの内容を描画する
+  // 描画位置をviewで指定できる（デフォルトはべったり全体）
+  // srcを配列にすることで複数表示も可能
+  // blendモードもいじれる
+  // alignで右下とかもできる（自由）
+  // MRTの場合は何番のtextureを貼り付けるかとか指示できる
+  // 最大数は8です
+  // 高い技術があれば50とか行けるらしいが...未知の技術...
+  function copyPainter(node, info = {}){
     // バリデーション
-    _validateForCopyProgram(info);
-    // blendがある場合は適用、最後に戻す。
+    _validateForCopy(info);
+    // blendがある場合は適用、最後に戻す。デフォtrue.
     if(info.blend){
       node.enable("blend")
           .blendFunc(info.blendFunc.src, info.blendFunc.dst); // blendFuncのsrcとdstだったね。ばか。
     }
-    // depthOffがある場合はdepthを切る
+    // depthOffがある場合はdepthを切る. デフォtrue.
     if(info.depthOff){
       node.disable("depth_test");
     }
-
-    // srcは配列じゃないので注意です。
-    const {dst:_dst} = info;
-
+    const {dst:_dst, src:_src} = info;
     // fboのbind
     if(_dst.type === null){
       node.bindFBO(null);
     }else{
       node.bindFBO(_dst.name);
     }
-    // viewport指定
-    const {w, h} = node.getDrawingBufferSize((_dst.type === null ? null : _dst.name));
-    const ratios = info.view;
-    // たとえば [0, 0.5, 0.5, 0.5] なら左下～
-    node.setViewport(ratios[0], ratios[1], ratios[2], ratios[3]);
-  }
+    // painter準備
+    node.use("foxCopyPainter", "foxQuads");
 
-    function _afterProcess(node, info = {}){
+    // uniformの準備
+    const flips = new Array(8);
+    const views = new Array(8);
+    const count = _src.length;
+    for(let i=0; i<count; i++){
+      const _srcData = _src[i];
+      const {x, y, w, h} = _srcData.view;
+      // textureの準備
+      if(_srcData.type === "tex"){
+        node.setTexture2D("uTex" + i, _srcData.name);
+      }
+      if(_srcData.type === "fb"){
+        node.setFBOtexture2D("uTex" + i, _srcData.name, _srcData.attach, _srcData.index);
+      }
+      flips[i] = _srcData.flip;
+      views[i] = [x, y, w, h]; // flatする
+    }
+    node.setUniform("uFlips", flips);
+    node.setUniform("uViews", views.flat());
+
+    node.drawArrays("triangle_strip", 0, _src.length * 4);
     // 戻す
     if(info.depthOff){
       node.enable("depth_test");
@@ -1282,36 +1378,14 @@ const p5wgex = (function(){
     if(info.blend){
       node.disable("blend");
     }
+    if(_dst.type === "fb"){
+      const fb = node.getCurrentFBO(_dst.name);
+      if(fb.double){
+        node.swapFBO(_dst.name); // doubleの場合は必ずswapしておく
+      }
+    }
     // 後始末
     node.unbind();
-  }
-
-  // 内容。info.srcの内容をdstに落とす。たとえばdstがnullならスクリーンに落とす。
-  // srcは配列であってはいけないので気を付けてね。srcが配列なのはそのうち作る...
-  // viewportは自由にいじれるようにしよう。
-  function copyPainter(node, info = {}){
-    // 一時的にfboを変更するのでキャッシュしとく
-    const currentFBO = node.getCurrentFBO();
-    _beforeProcess(node, info);
-
-    // painter準備
-    node.use("foxCopyPainter", "foxBoard");
-    // textureの準備
-    const {src:_src} = info;
-    if(_src.type === "tex"){
-      node.setTexture2D("uTex", _src.name);
-    }
-    if(_src.type === "fb"){
-      node.setFBOtexture2D("uTex", _src.name, _src.attach, _src.index);
-    }
-    // flipの設定
-    node.setUniform("uFlip", _src.flip);
-    // 描画
-    node.drawArrays("triangle_strip");
-
-    // fboを戻す。
-    _afterProcess(node, info);
-    node.bindFBO(currentFBO);
   }
 
   // ---------------------------------------------------------------------------------------------- //
@@ -1452,7 +1526,7 @@ const p5wgex = (function(){
       this.currentFBO = null; // これがないとfbの一時的な切り替えができないので。文字列またはnull.
       this.enableExtensions(); // 拡張機能
       this.dict = getDict(this.gl); // 辞書を生成
-      this.prepareDefaultShader(); // defaultShaderの構築
+      this.prepareDefault(); // defaultShaderの構築
     }
     enableExtensions(){
       // color_buffer_floatのEXT処理。pavelさんはこれ使ってwebgl2でもfloatへの書き込みが出来るようにしてた。
@@ -1461,11 +1535,21 @@ const p5wgex = (function(){
       // 最後のはなんじゃい...
       this.gl.getExtension('EXT_color_buffer_float');
     }
-    prepareDefaultShader(){
+    prepareDefault(){
       // copy.
-      const _copy = getCopyShader();
+      const _copy = getCopyShaders();
       this.registPainter("foxCopyPainter", _copy.v, _copy.f);
+      // 一般的なboard. 要するにfoxBoardって書けば普通にこれ使えるので、もういちいち用意しなくていいんよ。
       this.registFigure("foxBoard", [{size:2, name:"aPosition", data:[-1,-1,1,-1,-1,1,1,1]}]);
+      // 4枚のquad. 必要なだけ使う。UVは表示する際に適宜いじる。indexで位置を決めるのでaPositionは不要。
+      const aIndexArray = new Array(4*8);
+      const aUvArray = new Array(2*4*8);
+      for(let i=0; i<4*8; i++){ aIndexArray[i] = i; }
+      for(let i=0; i<8; i++){
+        aUvArray[8*i] = 0; aUvArray[8*i+1] = 0; aUvArray[8*i+2] = 1; aUvArray[8*i+3] = 0;
+        aUvArray[8*i+4] = 0; aUvArray[8*i+5] = 1; aUvArray[8*i+6] = 1; aUvArray[8*i+7] = 1;
+      }
+      this.registFigure("foxQuads", [{size:1, name:"aIndex", data:aIndexArray}, {size:2, name:"aUv", data:aUvArray}]);
     }
     clearColor(r, g, b, a){
       // clearに使う色を決めるところ
@@ -1799,7 +1883,7 @@ const p5wgex = (function(){
       this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null);
       this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, null);
       this.currentIBO = undefined;
-      this.currentPainter.unbind();
+      this.currentPainter.unbindTexture2D();
       return this;
     }
     flush(){
@@ -2580,23 +2664,23 @@ const p5wgex = (function(){
   ex.getMult4x4 = getMult4x4; // こっちは使い道あるかもしれない
   ex.hsv2rgb = hsv2rgb;
   ex.hsvArray = hsvArray;
-  //ex.getNormalMat = getNormalMat; // 法線行列の取得関数は廃止
 
   // class.
-  //ex.OldTimer = OldTimer;
   ex.Timer = Timer;
   ex.Painter = Painter;
   ex.Figure = Figure;
   ex.RenderNode = RenderNode;
   ex.TextureEx = TextureEx;
   ex.Mat4 = Mat4;
-  //ex.CameraEx = CameraEx; // 旧カメラは廃止
   ex.CameraEx = CameraEx;
   ex.TransformEx = TransformEx;
   ex.Vec3 = Vec3;
 
   // defaultShader.
-  ex.copyPainter = copyPainter; // 単純にtextureの内容を出力。
+  // axisHelper（座標軸を長さ指定して可視化）
+  // cameraHelper（種類に応じてfrustumを可視化）
+  // customRectHelper（自由に直方体を指定して辺描画で位置を可視化）
+  ex.copyPainter = copyPainter;
 
   return ex;
 })();

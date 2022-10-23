@@ -79,7 +79,8 @@ function setup(){
   // じゃあ本番行ってみよう。できるか...？
   // srcに設定するの忘れてたっ
   // シームレスなのでrepeatを設定するとこのように、はい。
-  _node.registTexture("cloud", {w:img.width, h:img.height, src:img, wrap:"repeat"});
+  _node.registTexture("cloud", {w:img.width, h:img.height, src:img, sWrap:"repeat",
+                      magFilter:"linear", mipmap:true, minFilter:"linear_linear"}); // エラー出ない。よかった～
   _node.registTexture("rdm", {w:loadedImg.width, h:loadedImg.height, src:loadedImg}); // これで。
 
   const gr = createGraphics(256, 256);
