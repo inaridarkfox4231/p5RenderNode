@@ -289,8 +289,6 @@ function render(){
   // まず普通に3つ描く感じで
   _node.bindFBO("quad");
 
-  _node.drawBuffers([1,1,1,1]);
-
   _node.clearColor(0,0,0,0).clear();
   _node.usePainter("light");
 
