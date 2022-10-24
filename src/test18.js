@@ -249,8 +249,7 @@ function setup(){
 
   // z軸上向きが天井、x=10, z=5が視点。中心向き。
   cam = new ex.CameraEx({
-    w:10, h:8, top:[0, 0, 1], eye:[4, 0, 5],
-    proj:{near:0.1, far:2}, ortho:{left:-5, right:5, bottom:-4, top:4, near:0, far:5}
+    w:10, h:8, top:[0, 0, 1], eye:[4, 0, 5]
   });
   _node.registPainter("light", lightVert, lightFrag);
 

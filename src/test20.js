@@ -2,6 +2,9 @@
 // 床井先生の：https://tokoik.github.io/gg/ggnote13.pdf
 // 遅延レンダリングに慣れなければ。
 
+// h_doxasさんのサイトも参考に...！
+// リンク：https://wgld.org/d/webgl/w084.html
+
 // spotLight実装する
 // 実装できたのでテストします。トーラスのメッシュ作ろうね。MonoColorでいいです.
 // オレンジと水色
@@ -22,6 +25,12 @@
 
 //　とりあえずこんなもんですね。はぁ、難しい...
 // depthのtextureの実験とかはまた今度ね...
+
+// ほんとうに生きてる時間は有限なので気を付けないとあっという間に精神を喰らいつくされる
+// 気を付けよう
+
+// ------------------------------------------------------------------------------------------------------------------------------- //
+// global.
 
 const ex = p5wgex;
 let _node;
@@ -295,7 +304,10 @@ void main(void){
   finalColor = col;
 }
 `;
-// ----setup---- //
+
+// ------------------------------------------------------------------------------------------------------------------------------- //
+// setup.
+
 function setup(){
   createCanvas(800, 640, WEBGL);
   _node = new ex.RenderNode(this._renderer.GL);
@@ -303,8 +315,7 @@ function setup(){
 
   // z軸上向きが天井、x=10, z=5が視点。中心向き。
   _cam = new ex.CameraEx({
-    w:10, h:8, top:[0, 0, 1], eye:[4, 0, 5],
-    proj:{near:0.1, far:2}, ortho:{left:-5, right:5, bottom:-4, top:4, near:0, far:5}
+    w:10, h:8, top:[0, 0, 1], eye:[4, 0, 5]
   });
   _node.registPainter("light", lightVert, lightFrag);
 
@@ -322,7 +333,10 @@ function setup(){
   info.fill(255);
   _node.registTexture("info", {src:info});
 }
-// ----draw---- //
+
+// ------------------------------------------------------------------------------------------------------------------------------- //
+// draw.
+
 function draw(){
   _node.bindFBO(null).clearColor(0,0,0,1).clear();
 
@@ -414,6 +428,9 @@ function render(){
   renderTorus(_node, _tf, _cam, 0, 2, 0, 0.75, 0.4, 0.1);
 }
 
+// ------------------------------------------------------------------------------------------------------------------------------- //
+// info.
+
 function updateInfo(){
   const gr = _node.getTextureSource("info");
   gr.clear();
@@ -433,6 +450,8 @@ function updateInfo(){
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------- //
+// mesh.
+
 function registMesh(node){
   // 今回はトーラスで。紙の上で計算してるけどロジックは難しくないのよ。
   const a = 1.0;
@@ -483,6 +502,9 @@ function registMesh(node){
   ]);
   node.registIBO("torusIBO", {data:torusFaces});
 }
+
+// ------------------------------------------------------------------------------------------------------------------------------- //
+// light.
 
 // 環境光などの基本的なセッティング
 function setLight(node, info = {}){
@@ -562,6 +584,9 @@ function renderTorus(node, tf, cam, x, y, z, r, g, b){
   node.setUniform("uMonoColor", [r, g, b]);
   node.drawElements("triangles");
 }
+
+// ------------------------------------------------------------------------------------------------------------------------------- //
+// config.
 
 function moveCamera(cam){
   if(keyIsDown(RIGHT_ARROW)){ cam.spin(0.03); }

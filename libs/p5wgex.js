@@ -2227,6 +2227,37 @@ const p5wgex = (function(){
 
   // 新カメラ。
   // infoの指定の仕方、topは常に正規化、Vec3で統一、ローカル軸の名称変更、動かすメソッド追加, etc...
+
+  // バリデーション忘れてた。ごめん。
+  function _validateForPersProj(w, h, info = {}){
+    // 基本pers. nearとfarはdistanceに対する比率
+    if(info.fov === undefined){ info.fov = Math.PI/3; }
+    if(info.aspect === undefined){ info.aspect = w/h; }
+    if(info.near === undefined){ info.near = 0.1; }
+    if(info.far === undefined){ info.far = 10; }
+  }
+
+  function _validateForOrthoProj(w, h, info = {}){
+    // farは一応distanceの4倍くらいで。
+    if(info.left === undefined){ info.left = -w/2; }
+    if(info.right === undefined){ info.right = w/2; }
+    if(info.bottom === undefined){ info.bottom = -h/2; }
+    if(info.top === undefined){ info.top = h/2; }
+    if(info.near === undefined){ info.near = 0; }
+    if(info.far === undefined){ info.far = 4; }
+  }
+
+  function _validateForFrustumProj(w, h, info = {}){
+    const h0 = Math.tan(Math.PI/6) * 0.1; // distanceの値に対する比率
+    const w0 = h0 * w/h; // そこにaspect比を掛ける
+    if(info.left === undefined){ info.left = -w0; }
+    if(info.right === undefined){ info.right = w0; }
+    if(info.bottom === undefined){ info.bottom = -h0; }
+    if(info.top === undefined){ info.top = h0; }
+    if(info.near === undefined){ info.near = 0.1; }
+    if(info.far === undefined){ info.far = 10; }
+  }
+
   class CameraEx{
     constructor(info = {}){
       this.eye = new Vec3();
@@ -2268,25 +2299,18 @@ const p5wgex = (function(){
       // topとは概念が異なる。これらはtopに常に制約を受ける。具体的にはtopを越えることが許されない（ゆえに「top」）.
       this.calcViewMat();
       // ------ projection part ------ //
-      if(info.pers === undefined){
-        // 基本pers. nearとfarはdistanceに対する比率
-        this.projData.pers = {fov:Math.PI/3, aspect:w/h, near:0.1, far:10};
-      }else{
-        this.projData.pers = info.pers;
-      }
-      if(info.ortho === undefined){
-        // farは一応distanceの4倍くらいで。
-        this.projData.ortho = {left:-w/2, right:w/2, bottom:-h/2, top:h/2, near:0, far:4};
-      }else{
-        this.projData.ortho = info.ortho;
-      }
-      if(info.frustum === undefined){
-        const h0 = Math.tan(Math.PI/6) * 0.1; // distanceの値に対する比率
-        const w0 = h0 * w/h; // そこにaspect比を掛ける
-        this.projData.frustum = {left:-w0, right:w0, bottom:-h0, top:h0, near:0.1, far:10};
-      }else{
-        this.projData.frustum = info.frustum;
-      }
+      if(info.pers === undefined){ info.pers = {}; }
+      _validateForPersProj(w, h, info.pers);
+      this.projData.pers = info.pers;
+
+      if(info.ortho === undefined){ info.ortho = {}; }
+      _validateForOrthoProj(w, h, info.ortho);
+      this.projData.ortho = info.ortho;
+
+      if(info.frustum === undefined){ info.frustum = {}; }
+      _validateForFrustumProj(w, h, info.frustum);
+      this.projData.frustum = info.frustum;
+
       this.calcPersMat();
       this.calcOrthoMat();
       this.calcFrustumMat();
