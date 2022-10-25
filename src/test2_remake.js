@@ -16,6 +16,25 @@
 // timerが変わりました。scaleを1000でデフォルト指定するとgetDeltaで秒数がサクッと入手出来ます
 // setで現在時刻をstump出来るのは従来通りです。
 
+// 20221025
+// はい。
+// NDCの計算間違ってる。おかしい。計算これで合ってるんじゃないの...？？？
+// まあ、とにかくこれを何とかしよう。でないと前に進めない。
+// ばかだなぁ
+// viewは4x4ですよぉ
+
+// Camera拡張機能付けたので確認します。（完全に、とはいかないけれど。）
+// NDCのテストに成功しました。次。
+// frustumOK.間違えてるのはOrthoだけ。どういうこと...
+
+// ごめんなさい
+// OrthoはView座標、関係なかったですね。zが。錐体ならz=1の場合のx,yに対してzをいじるとx,yはz倍で出せるけど
+// Orthoはいじる必要ないです。そのままzに変えるだけ。なんだよもう！
+// Ortho慣れたいというか、lil使いたいです。あれを整備しないとめんどくさくて仕方ないわ。lilでいろいろいじれたら便利なので。
+// 先に整備するかな...
+
+// とりあえずテストは成功です。
+
 // ------------------------------------------------------------------------------------------------------------ //
 // global.
 
@@ -215,6 +234,19 @@ function setup(){
   // ちょっとカリング有効にしますね
   _node.enable("cull_face");
   // 理解しました。
+
+  // NDCのテストをします
+  _node.registTexture("NDCtest", {src:(function(){
+    const gr = createGraphics(width, height);
+    gr.textSize(16);
+    gr.textAlign(LEFT, TOP);
+    gr.noStroke();
+    return gr;
+  })()});
+
+  cam.setOrtho();
+  //cam.setFrustum();
+  //cam.setOrtho({left:-400, right:400, bottom:-320, top:320, near:0.01, far:4});
 }
 
 // やること
@@ -224,6 +256,8 @@ function setup(){
 // ドローコール
 // おわり。サクサク行こう。
 function draw(){
+  const currentTime = _timer.getDelta("slot0");
+
   _node.clear();
 
   // ライティングシェーダ、オン！
@@ -244,12 +278,25 @@ function draw(){
   _node.setUniform("uUseColorFlag", 0);
 
   // キューブ（動かす、属性バインド、IBOバインド、ドローコール）
-  moveCube();
   _node.drawFigure("cube");
   _node.bindIBO("cubeIBO");
+
+  moveCube(currentTime);
+  _node.drawElements("triangles");
+  const t = currentTime * 0.5;
+  const p = new ex.Vec3(100*sin(3*t), 100*sin(5*t), 100*sin(7*t));
+  // このpに対してマウス位置から出したNDCと合わせてマウス位置にNDCが来るグローバルの位置を出して
+  // x,y,zを抽出してCubeを配置。
+  const mx = 2.0 * mouseX/width - 1.0;
+  const my = -(2.0 * mouseY/height - 1.0);
+  const q = cam.getParallelPosition(p, mx, my);
+  staticCube(q.x, q.y, q.z);
   _node.drawElements("triangles");
 
   _node.unbind();
+
+  showInfo(currentTime);
+
   _node.flush();
 }
 
@@ -268,11 +315,35 @@ function setModelView(){
 // キューブのtf
 // これも同じことで、この場合特定の場所で重心を中心に回転させたいわけだが、点集合で考えれば
 // 回転してから然るべくtranslate,となるから、それを逆回ししただけ。さらにスケール変換...？これ最後なのでは...？
-function moveCube(){
-  const currentTime = _timer.getDelta("slot0");
+function moveCube(currentTime){
+  const t = currentTime * 0.5;
   tf.initialize()
+    .translate(100*sin(3*t), 100*sin(5*t), 100*sin(7*t))
     .rotateZ(Math.PI*currentTime)
     .rotateX(Math.PI*currentTime)
-    .scale(50, 50, 50); // うん。最後だわ。ごめーん。
+    .scale(25, 25, 25); // うん。最後だわ。ごめーん。
   setModelView();
+}
+
+function staticCube(x, y, z){
+  tf.initialize()
+    .translate(x, y, z)
+    .scale(25, 25, 25); // うん。最後だわ。ごめーん。
+  setModelView();
+}
+
+function showInfo(currentTime){
+  const gr = _node.getTextureSource("NDCtest");
+  gr.fill(255);
+  gr.clear();
+  gr.text("hello!", 5, 5);
+  // じゃあまず...
+  const t = currentTime * 0.5;
+  const p = new ex.Vec3(100*sin(3*t), 100*sin(5*t), 100*sin(7*t));
+  // このpに対してNDCを出してそこにcircleをおいてみよう
+  const ndc = cam.getNDC(p);
+  gr.fill(255, 128, 0);
+  gr.circle(width * (ndc.x*0.5 + 0.5), height * (0.5 - 0.5*ndc.y), 16);
+  _node.updateTexture("NDCtest");
+  ex.copyPainter(_node, {src:{name:"NDCtest"}});
 }

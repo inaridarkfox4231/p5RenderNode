@@ -22,6 +22,18 @@
 // getDeltaSecondでその秒数指定、getDeltaFPStextでfpsがいくつ、の場合の桁数含めて指定してさらにテキストにしたやつを取得。
 // 表示するのは大変だけどな。んー...
 
+// 20221025
+// 動的更新間違ってたので修正しました。部分的更新もできる凄い関数なのです。
+// 動的更新の部分適用苦手なようなので整理します。
+// bufferSubData(attrName, targetName, dstByteOffset, srcData, srcOffset = 0)
+// attrNameはそのまま、これはbindされたFigureに対する処理です。で、targetNameはindexBufferでないときは"array_buffer"でOK.
+// dstByteOffsetはバイトで何処からいじるのか決める、たとえばFloat32は4バイトでこれが4つだと16バイトなので
+// Float32のvec4が延々と連なるときのi番目を変える場合は16*iのように指定する（ほんとだよ）。
+// srcDataにたとえばFloat32の長さ3つとか用意すればそこにあるvec4のx,y,zだけを変えることができる。
+// ほんとにそんな感じ。凄い便利なのです。srcOffsetはそのままの意味だけどまあそうね...保留で...
+
+// OKです。まあありがたみはないわね。
+
 // -------global------- //
 const ex = p5wgex;
 let _node;
@@ -90,7 +102,7 @@ function draw(){
   _node.use("color", "triangle");
 
   dataUpdate();
-  _node.bufferSubData("aPosition", "array_buf", posiDataTyped); // できました～
+  _node.bufferSubData("aPosition", "array_buf", 0, posiDataTyped); // できました～
 
   _node.drawArrays("triangles")
        .unbind();

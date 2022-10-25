@@ -19,18 +19,6 @@
 
 // 重なるのうざいからパッキングしようかな...
 
-const ex = p5wgex;
-let _node;
-let _cam;
-let _tf = new ex.TransformEx();
-let _timer = new ex.Timer();
-
-let spoit = new Uint8Array(4*1*1); // ここに格納する。
-let grab = false; // マウスダウンで発火
-
-let modelDataArray = new Float32Array(4*100);
-let subModelData = new Float32Array(3);
-
 // ライティングはそのまま使う。
 // マウスがヒットしたものだけライティングを行なうようにできるといいんだけど。
 // MRTで通常のスクリーンとは別にindexに対して(i,i,i,1)を書き込む
@@ -73,6 +61,27 @@ let subModelData = new Float32Array(3);
 // 次のバグは何だろう...
 
 // NDCの計算方法がきちんと把握できてない。
+
+// NDCの計算間違ってる、というかもろもろ誤解してる可能性がある。出直すしかない。
+// ごめんなさいViewは3x3じゃなくて4x4でした勘違い！！！直します。というか出直します。
+
+// 本題。もう簡単です。getParallelPositionを使う。以上。（...）
+// grabのときにreadingしないでマウス位置に対象を持ってくる。grabのときはgrabbing... grabbing...
+
+// sliceでFloat32Arrayから切り出した結果はArray.isArrayであれ出来ない、ようです、ね。
+// 仕様変更するか...
+
+const ex = p5wgex;
+let _node;
+let _cam;
+let _tf = new ex.TransformEx();
+let _timer = new ex.Timer();
+
+let spoit = new Uint8Array(4*1*1); // ここに格納する。
+let grab = false; // マウスダウンで発火
+
+let modelDataArray = new Float32Array(4*100);
+let subModelData = new Float32Array(3);
 
 // ------------------------------------------------------------------------------------------------------------ //
 // shaders.
@@ -385,7 +394,9 @@ void main(){
 
 function setup(){
   _timer.initialize("slot0");
+  _timer.initialize("forDots");
   createCanvas(800, 640, WEBGL);
+
   _node = new ex.RenderNode(this._renderer.GL);
   // デフォでいいよ。
   _cam = new ex.CameraEx({
@@ -486,6 +497,9 @@ function draw(){
   // 黒でクリア
   _node.bindFBO(null).clearColor(0,0,0,1).clear();
 
+  // カーソルはspoit[3]が0ならノーマル、0でなくgrabでないならgrab,grabならgrabbing.
+  setCursor();
+
   // 1. "picker"に描画する。このときその中の0番に整数値が入る。
   // 2. copyPainterで1番をスクリーンに描画
   // 3. 0番からreadPixelsでマウス位置を元に情報を取得する。それをfeedbackして描画時に反映させる(uTargetIndex).
@@ -499,7 +513,7 @@ function draw(){
   if(!grab){
     readIndex();
   }else{
-    dragAndDrop(_cam);
+    dragAndDrop();
   }
 
   // きちんと明示した方が...といってもcopyPainterもどこのfboに落とすかは一応明示してるのよね。難しいところ。
@@ -507,6 +521,21 @@ function draw(){
   showInfo();
 
   _node.flush();
+}
+
+// ------------------------------------------------------------------------------------------------ //
+
+function setCursor(){
+  const _style = this.canvas.style;
+  if(spoit[3] > 0){
+    if(grab){
+      _style.cursor = "grabbing";
+    }else{
+      _style.cursor = "grab";
+    }
+  }else{
+    _style.cursor = "";
+  }
 }
 
 function render(){
@@ -586,14 +615,12 @@ function showInfo(){
   const gr = _node.getTextureSource("info");
   gr.clear();
   if(spoit[3] > 0){
-    const i = spoit[0];
-    gr.text("(" + spoit[0] + ", " + spoit[1] + ", " + spoit[2] + ", " + spoit[3] + ")", width/2, height*7/8);
-    const x = modelDataArray[4*i];
-    const y = modelDataArray[4*i+1];
-    const z = modelDataArray[4*i+2];
-    gr.text("(" + x.toFixed(3) + ", " + y.toFixed(3) + ", " + z.toFixed(3) + ")", width/2, height*15/16);
-    const ndc = getNDC(_cam, {x, y, z});
-    gr.text("龍", width * (ndc.x + 1.0) * 0.5, height * (1.0 - ndc.y) * 0.5);
+    const activeIndex = spoit[0];
+    gr.text("activeIndex: " + activeIndex, width/2, height*7/8);
+    // dots.
+    const dots = ["  ", ".  ", ".. ", "..."];
+    const n = _timer.getDeltaDiscrete("forDots", 250, 4);
+    if(grab){ gr.text("grabbing now" + dots[n], width/2, height*15/16); }
   }else{
     gr.text("立方体が選択されていません", width/2, height*7/8);
   }
@@ -695,61 +722,32 @@ function moveCamera(cam){
   if(keyIsDown(68)){ cam.dolly(-0.05); } // Dキー
 }
 
-// --
+// --------------------------- //
 // drag and drop
 function mousePressed(){
   if(!grab && spoit[3] > 0){
     grab = true;
+    _timer.set("forDots");
   }
 }
 function mouseReleased(){
   grab = false;
 }
 
-function getNDC(cam, p){
-  // globalのpに対して正規化デバイス座標を取得。これもいずれ実装する。
-  const viewMat = cam.getViewMat().m;
-  const vx = viewMat[0]*p.x + viewMat[3]*p.y + viewMat[6]*p.z;
-  const vy = viewMat[1]*p.x + viewMat[4]*p.y + viewMat[7]*p.z;
-  const vz = viewMat[2]*p.x + viewMat[5]*p.y + viewMat[8]*p.z;
-  console.log(vx, vy, vz);
-  const projMat = cam.getProjMat().m;
-  const ndcx = projMat[0]*vx + projMat[4]*vy + projMat[8]*vz + projMat[12];
-  const ndcy = projMat[1]*vx + projMat[5]*vy + projMat[9]*vz + projMat[13];
-  const ndcz = projMat[2]*vx + projMat[6]*vy + projMat[10]*vz + projMat[14];
-  const ndcw = projMat[3]*vx + projMat[7]*vy + projMat[11]*vz + projMat[15];
-  return {x:ndcx/ndcw, y:ndcy/ndcw, z:ndcz/ndcw};
-}
-
-// 正規化デバイスのx,yに対して点pとviewにおけるzが等しい点を取得する。
-function getParallelPosition(cam, p, ndc){
-  // pのview座標のzを取得
-  const viewMat = cam.getViewMat().m;
-  const targetZ = viewMat[2]*p.x + viewMat[5]*p.y + viewMat[8]*p.z;
-  // pers前提でコードを書く（いずれ何とかする）
-  // viewにおけるxとyを作ってしまう
-  const {fov, aspect} = cam.getProjData("pers");
-  const targetX = aspect * Math.tan(fov/2) * (-targetZ * ndc.x);
-  const targetY = Math.tan(fov/2) * (-targetZ * ndc.y);
-  const result = {};
-  result.x = viewMat[0]*targetX + viewMat[1]*targetY + viewMat[2]*targetZ;
-  result.y = viewMat[3]*targetX + viewMat[4]*targetY + viewMat[5]*targetZ;
-  result.z = viewMat[6]*targetX + viewMat[7]*targetY + viewMat[8]*targetZ;
-  return result;
-}
-
-// grabされている間はspoitから得られるindexのところの更新を常に行なう。その間spoitは更新されない。
-function dragAndDrop(cam){
+function dragAndDrop(){
+  // grabしてるときに対象のcubeの位置を取得しマウス位置も取得しマウス位置が正規化デバイスになってビューのzが
+  // 対象と同じになるような位置のグローバルに対象を置くとかそういう関数（伝われ）
   const activeIndex = spoit[0];
-  const target = {};
-  target.x = modelDataArray[4*activeIndex];
-  target.y = modelDataArray[4*activeIndex+1];
-  target.z = modelDataArray[4*activeIndex+2];
-  const mx = 2.0 * (mouseX / width) - 1.0;
-  const my = -2.0 * (mouseY / height) + 1.0;
-  const nextPos = getParallelPosition(cam, target, {x:mx, y:my});
-  //modelDataArray[4*activeIndex] = nextPos.x;
-  //modelDataArray[4*activeIndex+1] = nextPos.y;
-  //modelDataArray[4*activeIndex+2] = nextPos.z;
-  //dataUpdate(activeIndex, nextPos.x, nextPos.y, nextPos.z);
+  const x = modelDataArray[4*activeIndex];
+  const y = modelDataArray[4*activeIndex+1];
+  const z = modelDataArray[4*activeIndex+2];
+  const p = new ex.Vec3(x, y, z); // 知ってるかもだけどFloat32Arrayは特殊な配列なのでsliceした結果はArray.isArrayで
+  // trueにならないんです。注意してください。露骨にやるのが吉です。とはいえまあ、お疲れさまでした...
+  const mx = 2*(mouseX/width)-1;
+  const my = -(2*(mouseY/height)-1);
+  const q = _cam.getParallelPosition(p, mx, my);
+  modelDataArray[4*activeIndex] = q.x;
+  modelDataArray[4*activeIndex+1] = q.y;
+  modelDataArray[4*activeIndex+2] = q.z;
+  dataUpdate(activeIndex, q.x, q.y, q.z);
 }
