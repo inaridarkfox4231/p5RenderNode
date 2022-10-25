@@ -19,6 +19,10 @@
 // あっさり。さすがにもう波乱はないか、...
 // これ使って正方形の位置をいじれれば（速度は回転量とかに使う）、メッシュでもいけるね。
 
+// 20221024
+// data格納時とdataUpdate時のyFlipは要らないと思うんだ。暇があったら試してみて、ていうか頭使えば分かると思う。
+// 両方外したけど問題ありませんでした。なるほど。データをそのまま使う場合は問題ないわけね。
+
 // ----------------------------------------------------------------------------------------- //
 // global.
 
@@ -44,7 +48,6 @@ void main(){
   vec2 p = vec2(mod(index, uSize), floor(index / uSize)) + 0.5;
   p /= uSize;
   p = (p - 0.5) * 2.0;
-  p.y = -p.y;
   gl_Position = vec4(p, 0.0, 1.0);
   vData = aData;
   gl_PointSize = 1.0; // おかしいな。またこいつか。何で？？
@@ -70,7 +73,6 @@ in vec2 aPosition;
 out vec2 vUv;
 void main(){
   vUv = aPosition * 0.5 + 0.5;
-  vUv.y = 1.0 - vUv.y;
   gl_Position = vec4(aPosition, 0.0, 1.0);
 }
 `;

@@ -249,7 +249,6 @@ function setup(){
   });
 
   _node.registPainter("light", lightVert, lightFrag);
-  //_node.registPainter("pick", lightVert, pickFrag);
 
   const cubePosition = [-1,-1,1,  1,-1,1,  1,1,1,  -1,1,1, -1,-1,-1, 1,-1,-1, 1,1,-1, -1,1,-1];
   const cubeFaces = [0,1,2,  0,2,3,  1,5,6,  1,6,2,  5,4,7,  5,7,6,  4,0,3,  4,3,7,  3,2,6,  3,6,7,  4,5,1,  4,1,0];
@@ -259,10 +258,6 @@ function setup(){
     {name:"aNormal", size:3, data:cubeNormals}
   ]);
   _node.registIBO("cubeIBO", {data:cubeFaces});
-
-  // picking用
-  //_node.registFBO("pick", {w:800, h:640}); // これでcolorのRGBAになる。
-  //_node.bindFBO("pick").clearColor(0,0,0,0).clear().bindFBO(null);
 
   // MRT用意。どっちも普通の色でOK.
   const {w, h} = _node.getDrawingBufferSize(null);

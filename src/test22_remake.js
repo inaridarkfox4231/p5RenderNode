@@ -1,15 +1,23 @@
-// 今後
-// test22:複数個数でピッキング（ピックしたものの色を灰色からカラフルにする）
-// test23:depthをレンダーテクスチャにして色を取り出し通常のテクスチャに落とす場合と比較
-// test24:例のライティングプログラムを改造してディファード化してみる。とりあえずテストコード
-// test25:例のbox4000をディファード色付けて
-// test26:考え中。影の実験でもするか。あるいは息抜きにトゥーンレンダリングかステンシルアウトライン
-// test27:ヘルパーの実験したいわね。さしあたり座標軸とカメラ。ていうかカメラの複数画面ってまだやってないぞ....
-// lil.guiもってなるとまた番号ずらす...いや、もう宿題を片付けてしまおう。
+// メルクマール
 
-// 例のあれ、チューブで書き直すなら自分なりに別のもの作るわ。
+// モデルデータをFBO経由でぶち込む練習をしています(20221024)
 
-// というわけでここではピッキングの練習をします。OK.
+// ここではピッキングの練習をします。
+
+// エラーの原因が分かりました。
+// そうか...uniformってvsとfsで同じ値使えないんだ（リンクエラーになる）。
+// 同じ値を使う場合はvaryingでvsからfsに渡す必要があるのね。難しいね...
+// 気を付けよう。
+
+// 頂点ごとに値がぶれてますね...なぜ...この方法だとうまくいかないんかな。
+// 補間されてしまうからなのか...う～ん？？
+
+// ああ、わかった。readPixelsやるときにpickerをbindしてないからだ。ああもう！！
+
+// copyPainter便利なんですけど、極力明示的にbindFBOしてください。でないと可読性が落ちるし、
+// こういう事故の原因になるので。
+
+// 重なるのうざいからパッキングしようかな...
 
 const ex = p5wgex;
 let _node;
@@ -18,6 +26,10 @@ let _tf = new ex.TransformEx();
 let _timer = new ex.Timer();
 
 let spoit = new Uint8Array(4*1*1); // ここに格納する。
+let grab = false; // マウスダウンで発火
+
+let modelDataArray = new Float32Array(4*100);
+let subModelData = new Float32Array(3);
 
 // ライティングはそのまま使う。
 // マウスがヒットしたものだけライティングを行なうようにできるといいんだけど。
@@ -29,6 +41,38 @@ let spoit = new Uint8Array(4*1*1); // ここに格納する。
 // です。だからmodelDataとしてx,y,z,sを渡してついでに回転角としてtを渡すようにして
 // tはattributeにしてactiveなときだけ増やすようにして動的更新で渡すようにすれば望みの挙動になるわね。
 // ただindexを渡してあるのでそれ使ってフェッチでもいい。
+
+// dataの中身を書き換える？のか？...ピンポイントで...vec4だから4バイト。で...
+// vec4だから16バイト。なので、i番目の情報を書き換えるには16*iをoffsetに指定したうえで
+// 長さ4のFloat32Arrayを使えばいい。はず。なので
+// マウスダウンされたときにactiveなそれがあればactiveなそれのx,y,zがキープされてそのあとマウスダウンされている限り
+// ...？？？
+// 別に実験してfeedBackしましょう。そうしましょう。
+// （x,y,zにviewProjを施して深度値を割り出し新しいマウスの位置に対してその深度値と同じグローバルの座標を計算して
+// そこに持っていけばいい。難しい。Threeはそこら辺をぱぱっとこなすあれを持ってるとか...でもまあ普通に実装するか。
+// マウス値 → 正規化デバイス座標 → ビュー座標（不定）という流れ。(x,y,z)のビュー座標のzとzが等しくなるように
+// 不定値が決まる。つまりzで割った比が等しいということ。
+
+// カメラにメソッドを追加して、射影モードごとにデバイス座標と空間座標からその空間座標と同じビュー空間におけるz座標を持つ
+// 空間内の座標を見出す関数を作ればいいんですよね。テストしないと...
+
+// 動的更新自体は全然難しくないけどね。
+
+// 20221025
+// dataUpdate実装しました。こんなんでいいんだ...
+// grabとそのときのindexを保持して...grabがtrueの場合にindexとmodelDataArrayからx,y,zを取得して
+// viewに落としてzを記録して
+// 一方でマウス値を正規化デバイスに落としてそれに落ちるviewの座標でzが同じものを取得して
+// view逆変換で行き先のx,y,zを取得したらmodelDataArrayの方も更新したうえでdataUpdate.お疲れ様でした。
+
+// bufferSubData間違えてたのを修正した。dstByteOffsetが先だったわね...あっちも書き換えないと。
+// 全部0だから問題が起きてなかっただけだった。んー
+// 計算あわない！！
+
+// あ...subModelDataって0,1,2じゃん。ああああ！！
+// 次のバグは何だろう...
+
+// NDCの計算方法がきちんと把握できてない。
 
 // ------------------------------------------------------------------------------------------------------------ //
 // shaders.
@@ -46,8 +90,12 @@ in vec2 aTexCoord;
 
 in float aIndex;
 
-uniform mat4 uModelViewMatrix;
+//uniform mat4 uModelViewMatrix;
+uniform mat4 uViewMatrix; // 今回はviewだけ
 uniform mat4 uProjectionMatrix;
+uniform float uTime;
+
+out mat4 vViewMatrix;
 
 out vec3 vVertexColor;
 out vec3 vNormal;
@@ -56,10 +104,21 @@ out vec2 vTexCoord;
 
 out float vIndex;
 
+uniform sampler2D uData; // モデルデータ
+uniform float uSize; // 横の長さ（今回は100.0）
+
 void main(void){
   // 場合によってはaPositionをいじる（頂点位置）
   // 場合によってはaNormalもここで計算するかもしれない
-  vec4 viewModelPosition = uModelViewMatrix * vec4(aPosition, 1.0);
+  vec3 p = aPosition;
+  // pに掛けるモデル行列を構築する
+  vec4 data = texture(uData, vec2(aIndex+0.5, 0.0) / uSize);
+  float s = data.w;
+  float t = uTime * 6.28318 * 0.5;
+  mat4 modelMatrix = mat4(s*cos(t), s*sin(t), 0.0, 0.0, -s*sin(t), s*cos(t), 0.0, 0.0,
+                          0.0, 0.0, s, 0.0, data.x, data.y, data.z, 1.0);
+  mat4 modelViewMatrix = uViewMatrix * modelMatrix;
+  vec4 viewModelPosition = modelViewMatrix * vec4(p, 1.0);
 
   // Pass varyings to fragment shader
   vViewPosition = viewModelPosition.xyz;
@@ -68,9 +127,9 @@ void main(void){
   gl_Position = NDcoord;
 
   mat3 normalMatrix; // こうしよう。[0]で列ベクトルにアクセス。
-  normalMatrix[0] = uModelViewMatrix[0].xyz;
-  normalMatrix[1] = uModelViewMatrix[1].xyz;
-  normalMatrix[2] = uModelViewMatrix[2].xyz;
+  normalMatrix[0] = modelViewMatrix[0].xyz;
+  normalMatrix[1] = modelViewMatrix[1].xyz;
+  normalMatrix[2] = modelViewMatrix[2].xyz;
   normalMatrix = inverse(transpose(normalMatrix)); // これでいい。
 
   vNormal = normalMatrix * aNormal;
@@ -78,6 +137,8 @@ void main(void){
   vTexCoord = aTexCoord;
 
   vIndex = aIndex; // 整数はそのまま渡すだけ。
+
+  vViewMatrix = uViewMatrix;
 }
 `;
 
@@ -88,7 +149,7 @@ precision mediump float;
 
 // -------------------- ライティング関連 -------------------- //
 // ビュー行列
-uniform mat4 uViewMatrix;
+in mat4 vViewMatrix;
 
 // 汎用色
 uniform vec3 uAmbientColor;
@@ -163,7 +224,7 @@ float phongSpecular(vec3 lightDirection, vec3 viewDirection, vec3 surfaceNormal)
 void applyDirectionalLight(vec3 direction, vec3 diffuseColor, vec3 specularColor,
                            vec3 modelPosition, vec3 normal, out vec3 diffuse, out vec3 specular){
   vec3 viewDirection = normalize(-modelPosition);
-  vec3 lightVector = (uViewMatrix * vec4(direction, 0.0)).xyz;
+  vec3 lightVector = (vViewMatrix * vec4(direction, 0.0)).xyz;
   vec3 lightDir = normalize(lightVector);
   // 色計算
   vec3 lightColor = diffuseColor;
@@ -179,7 +240,7 @@ void applyDirectionalLight(vec3 direction, vec3 diffuseColor, vec3 specularColor
 void applyPointLight(vec3 location, vec3 diffuseColor, vec3 specularColor,
                      vec3 modelPosition, vec3 normal, out vec3 diffuse, out vec3 specular){
   vec3 viewDirection = normalize(-modelPosition);
-  vec3 lightPosition = (uViewMatrix * vec4(location, 1.0)).xyz;
+  vec3 lightPosition = (vViewMatrix * vec4(location, 1.0)).xyz;
   vec3 lightVector = modelPosition - lightPosition;
   vec3 lightDir = normalize(lightVector);
   float lightDistance = length(lightVector);
@@ -200,7 +261,7 @@ void applyPointLight(vec3 location, vec3 diffuseColor, vec3 specularColor,
 void applySpotLight(vec3 location, vec3 direction, float angle, float conc, vec3 diffuseColor, vec3 specularColor,
                     vec3 modelPosition, vec3 normal, out vec3 diffuse, out vec3 specular){
   vec3 viewDirection = normalize(-modelPosition);
-  vec3 lightPosition = (uViewMatrix * vec4(location, 1.0)).xyz; // locationは光の射出位置
+  vec3 lightPosition = (vViewMatrix * vec4(location, 1.0)).xyz; // locationは光の射出位置
   vec3 lightVector = modelPosition - lightPosition; // 光源 → モデル位置
   vec3 lightDir = normalize(lightVector);
   float lightDistance = length(lightVector);
@@ -208,7 +269,7 @@ void applySpotLight(vec3 location, vec3 direction, float angle, float conc, vec3
   float lightFalloff = 1.0 / dot(uAttenuation, vec3(1.0, d, d*d));
   // falloffは光それ自身の減衰で、これに加えてspot（angleで定義されるcone状の空間）からのずれによる減衰を考慮
   float spotFalloff;
-  vec3 lightDirection = (uViewMatrix * vec4(direction, 0.0)).xyz;
+  vec3 lightDirection = (vViewMatrix * vec4(direction, 0.0)).xyz;
   // lightDirはモデルに向かうベクトル、lightDirectionはスポットライトの向きとしての光の向き。そこからのずれで減衰させる仕組み。
   float spotDot = dot(lightDir, normalize(lightDirection));
   if(spotDot < cos(angle)){
@@ -253,6 +314,10 @@ vec3 totalLight(vec3 modelPosition, vec3 normal, vec3 materialColor){
   vec3 result = diffuse + uAmbientColor;
   result *= materialColor;
   result += specular;
+
+  // vIndex == uTargetIndexのときだけ色が明るくなる
+  if(vIndex != uTargetIndex){ result.rgb *= 0.2; }
+
   return result;
 }
 
@@ -260,7 +325,7 @@ vec3 totalLight(vec3 modelPosition, vec3 normal, vec3 materialColor){
 
 void main(void){
 
-   pickColor = vec4(vIndex, vIndex, vIndex, 1.0);
+   pickColor = vec4(vec3(vIndex) / 255.0, 1.0);
 
   // 白。デフォルト。
   vec4 col = vec4(1.0);
@@ -319,6 +384,7 @@ void main(){
 `;
 
 function setup(){
+  _timer.initialize("slot0");
   createCanvas(800, 640, WEBGL);
   _node = new ex.RenderNode(this._renderer.GL);
   // デフォでいいよ。
@@ -329,7 +395,7 @@ function setup(){
   // MRT用にカスタマイズしたライティングシェーダ
   _node.registPainter("light", lightVert, lightFrag);
 
-  // cubeのメッシュを100個複製（スケールは1～4でランダム）（位置は-3～3でランダム）
+  // cubeのメッシュを100個複製
   const cubePositions = [-1,-1,1,  1,-1,1,  1,1,1,  -1,1,1, -1,-1,-1, 1,-1,-1, 1,1,-1, -1,1,-1];
   const cubeFaces = [0,1,2,  0,2,3,  1,5,6,  1,6,2,  5,4,7,  5,7,6,  4,0,3,  4,3,7,  3,2,6,  3,6,7,  4,5,1,  4,1,0];
   const cubeNormals = ex.getNormals(cubePositions, cubeFaces);
@@ -339,20 +405,16 @@ function setup(){
   let cubeC = [];
   let cubeI = [];
   for(let i=0; i<100; i++){
-    const x = Math.random()*10-5;
-    const y = Math.random()*10-5;
-    const z = Math.random()*10-5;
-    const s = 0.2+0.3*Math.random();
     const col = ex.hsv2rgb(0.45+0.2*Math.random(), 0.8+0.2*Math.random(), 0.8);
     for(let k=0; k<8; k++){
       const x1 = cubePositions[k*3];
       const y1 = cubePositions[k*3+1];
       const z1 = cubePositions[k*3+2];
-      cubeV.push(...[s*x1 + x, s*y1 + y, s*z1 + z]);
+      cubeV.push(x1, y1, z1);
       cubeC.push(col.r, col.g, col.b);
     }
     cubeN.push(...cubeNormals);
-    cubeI.push(...[i,i,i,i,i,i,i,i]);
+    cubeI.push(i,i,i,i,i,i,i,i);
     for(let k=0; k<36; k++){
       cubeF.push(8*i + cubeFaces[k]); // indexの方で「8*i+」ってやっちゃった（おい）
     }
@@ -371,29 +433,54 @@ function setup(){
   _node.registFBO("picker", {w:w, h:h, color:{info:[{}, {}]}});
 
   // infoがあった方が分かりやすいわね
-  const gr = createGraphics(width, height); gr.noStroke(); gr.fill(255);
+  const gr = createGraphics(width, height);
+  gr.noStroke();
+  gr.fill(255);
   gr.textSize(16);
+  gr.textAlign(CENTER, CENTER);
   _node.registTexture("info", {src:gr});
 
   // spoitは0で初期化されている
 
   // x,y,z,s(translateとscaleのデータ)を100個分1x100のフレームバッファに放り込む
   _node.registFBO("modelData", {w:100, h:1, color:{info:{type:"float"}}});
-  const dataArray = new Array(4*100);
+  //const dataArray = new Array(4*100);
   for(let i=0; i<100; i++){
-    dataArray[4*i] = Math.random()*10-5;
-    dataArray[4*i+1] = Math.random()*10-5;
-    dataArray[4*i+2] = Math.random()*10-5;
-    dataArray[4*i+3] = 0.2 + 0.3 * Math.random(); // スケール
+    const radius = Math.pow(Math.random(), 0.33)*8;
+    const theta = Math.random()*Math.PI;
+    const phi = Math.random()*Math.PI*2;
+    modelDataArray[4*i] = radius * cos(phi) * sin(theta);
+    modelDataArray[4*i+1] = radius * sin(phi) * sin(theta);
+    modelDataArray[4*i+2] = radius * cos(theta);
+    modelDataArray[4*i+3] = 0.2 + 0.3 * Math.random(); // スケール
   }
   _node.registFigure("data", [
-    {size:4, name:"aModelData", data:dataArray}
+    {size:4, name:"aData", data:modelDataArray, usage:"stream_draw"}
   ]);
+  dataInput();
+}
+
+function dataInput(){
+  // データインプット。やってることがテンプレなのでいずれメソッドにするつもり...
   _node.registPainter("dataInput", dataVert, dataFrag);
   _node.bindFBO("modelData").clearColor(0,0,0,0).clear()
        .use("dataInput", "data").setUniform("uSize", 100).drawArrays("points").unbind();
-
 }
+
+function dataUpdate(i, x, y, z){
+  // i番目のx,y,zをいじって再設定
+  subModelData[0] = x;
+  subModelData[1] = y;
+  subModelData[2] = z;
+  _node.bindFBO("modelData").clearColor(0,0,0,0).clear()
+       .use("dataInput", "data");
+  // targetFigureがbindされてないといけない...というか目当てのvboにアクセス出来ればいいということ。
+  // Figure経由でなくてもvboにアクセス出来れば問題ない。bindされてないと更新できない。
+  _node.bufferSubData("aData", "array_buf", 16*i, subModelData); // 4バイト x 4 x i.
+  _node.setUniform("uSize", 100).drawArrays("points").unbind();
+}
+
+// ----------
 
 function draw(){
   // 黒でクリア
@@ -405,8 +492,21 @@ function draw(){
   render();
 
   // 何も指定しない場合自動的にnullがtargetになるうえ、この処理でtargetが変更されることはない。
+  _node.bindFBO(null);
   ex.copyPainter(_node, {src:{type:"fb", name:"picker", index:1}});
-  // とりあえずここまで。
+
+  // grabでない場合はreadIndexでspoitを更新、grabの場合はdragAndDropでマウス位置にターゲットを落とす。
+  if(!grab){
+    readIndex();
+  }else{
+    dragAndDrop(_cam);
+  }
+
+  // きちんと明示した方が...といってもcopyPainterもどこのfboに落とすかは一応明示してるのよね。難しいところ。
+  _node.bindFBO(null);
+  showInfo();
+
+  _node.flush();
 }
 
 function render(){
@@ -458,9 +558,48 @@ function render(){
   // 彩色方法指定（頂点色）
   _node.setUniform("uUseColorFlag", 0);
 
+  // モデルデータは今回fbo経由
+  _node.setFBOtexture2D("uData", "modelData");
+  _node.setUniform("uSize", 100);
+  _node.setUniform("uTime", _timer.getDelta("slot0"));
+
+  // targetIndexはspoit[3]===0の場合-1. >0の場合spoit[0]を放り込む。
+  _node.setUniform("uTargetIndex", (spoit[3] > 0 ? spoit[0] : -1));
+
   _node.drawFigure("cube100").bindIBO("cubeIBO");
 
   render100cubes(_node, _tf, _cam);
+}
+
+function readIndex(){
+  // readPixelsでマウス位置の色を取得
+  // 0.5を足せば640から引いてもOK
+  const mx = (Math.max(0, Math.min(mouseX, 800)) + 0.5)/800;
+  const my = 1.0 - (Math.max(0, Math.min(mouseY, 640)) + 0.5)/640;
+  const {w, h} = _node.getDrawingBufferSize("picker");
+  _node.bindFBO("picker");
+  _node.readPixels(mx*w, my*h, 1, 1, "rgba", "ubyte", spoit);
+}
+
+function showInfo(){
+  // 色表示
+  const gr = _node.getTextureSource("info");
+  gr.clear();
+  if(spoit[3] > 0){
+    const i = spoit[0];
+    gr.text("(" + spoit[0] + ", " + spoit[1] + ", " + spoit[2] + ", " + spoit[3] + ")", width/2, height*7/8);
+    const x = modelDataArray[4*i];
+    const y = modelDataArray[4*i+1];
+    const z = modelDataArray[4*i+2];
+    gr.text("(" + x.toFixed(3) + ", " + y.toFixed(3) + ", " + z.toFixed(3) + ")", width/2, height*15/16);
+    const ndc = getNDC(_cam, {x, y, z});
+    gr.text("龍", width * (ndc.x + 1.0) * 0.5, height * (1.0 - ndc.y) * 0.5);
+  }else{
+    gr.text("立方体が選択されていません", width/2, height*7/8);
+  }
+  _node.updateTexture("info");
+
+  ex.copyPainter(_node, {src:{name:"info"}});
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------- //
@@ -528,17 +667,18 @@ function setSpotLight(node, info = {}){
 }
 
 // 行列関連はまとめとこうか
+// 今回はview行列だけを使います
 function setModelView(node, tf, cam){
-  const modelMat = tf.getModelMat().m;
+  //const modelMat = tf.getModelMat().m;
   const viewMat = cam.getViewMat().m;
-  const modelViewMat = ex.getMult4x4(modelMat, viewMat);
+  //const modelViewMat = ex.getMult4x4(modelMat, viewMat);
   node.setUniform("uViewMatrix", viewMat);
-  node.setUniform("uModelViewMatrix", modelViewMat);
+  //node.setUniform("uModelViewMatrix", modelViewMat);
 }
 
 // 100cubes.
 function render100cubes(node, tf, cam){
-  tf.initialize();
+  //tf.initialize();
   setModelView(node, tf, cam);
   node.drawElements("triangles");
 }
@@ -553,4 +693,63 @@ function moveCamera(cam){
   if(keyIsDown(DOWN_ARROW)){ cam.arise(-0.04); } // 下
   if(keyIsDown(69)){ cam.dolly(0.05); } // Eキー
   if(keyIsDown(68)){ cam.dolly(-0.05); } // Dキー
+}
+
+// --
+// drag and drop
+function mousePressed(){
+  if(!grab && spoit[3] > 0){
+    grab = true;
+  }
+}
+function mouseReleased(){
+  grab = false;
+}
+
+function getNDC(cam, p){
+  // globalのpに対して正規化デバイス座標を取得。これもいずれ実装する。
+  const viewMat = cam.getViewMat().m;
+  const vx = viewMat[0]*p.x + viewMat[3]*p.y + viewMat[6]*p.z;
+  const vy = viewMat[1]*p.x + viewMat[4]*p.y + viewMat[7]*p.z;
+  const vz = viewMat[2]*p.x + viewMat[5]*p.y + viewMat[8]*p.z;
+  console.log(vx, vy, vz);
+  const projMat = cam.getProjMat().m;
+  const ndcx = projMat[0]*vx + projMat[4]*vy + projMat[8]*vz + projMat[12];
+  const ndcy = projMat[1]*vx + projMat[5]*vy + projMat[9]*vz + projMat[13];
+  const ndcz = projMat[2]*vx + projMat[6]*vy + projMat[10]*vz + projMat[14];
+  const ndcw = projMat[3]*vx + projMat[7]*vy + projMat[11]*vz + projMat[15];
+  return {x:ndcx/ndcw, y:ndcy/ndcw, z:ndcz/ndcw};
+}
+
+// 正規化デバイスのx,yに対して点pとviewにおけるzが等しい点を取得する。
+function getParallelPosition(cam, p, ndc){
+  // pのview座標のzを取得
+  const viewMat = cam.getViewMat().m;
+  const targetZ = viewMat[2]*p.x + viewMat[5]*p.y + viewMat[8]*p.z;
+  // pers前提でコードを書く（いずれ何とかする）
+  // viewにおけるxとyを作ってしまう
+  const {fov, aspect} = cam.getProjData("pers");
+  const targetX = aspect * Math.tan(fov/2) * (-targetZ * ndc.x);
+  const targetY = Math.tan(fov/2) * (-targetZ * ndc.y);
+  const result = {};
+  result.x = viewMat[0]*targetX + viewMat[1]*targetY + viewMat[2]*targetZ;
+  result.y = viewMat[3]*targetX + viewMat[4]*targetY + viewMat[5]*targetZ;
+  result.z = viewMat[6]*targetX + viewMat[7]*targetY + viewMat[8]*targetZ;
+  return result;
+}
+
+// grabされている間はspoitから得られるindexのところの更新を常に行なう。その間spoitは更新されない。
+function dragAndDrop(cam){
+  const activeIndex = spoit[0];
+  const target = {};
+  target.x = modelDataArray[4*activeIndex];
+  target.y = modelDataArray[4*activeIndex+1];
+  target.z = modelDataArray[4*activeIndex+2];
+  const mx = 2.0 * (mouseX / width) - 1.0;
+  const my = -2.0 * (mouseY / height) + 1.0;
+  const nextPos = getParallelPosition(cam, target, {x:mx, y:my});
+  //modelDataArray[4*activeIndex] = nextPos.x;
+  //modelDataArray[4*activeIndex+1] = nextPos.y;
+  //modelDataArray[4*activeIndex+2] = nextPos.z;
+  //dataUpdate(activeIndex, nextPos.x, nextPos.y, nextPos.z);
 }

@@ -1711,14 +1711,15 @@ const p5wgex = (function(){
       }
       return this;
     }
-    bufferSubData(attrName, targetName, srcData, srcOffset = 0){
+    bufferSubData(attrName, targetName, dstByteOffset, srcData, srcOffset = 0){
       // いわゆる動的更新。currentFigureに対し、それがもつ属性の名前と放り込む際に使う配列を渡して更新させる。
-      // srcOffsetは何処から読むか、ということのようです。
       // targetNameは array_buf: ARRAY_BUFFER で element_buf: ELEMENT_ARRAY_BUFFER ということですね。OK!
+      // srcOffsetは常に0でいいですね。dstByteOffseyは何処のバイトから書き換えるか。srcDataのデータでそれを
+      // 置き換える。たとえばfloat vec4で1番を置き換えるなら16を指定する。
       const vbos = this.currentFigure.getVBOs();
       const vbo = vbos[attrName];
       this.gl.bindBuffer(this.dict[targetName], vbo.buf);
-      this.gl.bufferSubData(this.dict[targetName], 0, srcData, srcOffset); // srcDataはFloat32Arrayの何か
+      this.gl.bufferSubData(this.dict[targetName], dstByteOffset, srcData, srcOffset); // srcDataはFloat32Arrayの何か
       return this;
     }
     setTexture2D(name, _texture){
@@ -2704,6 +2705,7 @@ const p5wgex = (function(){
   // axisHelper（座標軸を長さ指定して可視化）
   // cameraHelper（種類に応じてfrustumを可視化）
   // customRectHelper（自由に直方体を指定して辺描画で位置を可視化）
+  // data格納用のシェーダ欲しいですね...欲しい...めんどくさい...
   ex.copyPainter = copyPainter;
 
   return ex;
