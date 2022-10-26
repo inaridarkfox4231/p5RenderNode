@@ -346,10 +346,10 @@ function draw(){
   // しかし解決しました（ログは末尾に記載）。PainterがすべてのtextureUnitをnullにできていなかったのが原因でした。
   // 申し訳なかったです。
   ex.copyPainter(_node, {src:[
-    {type:"fb", name:"quad", index:0, view:{x:0, y:0, w:0.5, h:0.5}},
-    {type:"fb", name:"quad", index:1, view:{x:0.5, y:0, w:0.5, h:0.5}},
-    {type:"fb", name:"quad", index:2, view:{x:0, y:0.5, w:0.5, h:0.5}},
-    {type:"fb", name:"quad", index:3, view:{x:0.5, y:0.5, w:0.5, h:0.5}}
+    {type:"fb", name:"quad", index:0, view:[0, 0, 0.5, 0.5]},
+    {type:"fb", name:"quad", index:1, view:[0.5, 0, 0.5, 0.5]},
+    {type:"fb", name:"quad", index:2, view:[0, 0.5, 0.5, 0.5]},
+    {type:"fb", name:"quad", index:3, view:[0.5, 0.5, 0.5, 0.5]}
   ]});
 
   updateInfo();

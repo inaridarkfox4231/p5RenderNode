@@ -16,6 +16,9 @@
 // copyPainterのグレードアップ（複数対応）の方が先
 // vertex増やせば簡単にできる。ついでに簡単なレイヤー機能も実装するか。簡単なblend機能付けてもいい。
 
+// 20221027
+// view指定の方法が配列OKになったのでちょこっと書き換え
+
 const ex = p5wgex;
 let _node;
 let cam;
@@ -274,10 +277,10 @@ function draw(){
   // しかし解決しました（ログは末尾に記載）。PainterがすべてのtextureUnitをnullにできていなかったのが原因でした。
   // 申し訳なかったです。
   ex.copyPainter(_node, {src:[
-    {type:"fb", name:"quad", index:0, view:{x:0, y:0, w:0.5, h:0.5}},
-    {type:"fb", name:"quad", index:1, view:{x:0.5, y:0, w:0.5, h:0.5}},
-    {type:"fb", name:"quad", index:2, view:{x:0, y:0.5, w:0.5, h:0.5}},
-    {type:"fb", name:"quad", index:3, view:{x:0.5, y:0.5, w:0.5, h:0.5}}
+    {type:"fb", name:"quad", index:0, view:[0, 0, 0.5, 0.5]},
+    {type:"fb", name:"quad", index:1, view:[0.5, 0, 0.5, 0.5]},
+    {type:"fb", name:"quad", index:2, view:[0, 0.5, 0.5, 0.5]},
+    {type:"fb", name:"quad", index:3, view:[0.5, 0.5, 0.5, 0.5]}
   ]});
 
   _node.flush();

@@ -4,6 +4,10 @@
 // なるほど、整数属性は禁止...まあそうか。で、intのvaryingは可能だけどflatを付ける、と。
 // OKです。
 
+// 20221027
+// 今ならflat付けられると思うけどどうしようね。
+// とりあえず直すか。
+
 const ex = p5wgex;
 let _node;
 
@@ -79,11 +83,11 @@ function draw(){
 
   // 表出
   ex.copyPainter(_node, {src:[
-    {type:"fb", name:"mrt", index:0, view:{x:0, y:0, w:0.5, h:0.5}},
-    {type:"fb", name:"mrt", index:1, view:{x:0.5, y:0, w:0.5, h:0.5}},
-    {name:"gr2",view:{x:0, y:0.5, w:0.5, h:0.5}},
-    {type:"fb", name:"mrt", index:2, view:{x:0.5, y:0.5, w:0.5, h:0.25}},
-    {type:"fb", name:"mrt", index:3, view:{x:0.5, y:0.75, w:0.5, h:0.25}}
+    {type:"fb", name:"mrt", index:0, view:[0, 0, 0.5, 0.5]},
+    {type:"fb", name:"mrt", index:1, view:[0.5, 0, 0.5, 0.5]},
+    {name:"gr2",view:[0, 0.5, 0.5, 0.5]},
+    {type:"fb", name:"mrt", index:2, view:[0.5, 0.5, 0.5, 0.25]},
+    {type:"fb", name:"mrt", index:3, view:[0.5, 0.75, 0.5, 0.25]}
   ]});
 
   _node.flush();

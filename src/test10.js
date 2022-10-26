@@ -20,6 +20,10 @@
 
 // 早くテストしよう。
 
+// 20221026
+// CopyPainterにGradation実装したのでちょっと書き換えました。
+// 汚くなってたらごめんなさいね。
+
 // ---global
 const ex = p5wgex;
 let _node;
@@ -63,11 +67,14 @@ function setup(){
   _node.registFigure("fox", [{name:"aPosition", size:3, data:[0,0,0]}]);
 
   const bg = createGraphics(400, 400);
+
+  /*
   bg.noStroke();
   for(let i = 0; i < 400; i++){
     bg.fill(i*255/400);
     bg.rect(0, i, 400, 1);
   }
+  */
 
   const fox = createGraphics(64, 64);
   fox.textSize(32);
@@ -90,7 +97,7 @@ function draw(){
   _node.clear();
 
   //ex.copyProgram(_node, null, "bg");
-  ex.copyPainter(_node, {src:{name:"bg"}});
+  ex.copyPainter(_node, {src:{name:"bg", gradationStart:[0,0,0,0,0,1], gradationStop:[0,1,1,1,1,1]}});
 
   _node.enable("blend")
        .blendFunc("src_alpha", "one_minus_src_alpha");

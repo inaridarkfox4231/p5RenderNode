@@ -7,9 +7,15 @@
 
 // framebufferOKです。
 
+// 20221027
+// copyPainter機能強化したので...
+// あ、そうか、この頃まだ無かったっけ。
+// uvShift便利でしょう。
+
 // ----global
 const ex = p5wgex;
 let _node;
+const _timer = new ex.Timer();
 
 let gr2;
 
@@ -19,9 +25,60 @@ gr1.onload = function(){
 }
 gr1.src = "https://inaridarkfox4231.github.io/assets/texture/cloud.png";
 
+
+// ----preload
+function preload(){
+  gr2 = loadImage("https://inaridarkfox4231.github.io/assets/texture/rdm.png");
+}
+
+// ----setup
+function setup(){
+  _timer.initialize("slot0");
+  createCanvas(512, 512, WEBGL);
+  _node = new ex.RenderNode(this._renderer.GL);
+
+  // 今回はframebufferのinfoでsrcを指定してみます
+  const gr0 = createGraphics(256, 256);
+  gr0.background(0,128,255);
+  gr0.noStroke();
+  gr0.fill(255);
+  gr0.circle(128,128,128);
+  _node.registFBO("test0", {w:gr0.elt.width, h:gr0.elt.height, color:{info:{src:gr0}}}); // createGraphicsで作ったやつ
+  _node.registFBO("test1", {w:gr1.width, h:gr1.height, color:{info:{src:gr1, sWrap:"repeat", tWrap:"repeat"}}}); // ロードした画像1
+  _node.registFBO("test2", {w:gr2.width, h:gr2.height, color:{info:{src:gr2}}}); // ロードした画像2
+
+  // 最後に...
+  const data = new Uint8Array(256*256*4);
+  for(let y=0; y<256; y++){
+    for(let x=0; x<256; x++){
+      const i = 4*(y*256+x);
+      data[i] = x;
+      data[i + 1] = y;
+      data[i + 2] = 0;
+      data[i + 3] = 255;
+    }
+  }
+  _node.registFBO("test3", {w:256, h:256, color:{info:{src:data}}}); // Uint8Array.
+}
+
+// ----draw
+function draw(){
+  const currentTime = _timer.getDelta("slot0");
+  _node.clearColor(0, 0, 0, 0).clear();
+
+  ex.copyPainter(_node, {src:[
+    {type:"fb", name:"test0", view:[0,0,0.5,0.5]},
+    {type:"fb", name:"test1", view:[0.5,0,0.5,0.5], uvShift:[currentTime*0.25, -currentTime*0.25]},
+    {type:"fb", name:"test2", view:[0,0.5,0.5,0.5]},
+    {type:"fb", name:"test3", view:[0.5,0.5,0.5,0.5]}
+  ]});
+
+  _node.unbind().flush();
+}
+
 // ----shaders
 // 同じでいい
-
+/*
 // ----shaders
 
 const showVert =
@@ -63,53 +120,19 @@ void main(){
   color = col;
 }
 `;
-// ----preload
-function preload(){
-  gr2 = loadImage("https://inaridarkfox4231.github.io/assets/texture/rdm.png");
-}
+*/
 
-// ----setup
-function setup(){
-  createCanvas(512, 512, WEBGL);
-  _node = new ex.RenderNode(this._renderer.GL);
+/*
+_node.use("show", "board")
+     .setFBOtexture2D("uTex0", "test0")
+     .setFBOtexture2D("uTex1", "test1")
+     .setFBOtexture2D("uTex2", "test2")
+     .setFBOtexture2D("uTex3", "test3")
+     .drawArrays("triangle_strip")
+     .unbind()
+     .flush();
 
-  _node.registPainter("show", showVert, showFrag);
-  _node.registFigure("board", [{size:2, data:[-1,-1,1,-1,-1,1,1,1], name:"aPosition"}]);
+*/
 
-  // 今回はframebufferのinfoでsrcを指定してみます
-  const gr0 = createGraphics(256, 256);
-  gr0.background(0,128,255);
-  gr0.noStroke();
-  gr0.fill(255);
-  gr0.circle(128,128,128);
-  _node.registFBO("test0", {w:gr0.elt.width, h:gr0.elt.height, color:{info:{src:gr0}}}); // createGraphicsで作ったやつ
-  _node.registFBO("test1", {w:gr1.width, h:gr1.height, color:{info:{src:gr1}}}); // ロードした画像1
-  _node.registFBO("test2", {w:gr2.width, h:gr2.height, color:{info:{src:gr2}}}); // ロードした画像2
-
-  // 最後に...
-  const data = new Uint8Array(256*256*4);
-  for(let y=0; y<256; y++){
-    for(let x=0; x<256; x++){
-      const i = 4*(y*256+x);
-      data[i] = x;
-      data[i + 1] = y;
-      data[i + 2] = 0;
-      data[i + 3] = 255;
-    }
-  }
-  _node.registFBO("test3", {w:256, h:256, color:{info:{src:data}}}); // Uint8Array.
-}
-
-// ----draw
-function draw(){
-  _node.clearColor(0, 0, 0, 0).clear();
-
-  _node.use("show", "board")
-       .setFBOtexture2D("uTex0", "test0")
-       .setFBOtexture2D("uTex1", "test1")
-       .setFBOtexture2D("uTex2", "test2")
-       .setFBOtexture2D("uTex3", "test3")
-       .drawArrays("triangle_strip")
-       .unbind()
-       .flush();
-}
+//_node.registPainter("show", showVert, showFrag);
+//_node.registFigure("board", [{size:2, data:[-1,-1,1,-1,-1,1,1,1], name:"aPosition"}]);

@@ -34,6 +34,11 @@
 // rだけで補間取ってくれないんかな。難しいみたいですね。まあ別に問題ないか。そもそも、
 // depthにしてもそうだけどもともと連続的な値に対してlinear適用する意味ないしな。
 
+// 20221026
+// あー...copyPainterが古い...この頃はまだマルチ出来なかったから。
+// 直そう。
+// 直しました。マルチ便利だねぇ。
+
 const ex = p5wgex;
 let _node;
 
@@ -128,10 +133,17 @@ function draw(){
        .unbind();
   _node.bindFBO(null);
 
-  ex.copyPainter(_node, {view:[0, 0, 0.5, 0.5], src:{type:"fb", name:"mrt", index:0}});
-  ex.copyPainter(_node, {view:[0.5, 0, 0.5, 0.5], src:{type:"fb", name:"mrt", index:1}});
-  ex.copyPainter(_node, {view:[0, 0.5, 0.5, 0.5], src:{type:"fb", name:"mrt", index:2}});
-  ex.copyPainter(_node, {view:[0.5, 0.5, 0.5, 0.5], src:{type:"fb", name:"mrt", index:3}});
+  ex.copyPainter(_node, {src:[
+    {type:"fb", name:"mrt", index:0, view:[0,0,0.5,0.5]},
+    {type:"fb", name:"mrt", index:1, view:[0.5,0,0.5,0.5]},
+    {type:"fb", name:"mrt", index:2, view:[0,0.5,0.5,0.5]},
+    {type:"fb", name:"mrt", index:3, view:[0.5,0.5,0.5,0.5]}
+  ]});
+
+//  ex.copyPainter(_node, {view:[0, 0, 0.5, 0.5], src:{type:"fb", name:"mrt", index:0}});
+//  ex.copyPainter(_node, {view:[0.5, 0, 0.5, 0.5], src:{type:"fb", name:"mrt", index:1}});
+//  ex.copyPainter(_node, {view:[0, 0.5, 0.5, 0.5], src:{type:"fb", name:"mrt", index:2}});
+//  ex.copyPainter(_node, {view:[0.5, 0.5, 0.5, 0.5], src:{type:"fb", name:"mrt", index:3}});
 
   ex.copyPainter(_node, {src:{name:"gr"}});
   // 諸々書いたうえで可視化する。この方法ならdepthも可視化できるんだろうか。
