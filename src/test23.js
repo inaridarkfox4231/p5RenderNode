@@ -12,12 +12,55 @@
 
 // lilってどうやって作るんだろうね...
 
+// lil.GUIです。まあこんなもんか。
+// いいね。文字列の場合は配列でやるとそのまま選択肢になるわけね。便利！
+// 色関連でオブジェクトで渡すとちゃんとオブジェクトで取得できるのもいいね。
+
+// しかも：https://openprocessing.org/sketch/1634150
+// datのときの「セレクトボックスから整数を取得して===で判定するとエラーになる問題」が解消されてる！
+// こりゃもうdat捨ててlil一択だわね...まあ、更新が止まるってそういうことなのよね。
+
 const ex = p5wgex;
 let _node;
 const _tf = new ex.TransformEx();
 let _cam;
 const _timer = new ex.Timer();
 let cloudImg; // シームレス雲
+
+// 何を変える？んー...別にないけど...あー、テクスチャの種類を変えるとか？
+// とりあえずスポットライトとかそこら辺使うか使わないか的なの。
+const config = {
+  useDirectionalLight:true,
+  usePointLight:true,
+  useSpotLight:true,
+  specular:true,
+  torusColor: {r:0.3, g:0.7, b:0.4}, // 単色トーラスの色
+  xCoord:0, // トーラスの位置(-3～3)
+  yCoord:0, // (-3～3)
+  zCoord:1.5, // (-3～3)
+  textureType: "cloud",
+  text:"hello lil.gui!",
+  textSize:24, // 16～48
+  gradationStopColor: {r:0, g:0, b:1} // オブジェクト形式で渡すとそれに応じた形で取得できるみたいなのです
+}
+
+// lil使ってみよう。
+function createGUI(){
+  const gui = new lil.GUI();
+  // 手始めに
+  gui.add(config, "useDirectionalLight").name("directionalLight");
+  gui.add(config, "usePointLight").name("pointLight");
+  gui.add(config, "useSpotLight").name("spotLight");
+  gui.add(config, "specular").name("specular");
+  gui.addColor(config, "torusColor");
+  gui.add(config, "xCoord", -4, 4, 0.01).name("x");
+  gui.add(config, "yCoord", -4, 4, 0.01).name("y");
+  gui.add(config, "zCoord", -4, 4, 0.01).name("z");
+  gui.add(config, "textureType", ["cloud", "check", "circles"]);
+  gui.add(config, "text");
+  gui.add(config, "textSize", 16, 48, 1);
+  gui.addColor(config, "gradationStopColor").name("bgColor");
+}
 
 const lightVert =
 `#version 300 es
@@ -279,13 +322,60 @@ function setup(){
 
   // 雲画像を登録
   _node.registTexture("cloud", {src:cloudImg});
+
+  // チェック画像を登録
+  _node.registTexture("check", {src:(function(){
+    const gr = createGraphics(512, 512);
+    gr.noStroke();
+    for(let y=0; y<16; y++){
+      for(let x=0; x<16; x++){
+        gr.fill(255*((x+y)%2));
+        gr.rect(x*32, y*32, 32);
+      }
+    }
+    return gr;
+  })()});
+
+  // もうちょっと
+  _node.registTexture("circles", {src:(function(){
+    const gr = createGraphics(512, 512);
+    gr.background(0);
+    gr.blendMode(ADD);
+    gr.fill(32);
+    for(let i=0; i<128; i++){
+      const x = Math.random()*512;
+      const y = Math.random()*512;
+      for(let i=-1; i<2; i++){
+        for(let k=-1; k<2; k++){
+          gr.circle(x+512*i, y+512*k, 32);
+        }
+      }
+    }
+    return gr;
+  })()});
+
+  // あとはbgですかね
+  _node.registTexture("bg", {src:(function(){
+    const gr = createGraphics(width, height);
+    return gr;
+  })()});
+
+  createGUI();
 }
+
+// --------------------------------------------------------------------------------------------
 
 function draw(){
   // lighting周りをconfigしたい...
   _node.bindFBO(null);
 
-  _node.clearColor(0,0,0,1).clear();
+  //_node.clearColor(0,0,0,1).clear();
+  // カスタム背景
+  bgUpdate();
+  const stopColor = config.gradationStopColor;
+  ex.copyPainter(_node, {src:{name:"bg",
+    gradationFlag:1, gradationStart:[0.5, 0, 0,0,0,1], gradationStop:[0.5,1, stopColor.r, stopColor.g, stopColor.b,1]}});
+
   _node.usePainter("light");
 
   // 射影
@@ -293,36 +383,48 @@ function draw(){
   _node.setUniform("uProjectionMatrix", projMat);
 
   // 環境光
-  setLight(_node, {useSpecular:true});
+  setLight(_node, {useSpecular:config.specular});
   const {front} = _cam.getLocalAxes(); // frontから視線方向に光を当てる。
   const {eye} = _cam.getViewData();
 
   // 平行光
-  setDirectionalLight(_node, {
-    count:2,
-    direction:[-front.x, -front.y, -front.z, 0, 0, -1],
-    diffuseColor:[1, 1, 1, 1, 1, 1],
-    specularColor:[0.5,1,1, 1, 0.5, 1]
-  });
+  if(config.useDirectionalLight){
+    setDirectionalLight(_node, {
+      count:2,
+      direction:[-front.x, -front.y, -front.z, 0, 0, -1],
+      diffuseColor:[1, 1, 1, 1, 1, 1],
+      specularColor:[0.5,1,1, 1, 0.5, 1]
+    });
+  }else{
+    setDirectionalLight(_node, {count:0});
+  }
 
   // 点光源
-  setPointLight(_node, {
-    count:2,
-    location:[0,0,1.5, 3, 0, 1.5],
-    diffuseColor:[1,1,1,1,1,1],
-    specularColor:[1, 0.5, 1,1,0.5,1]
-  });
+  if(config.usePointLight){
+    setPointLight(_node, {
+      count:2,
+      location:[0,0,1.5, 3, 0, 1.5],
+      diffuseColor:[1,1,1,1,1,1],
+      specularColor:[1, 0.5, 1,1,0.5,1]
+    });
+  }else{
+    setPointLight(_node, {count:0});
+  }
 
   // 照射光
-  setSpotLight(_node, {
-    count:1,
-    location:[eye.x*2, eye.y*2, eye.z*2],
-    direction:[-front.x, -front.y, -front.z],
-    angle:[Math.PI/3],
-    conc:[20],
-    diffuseColor:[0.5, 1, 0.5],
-    specularColor:[0.75, 1, 0.75]
-  });
+  if(config.useSpotLight){
+    setSpotLight(_node, {
+      count:1,
+      location:[eye.x*2, eye.y*2, eye.z*2],
+      direction:[-front.x, -front.y, -front.z],
+      angle:[Math.PI/3],
+      conc:[20],
+      diffuseColor:[0.5, 1, 0.5],
+      specularColor:[0.75, 1, 0.75]
+    });
+  }else{
+    setSpotLight(_node, {count:0});
+  }
 
   // 彩色方法指定（0:頂点色、1:単色、2:UV着色）UVはシームレスクラウドをpreloadで取得して使う。
 
@@ -332,8 +434,10 @@ function draw(){
   // あとはtfとcameraを登録していつものようにドローコール
   // renderTorus
   renderTorus0(_node, _tf, _cam, 0, -2, -1); // 頂点色用
-  renderTorus1(_node, _tf, _cam, 0, 2, -1, 0.3, 0.7, 0.4); // 単色用
-  renderTorus2(_node, _tf, _cam, 0, 0, 1.5); // UV用
+  const torusColor = config.torusColor;
+  renderTorus1(_node, _tf, _cam, 0, 2, -1, torusColor.r, torusColor.g, torusColor.b); // 単色用
+  const pos = {x:config.xCoord, y:config.yCoord, z:config.zCoord};
+  renderTorus2(_node, _tf, _cam, pos.x, pos.y, pos.z); // UV用
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------- //
@@ -510,7 +614,18 @@ function renderTorus2(node, tf, cam, x, y, z){
     .rotateX(currentTime*Math.PI);
   setModelView(node, tf, cam);
   node.setUniform("uUseColorFlag", 2);
-  node.setTexture2D("uTex", "cloud");
+  node.setTexture2D("uTex", config.textureType);
   node.setUniform("uTint", [1.3, 1.0, 0.7]);
   node.drawElements("triangles");
+}
+
+function bgUpdate(){
+  const gr = _node.getTextureSource("bg");
+  gr.clear();
+  gr.fill(255);
+  gr.noStroke();
+  gr.textSize(config.textSize);
+  gr.textAlign(CENTER, CENTER);
+  gr.text(config.text, width/2, height*7/8);
+  _node.updateTexture("bg");
 }

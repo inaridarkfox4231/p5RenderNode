@@ -100,6 +100,11 @@ const p5wgex = (function(){
   // 関数を設定してもいいんだけどtargetとかfuncNameとか引数とかややこしいので勝手にやってくれって感じ...
   // 従来通り使うなら普通にinitialize(name)でいいしsetで現在時刻登録されるしgetDeltaで秒数、
   // fps欲しいなら1000/60をスケールに設定、そんなところ。
+
+  // なんとポーズ機能が無いことに気付いたので実装します。内容的にはpauseしたタイミングを記録しておいて
+  // 終わったら停止していた時間の分をstumpに加えます。なお停止中に問い合わせがあった場合その時間から
+  // pauseTimeを引いた分をstumpに加算して計算する...と思う。つまりどんなに時間が経過してもその分引く数も
+  // 大きくなることで停止中であることを表現する...というわけ。getDeltaMillisだけ書き換えればいい(pauseで分岐処理)
   class Timer{
     constructor(){
       this.timers = {};
@@ -110,7 +115,7 @@ const p5wgex = (function(){
       if(info.scale === undefined){ info.scale = 1000; } // 返すときに何かで割りたいときにどうぞ。未定義の場合は1000.
       // なぜならほとんどの場合秒数として使用するので（メトロノームなどの場合は具体的に指定するだろう）
       // 最後に発火したタイミングと、次の発火までの時間間隔(duration)を設定（Infinityの場合は間隔を用意しない感じで）
-      this.timers[keyName] = {stump:info.stump, duration:info.duration, scale:info.scale};
+      this.timers[keyName] = {stump:info.stump, duration:info.duration, scale:info.scale, pause:false, lastPause:info.stump};
     }
     set(keyName, duration){
       // 意図的にstumpの値を現在の時刻にすることで、こちらで何かあってからの経過時間を計測する、
@@ -1371,8 +1376,8 @@ const p5wgex = (function(){
       vec2 n = normalize(stop - start);
       float ratio = clamp(dot(p-start, n) / length(stop - start), 0.0, 1.0);
       vec4 gradColor = (1.0-ratio)*vStartColor + ratio*vStopColor;
-      // アルファブレンド。これでいいのかは不明。
-      result += (1.0 - result.a) * gradColor;
+      // アルファブレンディング、やっぱこっちのが正解っぽいな。テキストが汚くなる。
+      result = result.a * result + (1.0 - result.a) * gradColor;
     }
     // 放射状グラデーション
     void applyRadialGradient(in vec2 p, inout vec4 result){
@@ -1380,7 +1385,7 @@ const p5wgex = (function(){
       vec2 stop = vGradationAnchor.zw;
       float ratio = clamp(length(p - start)/length(stop - start), 0.0, 1.0);
       vec4 gradColor = (1.0-ratio)*vStartColor + ratio*vStopColor;
-      result += (1.0 - result.a) * gradColor;
+      result = result.a * result + (1.0 - result.a) * gradColor;
     }
     // メイン
     void main(){
