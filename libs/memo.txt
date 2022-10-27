@@ -1020,3 +1020,33 @@ this.gl.vertexAttribPointer(attr.location, vbo.size, vbo.type, false, 0, 0);
 // もっとも...んー。でもまあそのうち、そうね...んー...tintとambientくらいならいいか？
 
 // 直し終わったよ。
+// ちょっとショックね。凡ミス。頭の中のイメージをきちんとコードに落とすのって本当に難しいわね。
+// 普通に考えれば8つの長方形は別々なんだからインデックスの個数とか考えても
+// 明らかにIBOを使って描画するべきなのよね。反省しかないわ。ごめんね。
+
+// 20221027
+// まず報告
+// flat int で グラデーション、radialも追加で。フラグ0,1,2で管理。それで完成。あとtintとambientも追加で。それでOKです。
+// depthTextureについて。
+// Qiitaの記事：https://qiita.com/aa_debdeb/items/128ccb6fa245b6f618b3
+// DEPTH_COMPONENT32FはFLOATでいいそうです：https://webgl2fundamentals.org/webgl/lessons/webgl-data-textures.html
+// なるほど、これでいいのね。
+// あと立方体のメッシュの改良よろしく。Blenderからパクればいいと思う（え）
+// でもおそらく:https://github.com/davepagurek/p5.Framebuffer/blob/main/BlurRenderer.js
+// こっちが参考になる。おそらくだけど近くが0で一番遠くが1ってのは間違いない。
+// depthのクリアのデフォが1だから格納する際の処理は単純に-1～1を0～1に同じ大小関係で入れてるだけ。
+// 次の計算：
+/*
+float depthToZ(float depth) {
+  float depthNormalized = 2.0 * depth - 1.0;
+  return 2.0 * uNear * uFar / (uFar + uNear - depthNormalized * (uFar - uNear));
+}
+*/
+// 要するに0～1を-1～1に直したうえで、ビュー座標におけるzを出力しているわけ。でもこれ射影変換の行列によって
+// 結果が違うよね？Orthoとかだったら別の処理が要ると思うのよね。単純にあれ、クリップミスだと思う。あんまあてにならない的な...
+// クリップは大事だなと思わせられたのでした。以上。
+// まあでもビュー座標系でのZの値が必要な場合もあるのかな...実際の距離か。あー、被写界深度とかの場合だと実際の距離に変換して
+// 比較する必要があるのかもしれない。おいおい勉強していくしかない。とりあえず今はdepthのtextureは0～1. それだけ確認。
+// h_doxasさんがうそつくわけないもんね。
+
+// おお...仕様変更ノーミス...！逆に怖い（おい）

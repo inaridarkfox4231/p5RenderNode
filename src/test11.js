@@ -47,7 +47,7 @@ function setup(){
   // シームレスなのでrepeatを設定するとこのように、はい。
   _node.registTexture("cloud", {w:img.width, h:img.height, src:img, sWrap:"repeat",
                       magFilter:"linear", mipmap:true, minFilter:"linear_linear"}); // エラー出ない。よかった～
-  _node.registTexture("rdm", {w:loadedImg.width, h:loadedImg.height, src:loadedImg}); // これで。
+  _node.registTexture("rdm", {w:loadedImg.width, h:loadedImg.height, src:loadedImg, sWrap:"repeat"}); // これで。
 
   const gr = createGraphics(256, 256);
   gr.noStroke();
@@ -83,18 +83,19 @@ function draw(){
   p5grUpdate(currentTime); // これもやらないとね。
 
   ex.copyPainter(_node, {src:[
-    {name:"cloud", view:[0,0,0.5,0.5], uvShift:[currentTime/4, currentTime/4]},
-    {name:"rdm", view:[0.5,0,0.5,0.5]},
-    {name:"p5gr", view:[0,0.5,0.5,0.5]},
+    {name:"cloud", view:[0,0,0.5,0.5], uvShift:[currentTime/4, currentTime/4], ambient:[1.0, 0.5, 0.75]},
+    {name:"rdm", view:[0.5,0,0.5,0.5], uvShift:[currentTime/4, -currentTime/4], tint:[1.0, 0.5, 0.2]},
+    //{name:"p5gr", view:[0,0.5,0.5,0.5], gradationFlag:1, gradationStart:[0,0,0,0,0,1], gradationStop:[1,0,0,0,1,1]},
+    {name:"p5gr", view:[0,0.5,0.5,0.5], gradationFlag:2, gradationStart:[0.5,0.5,1,1,1,1], gradationStop:[0.5,1,0,0,0,1]},
     {name:"uint8", view:[0.5,0.5,0.5,0.5]},
   ]});
-  ex.copyPainter(_node, {blendFunc:{src:"one", dst:"one"}, src:[{name:"cover", view:[0,0,0.5,0.5]}]})
+  //ex.copyPainter(_node, {blendFunc:{src:"one", dst:"one"}, src:[{name:"cover", view:[0,0,0.5,0.5]}]})
   _node.unbind().flush();
 }
 
 function p5grUpdate(currentTime){
   const gr = _node.getTextureSource("p5gr");
-  gr.background(0);
+  gr.clear();
   gr.circle(128 + 128 * Math.sin(currentTime * Math.PI * 0.5), 128, 20);
   _node.updateTexture("p5gr");
 }
