@@ -54,9 +54,7 @@ void main(void){
 
   // Pass varyings to fragment shader
   vViewPosition = viewModelPosition.xyz;
-  vec4 NDcoord = uProjectionMatrix * viewModelPosition; // 正規化デバイス座標
-  NDcoord /= NDcoord.w; // wで割る
-  gl_Position = NDcoord;
+  gl_Position = uProjectionMatrix * viewModelPosition; // 正規化デバイス座標
 
   mat3 normalMatrix; // こうしよう。[0]で列ベクトルにアクセス。
   normalMatrix[0] = uModelViewMatrix[0].xyz;
@@ -291,9 +289,9 @@ void main(){
   vec4 viewModelPosition = uModelViewMatrix * vec4(aPosition, 1.0);
 
   vec4 NDcoord = uProjectionMatrix * viewModelPosition; // 正規化デバイス座標
-  NDcoord /= NDcoord.w; // wで割る
-  gl_Position = NDcoord;
+  gl_Position = NDcoord; // 送る方はwで割らない方がいい。おそらく精度の問題。
 
+  NDcoord /= NDcoord.w; // wで割る
   vDepth = 0.5 + 0.5 * NDcoord.z; // 深度値
 }
 `;
@@ -327,15 +325,12 @@ uniform mat4 uLightVPMatrix;
 out vec3 vNDC;
 void main(){
   vec4 modelPosition = uModelMatrix * vec4(aPosition, 1.0);
-  //vModelPosition = modelPosition;
   vec4 viewModelPosition = uViewMatrix * modelPosition;
+  gl_Position = uProjectionMatrix * viewModelPosition; // 正規化デバイス座標
 
-  vec4 NDcoord = uProjectionMatrix * viewModelPosition; // 正規化デバイス座標
-  NDcoord /= NDcoord.w; // wで割る
-  gl_Position = NDcoord;
-
+  // 光源（平行投影）から見た正規化デバイス座標の計算
   vec4 NDC = uLightVPMatrix * modelPosition;
-  NDC /= NDC.w;
+  NDC /= NDC.w; // こっちはwで割る。
   vNDC = 0.5 + 0.5 * NDC.xyz;
 }
 `;
@@ -344,19 +339,12 @@ void main(){
 const maskFrag =
 `#version 300 es
 precision highp float;
-//uniform mat4 uLightVPMatrix; // まとめちゃえ。
 uniform sampler2D uDepthMap; // あー、改名しないと。
-//in vec4 vModelPosition;
 in vec3 vNDC;
 out float mask;
 void main(){
-  //vec4 NDcoord = uLightVPMatrix * vModelPosition;
-  //NDcoord /= NDcoord.w;
-  // このときの...
-  //float localDepth = 0.5 + 0.5 * NDcoord.z;
   float localDepth = vNDC.z;
-  vec2 p = vNDC.xy;
-  float correctDepth = texture(uDepthMap, p).r;
+  float correctDepth = texture(uDepthMap, vNDC.xy).r;
   if(localDepth < correctDepth){
     mask = 1.0;
   }else{
@@ -462,7 +450,7 @@ function registPlane(node){
   const p3 = [1, 1, 0];
   const positions = [p0, p1, p2, p3].flat();
   const uvs = [0, 1, 1, 1, 0, 0, 1, 0];
-  const faces = [0, 1, 2, 2, 1, 3];
+  const faces = [0, 1, 3, 0, 3, 2];
   const normals = [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1];
   node.registFigure("plane", [
     {name:"aPosition", size:3, data:positions},
@@ -557,7 +545,9 @@ function paint(node, r, g, b){
 
 function renderTorus(node, tf, cam, flags = {}){
   tf.initialize()
-    .translate(0, 3*sin(frameCount*TAU/360), 2);
+    .translate(3*cos(frameCount*TAU/170), 3*sin(frameCount*TAU/230), 2)
+    .rotateX(Math.PI*frameCount/120)
+    .rotateY(Math.PI*frameCount/180);
   setModelView(node, tf, cam, flags);
   node.drawElements("triangles");
 }
@@ -582,6 +572,7 @@ function setup(){
   cam0 = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[8, 0, 6], pers:{near:0.1, far:4}});
   // 平行
   cam1 = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[2, 2, 8]});
+  // 投射投影できないとspotLightできないの...また今度...
   cam1.setOrtho({left:-8, right:8, bottom:-6, top:6, near:0.1, far:2});
 
   // shader. lightはいつもの。それとデプス格納、マスク生成、マスク適用、の3つ。最後のはただの乗算...Float32なのでそのままでは無理。
@@ -609,9 +600,10 @@ function setup(){
   console.log(v3.x.toFixed(3), v3.y.toFixed(3), v3.z.toFixed(3));
 
   // 線引いて分けてみた。つまるところ、あの三角形の双方で違う計算がされているようです。
+  // 双方で何らかの値が異なるということ？
   const gr = createGraphics(width, height);
   gr.stroke(0);
-  gr.line(v1.x*width, (1-v1.y)*height, v2.x*width, (1-v2.y)*height);
+  gr.line(v0.x*width, (1-v0.y)*height, v3.x*width, (1-v3.y)*height);
   _node.registTexture("info", {src:gr});
 }
 
@@ -681,13 +673,13 @@ function draw(){
 
   // fragでViewProjectionして正規化デバイス取ってuTexから結果を取って
   // それと深度値も得られるからそれと比較してマスクを作る
+  // ここの計算でgl_Positionを与えるときにwで割ってしまうとバグるので注意！！！（普通しないか）
   _node.drawFigure("torus").bindIBO("torusIBO");
   renderTorus(_node, _tf, cam0, {m:true, mv:false});
   _node.drawFigure("plane").bindIBO("planeIBO");
   renderPlane(_node, _tf, cam0, {m:true, mv:false});
   _node.swapFBO("shadow").unbind();
 
-  // ここ間違ってる？
   ex.copyPainter(_node, {src:{type:"fb", name:"shadow", view:[0,0.5,0.5,0.5]}});
 
   // 最後に結果をまとめる
