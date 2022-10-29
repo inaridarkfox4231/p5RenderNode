@@ -24,6 +24,10 @@
 // それによりおかしなところの値がサンプリングされちゃってるみたいね
 // 詳しくは不明...
 
+// まあそういうこと。
+// gl_Positionでx,y,z,wを送るでしょ、線形補間するでしょ、そのうえでwで割ってると。そういう感じなので、先にwで割っちゃうと
+// wが1の状態で線形補間されちゃうのよね...それはまずいわけです。だからやらないで、ね？
+
 // --------------------------------------------- global ----------------------------------------------- //
 const ex = p5wgex;
 let _node;
@@ -284,15 +288,16 @@ const calcDepthVert =
 in vec3 aPosition;
 uniform mat4 uModelViewMatrix;
 uniform mat4 uProjectionMatrix;
-out float vDepth;
+out vec4 vNDC;
 void main(){
   vec4 viewModelPosition = uModelViewMatrix * vec4(aPosition, 1.0);
 
   vec4 NDcoord = uProjectionMatrix * viewModelPosition; // 正規化デバイス座標
-  gl_Position = NDcoord; // 送る方はwで割らない方がいい。おそらく精度の問題。
+  gl_Position = NDcoord; // 送る方はwで割らないでください。きちんと補間されないので。
 
-  NDcoord /= NDcoord.w; // wで割る
-  vDepth = 0.5 + 0.5 * NDcoord.z; // 深度値
+  vNDC = NDcoord;
+  //NDcoord /= NDcoord.w; // wで割る
+  //vDepth = 0.5 + 0.5 * NDcoord.z; // 深度値
 }
 `;
 
@@ -302,10 +307,13 @@ const calcDepthFrag =
 `#version 300 es
 precision highp float;
 const float bias = 0.001;
-in float vDepth;
-out float fragDepth;
+//in float vDepth;
+in vec4 vNDC;
+out float depth;
 void main(){
-  fragDepth = vDepth + bias; // ちょっと大きくすることで判定を助ける
+  float d = vNDC.z / vNDC.w;
+  d = 0.5*(d + 1.0);
+  depth = d + bias; // ちょっと大きくすることで判定を助ける
 }
 `;
 
@@ -315,6 +323,7 @@ void main(){
 // MVP変換の方が大きければ係数は0.5とか0.6にする。
 
 // Modelまでは共通で、View以降が異なるので、Viewだけ渡す感じ。
+// ていうか、MVPを2種類渡すだけでいいんじゃないかな。
 const maskVert =
 `#version 300 es
 in vec3 aPosition;
@@ -322,16 +331,14 @@ uniform mat4 uModelMatrix;
 uniform mat4 uViewMatrix;
 uniform mat4 uProjectionMatrix;
 uniform mat4 uLightVPMatrix;
-out vec3 vNDC;
+out vec4 vNDC;
 void main(){
   vec4 modelPosition = uModelMatrix * vec4(aPosition, 1.0);
   vec4 viewModelPosition = uViewMatrix * modelPosition;
   gl_Position = uProjectionMatrix * viewModelPosition; // 正規化デバイス座標
 
-  // 光源（平行投影）から見た正規化デバイス座標の計算
-  vec4 NDC = uLightVPMatrix * modelPosition;
-  NDC /= NDC.w; // こっちはwで割る。
-  vNDC = 0.5 + 0.5 * NDC.xyz;
+  // NDCはそのまま送る。
+  vNDC = uLightVPMatrix * modelPosition;
 }
 `;
 
@@ -340,11 +347,13 @@ const maskFrag =
 `#version 300 es
 precision highp float;
 uniform sampler2D uDepthMap; // あー、改名しないと。
-in vec3 vNDC;
+in vec4 vNDC;
 out float mask;
 void main(){
-  float localDepth = vNDC.z;
-  float correctDepth = texture(uDepthMap, vNDC.xy).r;
+  vec3 ndc = vNDC.xyz / vNDC.w;
+  ndc = 0.5*(ndc + 1.0);
+  float localDepth = ndc.z;
+  float correctDepth = texture(uDepthMap, ndc.xy).r;
   if(localDepth < correctDepth){
     mask = 1.0;
   }else{
@@ -373,6 +382,7 @@ uniform sampler2D uShadow;
 out vec4 fragColor;
 void main(){
   vec4 color = texture(uBase, vUv);
+  if(color.a < 0.001){ discard; }
   float shadow = texture(uShadow, vUv).r;
   fragColor = color * vec4(vec3(shadow), 1.0); // おわり。
 }
@@ -574,6 +584,7 @@ function setup(){
   cam1 = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[2, 2, 8]});
   // 投射投影できないとspotLightできないの...また今度...
   cam1.setOrtho({left:-8, right:8, bottom:-6, top:6, near:0.1, far:2});
+  //cam1.setPers({fov:Math.PI/3, aspect:1, near:0.1, far:2}); cam1.setView({eye:[2, 2, 12]});
 
   // shader. lightはいつもの。それとデプス格納、マスク生成、マスク適用、の3つ。最後のはただの乗算...Float32なのでそのままでは無理。
   _node.registPainter("light", lightVert, lightFrag);
@@ -588,29 +599,13 @@ function setup(){
   const {w, h} = _node.getDrawingBufferSize(null);
   _node.registFBO("base", {w:w, h:h, color:{info:{}}}); // ここに描き込む。
   _node.registDoubleFBO("shadow", {w:w, h:h, color:{info:{type:"float", internalFormat:"r32f", format:"red", magFilter:"nearest"}}});
-
-  // ちょっとテスト
-  const v0 = cam0.getNDC(new ex.Vec3(-4, -4, 0)).mult(0.5).add(0.5);
-  console.log(v0.x.toFixed(3), v0.y.toFixed(3), v0.z.toFixed(3));
-  const v1 = cam0.getNDC(new ex.Vec3(4, -4, 0)).mult(0.5).add(0.5);
-  console.log(v1.x.toFixed(3), v1.y.toFixed(3), v1.z.toFixed(3));
-  const v2 = cam0.getNDC(new ex.Vec3(-4, 4, 0)).mult(0.5).add(0.5);
-  console.log(v2.x.toFixed(3), v2.y.toFixed(3), v2.z.toFixed(3));
-  const v3 = cam0.getNDC(new ex.Vec3(4, 4, 0)).mult(0.5).add(0.5);
-  console.log(v3.x.toFixed(3), v3.y.toFixed(3), v3.z.toFixed(3));
-
-  // 線引いて分けてみた。つまるところ、あの三角形の双方で違う計算がされているようです。
-  // 双方で何らかの値が異なるということ？
-  const gr = createGraphics(width, height);
-  gr.stroke(0);
-  gr.line(v0.x*width, (1-v0.y)*height, v3.x*width, (1-v3.y)*height);
-  _node.registTexture("info", {src:gr});
 }
 
 function draw(){
+  _node.clearColor(0.1, 0.2, 0.3, 1).clear();
   // さてと。とりあえず普通にいつものライティング。とりあえず今回は平行光オンリーでいく。
-  _node.bindFBO("base")
-       .clearColor(0,0,0,1).clear();
+  _node.bindFBO("base").clearColor(0,0,0,0).clear();
+
   _node.usePainter("light");
 
   // 射影の用意
@@ -641,7 +636,6 @@ function draw(){
   _node.unbind();
 
   ex.copyPainter(_node, {src:{type:"fb", name:"base", view:[0,0,0.5,0.5]}});
-
 
   // さてお待ちかね。
   _node.bindFBO("shadow");
@@ -692,7 +686,5 @@ function draw(){
   _node.drawArrays("triangle_strip")
   _node.unbind();
 
-  ex.copyPainter(_node, {src:{name:"info", view:[0.5, 0.5, 0.5, 0.5]}});
-
-  _node.unbind().flush();
+  _node.flush();
 }
