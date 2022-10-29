@@ -1,77 +1,37 @@
-// depthをテクスチャとして設定して通常の計算方法と比較
-// 何が入ってるのか見たい
-// 急遽予定変更でlil.guiに慣れたいです
-// 最終的にメソッド化して道具にする
-// てか両方でいいのでは？
+// モチベ死んだ
+// 仕方ないから普通にカメラ2つ用意して2画面。単色トーラス。おわり。
 
-// 何かめんどくさくなってきたな...
-// どうもdepth textureめんどくさいようなので保留。
+// 平面に影落としてみる？
 
-// lil.guiに慣れよう！！というわけで。
-// ライティングにlilを組み合わせてトーラスで実験するか。よし。（結局、そうなる...）
+// Float32のダブルフレームバッファで
+// 一つ目に別のカメラの平行投影で深度値を書き込んで
+// それをちょっと大きくしておく（奥に寄せる）
+// 次にひっくり返してさっきのreadを読み込むんだけど
+// 今度は本来のカメラで写すのだ
+// そんで中でグローバル座標を射影変換して正規化デバイスの方でreadから読み込んだ深度値とその変換で得られる深度値を比べて
+// 変換で出した方が小さければフラグ1を立てる、でなければ0を立てる。
+// もしくは係数をそのまま出力してもいい。要するに小さければ例えばだけど0.5とかそういう係数、でなければ等倍の意味で1を立てる。
+// あとは通常のレンダリング結果をフレームバッファに落としておいてそれと組み合わせてポストエフェクトの要領で係数を掛ける。
+// こうすることでフォワードレンダリングのパイプラインと影計算を切り離すことができる
+// ただし平行光と影計算用のカメラを同期させる必要はあるけどね
 
-// lilってどうやって作るんだろうね...
+// 20221029
+// 謎の出っ張りが...
+// どうも正しい影と間違った影が混在してるっぽいね。なぜか？知らん。
+// ortho→persにしても生じるので
+// maskのところで致命的なミスをしている
+// 具体的には平面上の点に対してNDCを計算する際に計算位置によってちょっとバラつきかなんかが発生してて
+// それによりおかしなところの値がサンプリングされちゃってるみたいね
+// 詳しくは不明...
 
-// lil.GUIです。まあこんなもんか。
-// いいね。文字列の場合は配列でやるとそのまま選択肢になるわけね。便利！
-// 色関連でオブジェクトで渡すとちゃんとオブジェクトで取得できるのもいいね。
-
-// しかも：https://openprocessing.org/sketch/1634150
-// datのときの「セレクトボックスから整数を取得して===で判定するとエラーになる問題」が解消されてる！
-// こりゃもうdat捨ててlil一択だわね...まあ、更新が止まるってそういうことなのよね。
-
-// pauseできました。onChangeイベントはクリックすると関数が発動、その関数は変化した後の値を引数に取れるという。
-// onFinishChangeはフォーカスを外れてから発動する、微妙に違うらしい。OK.
-
+// --------------------------------------------- global ----------------------------------------------- //
 const ex = p5wgex;
 let _node;
-const _tf = new ex.TransformEx();
-let _cam;
 const _timer = new ex.Timer();
-let cloudImg; // シームレス雲
+let cam0, cam1;
+let _tf = new ex.TransformEx();
 
-// 何を変える？んー...別にないけど...あー、テクスチャの種類を変えるとか？
-// とりあえずスポットライトとかそこら辺使うか使わないか的なの。
-const config = {
-  useDirectionalLight:true,
-  usePointLight:true,
-  useSpotLight:true,
-  shininess:40,
-  specular:true,
-  torusColor: {r:0.3, g:0.7, b:0.4}, // 単色トーラスの色
-  xCoord:0, // トーラスの位置(-3～3)
-  yCoord:0, // (-3～3)
-  zCoord:1.5, // (-3～3)
-  textureType: "cloud",
-  text:"hello lil.gui!",
-  textSize:24, // 16～48
-  gradationStopColor: {r:0, g:0, b:1}, // オブジェクト形式で渡すとそれに応じた形で取得できるみたいなのです
-  pause:false,
-}
-
-// lil使ってみよう。
-// 関数でslot0を止めてみる。
-function createGUI(){
-  const gui = new lil.GUI();
-  // 手始めに
-  gui.add(config, "useDirectionalLight").name("directionalLight");
-  gui.add(config, "usePointLight").name("pointLight");
-  gui.add(config, "useSpotLight").name("spotLight");
-  gui.add(config, "shininess", 10, 50, 1);
-  gui.add(config, "specular").name("specular");
-  gui.addColor(config, "torusColor");
-  gui.add(config, "xCoord", -4, 4, 0.01).name("x");
-  gui.add(config, "yCoord", -4, 4, 0.01).name("y");
-  gui.add(config, "zCoord", -4, 4, 0.01).name("z");
-  gui.add(config, "textureType", ["cloud", "check", "circles"]);
-  gui.add(config, "text");
-  gui.add(config, "textSize", 16, 48, 1);
-  gui.addColor(config, "gradationStopColor").name("bgColor");
-  gui.add(config, "pause").onChange(value => {
-    if(value){ _timer.pause("slot0"); }else{ _timer.reStart("slot0"); }
-  });
-}
-
+// ----------------------------------------------- light ------------------------------------------------ //
 const lightVert =
 `#version 300 es
 in vec3 aPosition;
@@ -315,145 +275,125 @@ void main(void){
 }
 `;
 
-function preload(){
-  cloudImg = loadImage("https://inaridarkfox4231.github.io/assets/texture/cloud.png");
+// 影関連のシェーダの仕事
+// 1. 別のカメラで深度値を調べてちょっと大きくしてFloat32に格納（0～1）
+// 2. 元のカメラで深度値を調べてさっきのと比べて大きかったら0～1の影係数を格納、小さかったら1を格納
+// 3. こうしてできる影マスクを上記のライティングの結果に乗算。おわり。
+
+// cam1のモデルビューと射影から深さを計算して格納
+const calcDepthVert =
+`#version 300 es
+in vec3 aPosition;
+uniform mat4 uModelViewMatrix;
+uniform mat4 uProjectionMatrix;
+out float vDepth;
+void main(){
+  vec4 viewModelPosition = uModelViewMatrix * vec4(aPosition, 1.0);
+
+  vec4 NDcoord = uProjectionMatrix * viewModelPosition; // 正規化デバイス座標
+  NDcoord /= NDcoord.w; // wで割る
+  gl_Position = NDcoord;
+
+  vDepth = 0.5 + 0.5 * NDcoord.z; // 深度値
 }
+`;
 
-function setup(){
-  _timer.initialize("slot0");
-  createCanvas(800, 640, WEBGL);
-  _node = new ex.RenderNode(this._renderer.GL);
-  // z軸上向きが天井、x=10, z=5が視点。中心向き。
-  _cam = new ex.CameraEx({
-    w:10, h:8, top:[0, 0, 1], eye:[6, 0, 4]
-  });
-  _node.registPainter("light", lightVert, lightFrag);
-  registMesh(_node);
-
-  // 雲画像を登録
-  _node.registTexture("cloud", {src:cloudImg});
-
-  // チェック画像を登録
-  _node.registTexture("check", {src:(function(){
-    const gr = createGraphics(512, 512);
-    gr.noStroke();
-    for(let y=0; y<16; y++){
-      for(let x=0; x<16; x++){
-        gr.fill(255*((x+y)%2));
-        gr.rect(x*32, y*32, 32);
-      }
-    }
-    return gr;
-  })()});
-
-  // もうちょっと
-  _node.registTexture("circles", {src:(function(){
-    const gr = createGraphics(512, 512);
-    gr.background(0);
-    gr.blendMode(ADD);
-    gr.fill(32);
-    for(let i=0; i<128; i++){
-      const x = Math.random()*512;
-      const y = Math.random()*512;
-      for(let i=-1; i<2; i++){
-        for(let k=-1; k<2; k++){
-          gr.circle(x+512*i, y+512*k, 32);
-        }
-      }
-    }
-    return gr;
-  })()});
-
-  // あとはbgですかね
-  _node.registTexture("bg", {src:(function(){
-    const gr = createGraphics(width, height);
-    return gr;
-  })()});
-
-  createGUI();
+// シャドウマッピングの記事：http://www.opengl-tutorial.org/jp/intermediate-tutorials/tutorial-16-shadow-mapping/
+// にbiasって書いてあったので名前を借用した。
+const calcDepthFrag =
+`#version 300 es
+precision highp float;
+const float bias = 0.001;
+in float vDepth;
+out float fragDepth;
+void main(){
+  fragDepth = vDepth + bias; // ちょっと大きくすることで判定を助ける
 }
+`;
 
-// --------------------------------------------------------------------------------------------
+// cam0のMVP変換でラスタライズするところまでは同じ、そのあとfragでcam1のMVP変換を行い
+// 読み込んだ先程のdepthMapに正規化デバイス座標でアクセスしてdepthを取得、
+// 一方でMVP変換の結果も用意して両者を比較する、MVP変換の方が小さければ係数1.
+// MVP変換の方が大きければ係数は0.5とか0.6にする。
 
-function draw(){
-  // lighting周りをconfigしたい...
-  _node.bindFBO(null);
+// Modelまでは共通で、View以降が異なるので、Viewだけ渡す感じ。
+const maskVert =
+`#version 300 es
+in vec3 aPosition;
+uniform mat4 uModelMatrix;
+uniform mat4 uViewMatrix;
+uniform mat4 uProjectionMatrix;
+uniform mat4 uLightVPMatrix;
+out vec3 vNDC;
+void main(){
+  vec4 modelPosition = uModelMatrix * vec4(aPosition, 1.0);
+  //vModelPosition = modelPosition;
+  vec4 viewModelPosition = uViewMatrix * modelPosition;
 
-  //_node.clearColor(0,0,0,1).clear();
-  // カスタム背景
-  bgUpdate();
-  const stopColor = config.gradationStopColor;
-  ex.copyPainter(_node, {src:{name:"bg",
-    gradationFlag:1, gradationStart:[0.5, 0, 0,0,0,1], gradationStop:[0.5,1, stopColor.r, stopColor.g, stopColor.b,1]}});
+  vec4 NDcoord = uProjectionMatrix * viewModelPosition; // 正規化デバイス座標
+  NDcoord /= NDcoord.w; // wで割る
+  gl_Position = NDcoord;
 
-  _node.usePainter("light");
-
-  // 射影
-  const projMat = _cam.getProjMat().m;
-  _node.setUniform("uProjectionMatrix", projMat);
-
-  // 環境光
-  setLight(_node, {shininess:config.shininess, useSpecular:config.specular});
-  const {front} = _cam.getLocalAxes(); // frontから視線方向に光を当てる。
-  const {eye} = _cam.getViewData();
-
-  // 平行光
-  if(config.useDirectionalLight){
-    setDirectionalLight(_node, {
-      count:2,
-      direction:[-front.x, -front.y, -front.z, 0, 0, -1],
-      diffuseColor:[1, 1, 1, 1, 1, 1],
-      specularColor:[0.5,1,1, 1, 0.5, 1]
-    });
-  }else{
-    setDirectionalLight(_node, {count:0});
-  }
-
-  // 点光源
-  if(config.usePointLight){
-    setPointLight(_node, {
-      count:2,
-      location:[0,0,1.5, 3, 0, 1.5],
-      diffuseColor:[1,1,1,1,1,1],
-      specularColor:[1, 0.5, 1,1,0.5,1]
-    });
-  }else{
-    setPointLight(_node, {count:0});
-  }
-
-  // 照射光
-  if(config.useSpotLight){
-    setSpotLight(_node, {
-      count:1,
-      location:[eye.x*2, eye.y*2, eye.z*2],
-      direction:[-front.x, -front.y, -front.z],
-      angle:[Math.PI/3],
-      conc:[20],
-      diffuseColor:[0.5, 1, 0.5],
-      specularColor:[0.75, 1, 0.75]
-    });
-  }else{
-    setSpotLight(_node, {count:0});
-  }
-
-  // 彩色方法指定（0:頂点色、1:単色、2:UV着色）UVはシームレスクラウドをpreloadで取得して使う。
-
-  // enableAttr
-  _node.drawFigure("torus").bindIBO("torusIBO");
-
-  // あとはtfとcameraを登録していつものようにドローコール
-  // renderTorus
-  renderTorus0(_node, _tf, _cam, 0, -2, -1); // 頂点色用
-  const torusColor = config.torusColor;
-  renderTorus1(_node, _tf, _cam, 0, 2, -1, torusColor.r, torusColor.g, torusColor.b); // 単色用
-  const pos = {x:config.xCoord, y:config.yCoord, z:config.zCoord};
-  renderTorus2(_node, _tf, _cam, pos.x, pos.y, pos.z); // UV用
+  vec4 NDC = uLightVPMatrix * modelPosition;
+  NDC /= NDC.w;
+  vNDC = 0.5 + 0.5 * NDC.xyz;
 }
+`;
 
-// ------------------------------------------------------------------------------------------------------------------------------- //
-// mesh. いい加減メソッド化して隠蔽したいね。UV付けるか～色も？今回はいろいろいじるからね...
+// 1を付けて区別しないとエラーになる
+const maskFrag =
+`#version 300 es
+precision highp float;
+//uniform mat4 uLightVPMatrix; // まとめちゃえ。
+uniform sampler2D uDepthMap; // あー、改名しないと。
+//in vec4 vModelPosition;
+in vec3 vNDC;
+out float mask;
+void main(){
+  //vec4 NDcoord = uLightVPMatrix * vModelPosition;
+  //NDcoord /= NDcoord.w;
+  // このときの...
+  //float localDepth = 0.5 + 0.5 * NDcoord.z;
+  float localDepth = vNDC.z;
+  vec2 p = vNDC.xy;
+  float correctDepth = texture(uDepthMap, p).r;
+  if(localDepth < correctDepth){
+    mask = 1.0;
+  }else{
+    mask = 0.65;
+  }
+}
+`;
 
-function registMesh(node){
+// fragにdepthの結果を乗算するだけ
+const shadowVert =
+`#version 300 es
+in vec2 aPosition;
+out vec2 vUv;
+void main(){
+  vUv = 0.5 + 0.5 * aPosition;
+  gl_Position = vec4(aPosition, 0.0, 1.0);
+}
+`;
+
+const shadowFrag =
+`#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uBase;
+uniform sampler2D uShadow;
+out vec4 fragColor;
+void main(){
+  vec4 color = texture(uBase, vUv);
+  float shadow = texture(uShadow, vUv).r;
+  fragColor = color * vec4(vec3(shadow), 1.0); // おわり。
+}
+`;
+
+// ------------------------------------------------------ mesh ---------------------------------------------------------------- //
+// いい加減メソッド化して隠蔽したいね。UV付けるか～色も？今回はいろいろいじるからね...
+
+function registTorus(node){
   // 今回はトーラスで。紙の上で計算してるけどロジックは難しくないのよ。
   const a = 1.0;
   const b = 0.4;
@@ -514,8 +454,26 @@ function registMesh(node){
   node.registIBO("torusIBO", {data:torusFaces});
 }
 
-// ------------------------------------------------------------------------------------------------------------------------------- //
-// light.
+// 雑。
+function registPlane(node){
+  const p0 = [-1, -1, 0];
+  const p1 = [1, -1, 0];
+  const p2 = [-1, 1, 0];
+  const p3 = [1, 1, 0];
+  const positions = [p0, p1, p2, p3].flat();
+  const uvs = [0, 1, 1, 1, 0, 0, 1, 0];
+  const faces = [0, 1, 2, 2, 1, 3];
+  const normals = [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1];
+  node.registFigure("plane", [
+    {name:"aPosition", size:3, data:positions},
+    {name:"aNormal", size:3, data:normals},
+    {name:"aTexCoord", size:2, data:uvs}
+  ]);
+  node.registIBO("planeIBO", {data:faces});
+}
+
+// --------------------------------------------------- lightconfig ------------------------------------------------------------- //
+
 
 // 環境光などの基本的なセッティング
 function setLight(node, info = {}){
@@ -578,64 +536,171 @@ function setSpotLight(node, info = {}){
   node.setUniform("uSpotLightSpecularColor", info.specularColor);
 }
 
-// ------------------------------------------------------------------------------------------------------------------- //
-// renderModel.
-
+// ------------------------------------------------- set View ------------------------------------------- //
 // 行列関連はまとめとこうか
-function setModelView(node, tf, cam){
+function setModelView(node, tf, cam, flags = {}){
+  if(flags.m === undefined){ flags.mo = false; }
+  if(flags.v === undefined){ flags.v = true; }
+  if(flags.mv === undefined){ flags.mv = true; }
   const modelMat = tf.getModelMat().m;
   const viewMat = cam.getViewMat().m;
   const modelViewMat = ex.getMult4x4(modelMat, viewMat);
-  node.setUniform("uViewMatrix", viewMat);
-  node.setUniform("uModelViewMatrix", modelViewMat);
+  if(flags.m){ node.setUniform("uModelMatrix", modelMat); }
+  if(flags.v){ node.setUniform("uViewMatrix", viewMat); }
+  if(flags.mv){ node.setUniform("uModelViewMatrix", modelViewMat); }
 }
 
-// 0は頂点色という意味...単色とUVも作るつもり。
-function renderTorus0(node, tf, cam, x, y, z){
-  const currentTime = _timer.getDelta("slot0");
-  tf.initialize().translate(x, y, z)
-    .rotateZ(0.3)
-    .rotateY(currentTime*Math.PI*0.5)
-    .rotateX(currentTime*Math.PI);
-  setModelView(node, tf, cam);
-  node.setUniform("uUseColorFlag", 0);
+// 色とかは切り離すべきよね。関係ないし。
+function paint(node, r, g, b){
+  node.setUniform("uUseColorFlag", 1).setUniform("uMonoColor", [r, g, b]);
+}
+
+function renderTorus(node, tf, cam, flags = {}){
+  tf.initialize()
+    .translate(0, 3*sin(frameCount*TAU/360), 2);
+  setModelView(node, tf, cam, flags);
   node.drawElements("triangles");
 }
 
-// 1は単色
-function renderTorus1(node, tf, cam, x, y, z, r, g, b){
-  const currentTime = _timer.getDelta("slot0");
-  tf.initialize().translate(x, y, z)
-    .rotateZ(0.3)
-    .rotateY(currentTime*Math.PI*0.5)
-    .rotateX(currentTime*Math.PI);
-  setModelView(node, tf, cam);
-  node.setUniform("uMonoColor", [r, g, b]);
-  node.setUniform("uUseColorFlag", 1);
+function renderPlane(node, tf, cam, flags = {}){
+  tf.initialize()
+    .translate(0, 0, 0)
+    .scale(4, 4, 1);
+  setModelView(node, tf, cam, flags);
   node.drawElements("triangles");
 }
 
-// 2はUV
-function renderTorus2(node, tf, cam, x, y, z){
-  const currentTime = _timer.getDelta("slot0");
-  tf.initialize().translate(x, y, z)
-    .rotateZ(0.3)
-    .rotateY(currentTime*Math.PI*0.5)
-    .rotateX(currentTime*Math.PI);
-  setModelView(node, tf, cam);
-  node.setUniform("uUseColorFlag", 2);
-  node.setTexture2D("uTex", config.textureType);
-  node.setUniform("uTint", [1.3, 1.0, 0.7]);
-  node.drawElements("triangles");
+// ---main--- //
+
+// 白い面と青いトーラス
+function setup(){
+  _timer.initialize("slot0");
+  createCanvas(800, 600, WEBGL);
+  _node = new ex.RenderNode(this._renderer.GL);
+
+  // 透視
+  cam0 = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[8, 0, 6], pers:{near:0.1, far:4}});
+  // 平行
+  cam1 = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[2, 2, 8]});
+  cam1.setOrtho({left:-8, right:8, bottom:-6, top:6, near:0.1, far:2});
+
+  // shader. lightはいつもの。それとデプス格納、マスク生成、マスク適用、の3つ。最後のはただの乗算...Float32なのでそのままでは無理。
+  _node.registPainter("light", lightVert, lightFrag);
+  _node.registPainter("calcDepth", calcDepthVert, calcDepthFrag);
+  _node.registPainter("generateDepthMask", maskVert, maskFrag);
+  _node.registPainter("applyShadow", shadowVert, shadowFrag);
+
+  registPlane(_node);
+  registTorus(_node);
+
+  // ここにcam1で深度値を...加えてそのあと比較して乗算値を...
+  const {w, h} = _node.getDrawingBufferSize(null);
+  _node.registFBO("base", {w:w, h:h, color:{info:{}}}); // ここに描き込む。
+  _node.registDoubleFBO("shadow", {w:w, h:h, color:{info:{type:"float", internalFormat:"r32f", format:"red", magFilter:"nearest"}}});
+
+  // ちょっとテスト
+  const v0 = cam0.getNDC(new ex.Vec3(-4, -4, 0)).mult(0.5).add(0.5);
+  console.log(v0.x.toFixed(3), v0.y.toFixed(3), v0.z.toFixed(3));
+  const v1 = cam0.getNDC(new ex.Vec3(4, -4, 0)).mult(0.5).add(0.5);
+  console.log(v1.x.toFixed(3), v1.y.toFixed(3), v1.z.toFixed(3));
+  const v2 = cam0.getNDC(new ex.Vec3(-4, 4, 0)).mult(0.5).add(0.5);
+  console.log(v2.x.toFixed(3), v2.y.toFixed(3), v2.z.toFixed(3));
+  const v3 = cam0.getNDC(new ex.Vec3(4, 4, 0)).mult(0.5).add(0.5);
+  console.log(v3.x.toFixed(3), v3.y.toFixed(3), v3.z.toFixed(3));
+
+  // 線引いて分けてみた。つまるところ、あの三角形の双方で違う計算がされているようです。
+  const gr = createGraphics(width, height);
+  gr.stroke(0);
+  gr.line(v1.x*width, (1-v1.y)*height, v2.x*width, (1-v2.y)*height);
+  _node.registTexture("info", {src:gr});
 }
 
-function bgUpdate(){
-  const gr = _node.getTextureSource("bg");
-  gr.clear();
-  gr.fill(255);
-  gr.noStroke();
-  gr.textSize(config.textSize);
-  gr.textAlign(CENTER, CENTER);
-  gr.text(config.text, width/2, height*7/8);
-  _node.updateTexture("bg");
+function draw(){
+  // さてと。とりあえず普通にいつものライティング。とりあえず今回は平行光オンリーでいく。
+  _node.bindFBO("base")
+       .clearColor(0,0,0,1).clear();
+  _node.usePainter("light");
+
+  // 射影の用意
+  const projMat0 = cam0.getProjMat().m;
+  const projMat1 = cam1.getProjMat().m;
+
+  // 射影(cam0)
+  _node.setUniform("uProjectionMatrix", projMat0);
+
+  // 環境光
+  setLight(_node, {useSpecular:true});
+
+  // 平行光
+  setDirectionalLight(_node, {
+    count:1,
+    direction:[-2, -2, -8], // cam1に合わせる
+    diffuseColor:[1, 1, 1],
+    specularColor:[0.5,1,1]
+  });
+
+  _node.drawFigure("torus").bindIBO("torusIBO");
+  paint(_node, 0.2, 0.5, 0.8);
+  renderTorus(_node, _tf, cam0);
+  _node.drawFigure("plane").bindIBO("planeIBO");
+  paint(_node, 1, 1, 1);
+  renderPlane(_node, _tf, cam0);
+
+  _node.unbind();
+
+  ex.copyPainter(_node, {src:{type:"fb", name:"base", view:[0,0,0.5,0.5]}});
+
+
+  // さてお待ちかね。
+  _node.bindFBO("shadow");
+  _node.clearColor(0,0,0,0).clear();
+  _node.usePainter("calcDepth");
+
+  // 射影(cam1)
+  _node.setUniform("uProjectionMatrix", projMat1);
+  // 深度値を書き込む（ちょっと大きくする）
+  _node.drawFigure("torus").bindIBO("torusIBO");
+  renderTorus(_node, _tf, cam1, {v:false});
+  _node.drawFigure("plane").bindIBO("planeIBO");
+  renderPlane(_node, _tf, cam1, {v:false});
+  _node.swapFBO("shadow").unbind();
+
+  ex.copyPainter(_node, {src:{type:"fb", name:"shadow", view:[0.5,0,0.5,0.5]}});
+
+  // 次にcam0でレンダリング、ただしさっきの...を使う。
+  _node.bindFBO("shadow");
+  _node.clearColor(0,0,0,0).clear();
+  _node.usePainter("generateDepthMask");
+  _node.setFBOtexture2D("uDepthMap", "shadow"); // さっきの結果をここで読み込んで
+
+  // 射影(cam0)
+  _node.setUniform("uProjectionMatrix", projMat0);
+  const viewMat1 = cam1.getViewMat().m;
+  const lightVPMat = ex.getMult4x4(viewMat1, projMat1); // ビュープロジェだけ違うのを使う、フラグで。
+  _node.setUniform("uLightVPMatrix", lightVPMat);
+
+  // fragでViewProjectionして正規化デバイス取ってuTexから結果を取って
+  // それと深度値も得られるからそれと比較してマスクを作る
+  _node.drawFigure("torus").bindIBO("torusIBO");
+  renderTorus(_node, _tf, cam0, {m:true, mv:false});
+  _node.drawFigure("plane").bindIBO("planeIBO");
+  renderPlane(_node, _tf, cam0, {m:true, mv:false});
+  _node.swapFBO("shadow").unbind();
+
+  // ここ間違ってる？
+  ex.copyPainter(_node, {src:{type:"fb", name:"shadow", view:[0,0.5,0.5,0.5]}});
+
+  // 最後に結果をまとめる
+  _node.bindFBO(null);
+  _node.setViewport(0.5, 0.5, 0.5, 0.5);
+  _node.usePainter("applyShadow");
+  _node.setFBOtexture2D("uBase", "base");
+  _node.setFBOtexture2D("uShadow", "shadow");
+  _node.drawFigure("foxBoard");
+  _node.drawArrays("triangle_strip")
+  _node.unbind();
+
+  ex.copyPainter(_node, {src:{name:"info", view:[0.5, 0.5, 0.5, 0.5]}});
+
+  _node.unbind().flush();
 }

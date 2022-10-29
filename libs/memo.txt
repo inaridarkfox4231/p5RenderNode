@@ -1078,3 +1078,9 @@ float depthToZ(float depth) {
 // 60のところで10を40に更新しないと正しい値である40にならない。70になってしまう。OK! なんとかするわ。
 
 // pauseとstart. lastPause. これでいこう。
+// pauseとreStart実装、重ね掛けも回避、onChangeまでテスト完了。
+
+// copyPainter最後の仕様変更。uvに掛け算を許す。これが無いと片手落ち。
+// そして20221029.
+
+// copyPainterをdoubleに適用する際の「常にswap」は取り消し。
