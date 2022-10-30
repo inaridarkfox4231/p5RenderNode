@@ -11,6 +11,9 @@
 
 // というわけでここではピッキングの練習をします。OK.
 
+// 20221030
+// VSでwで割るのは辞めてください（修正）
+
 const ex = p5wgex;
 let _node;
 let _cam;
@@ -63,9 +66,7 @@ void main(void){
 
   // Pass varyings to fragment shader
   vViewPosition = viewModelPosition.xyz;
-  vec4 NDcoord = uProjectionMatrix * viewModelPosition; // 正規化デバイス座標
-  NDcoord /= NDcoord.w; // wで割る
-  gl_Position = NDcoord;
+  gl_Position = uProjectionMatrix * viewModelPosition; // 正規化デバイス座標
 
   mat3 normalMatrix; // こうしよう。[0]で列ベクトルにアクセス。
   normalMatrix[0] = uModelViewMatrix[0].xyz;

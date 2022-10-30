@@ -19,6 +19,9 @@
 // 20221027
 // view指定の方法が配列OKになったのでちょこっと書き換え
 
+// 20221030
+// vsでdepth計算しないでください。
+
 const ex = p5wgex;
 let _node;
 let cam;
@@ -49,7 +52,7 @@ out vec3 vNormal;
 out vec3 vViewPosition;
 out vec2 vTexCoord;
 
-out float vDepth;
+out vec4 vNDC;
 
 void main(void){
   // 場合によってはaPositionをいじる（頂点位置）
@@ -59,8 +62,8 @@ void main(void){
   // Pass varyings to fragment shader
   vViewPosition = viewModelPosition.xyz;
   vec4 NDcoord = uProjectionMatrix * viewModelPosition; // 正規化デバイス座標
-  NDcoord /= NDcoord.w; // wで割る
   gl_Position = NDcoord;
+  vNDC = NDcoord; // depthはfsで。
 
   mat3 normalMatrix; // こうしよう。[0]で列ベクトルにアクセス。
   normalMatrix[0] = uModelViewMatrix[0].xyz;
@@ -71,8 +74,6 @@ void main(void){
   vNormal = normalMatrix * aNormal;
   vVertexColor = aVertexColor;
   vTexCoord = aTexCoord;
-
-  vDepth = 0.5 * (NDcoord.z + 1.0);
 }
 `;
 
@@ -129,7 +130,7 @@ in vec2 vTexCoord; // テクスチャ
 
 // -------------------- その他 -------------------- //
 
-in float vDepth;
+in vec4 vNDC;
 
 layout (location = 0) out vec4 materialColor; // 今回は頂点色
 layout (location = 1) out vec4 normalColor; // 法線
@@ -211,7 +212,8 @@ vec3 totalLight(vec3 modelPosition, vec3 normal, vec3 materialColor){
 void main(void){
 
   normalColor = vec4(vNormal, 1.0);
-  depthColor = vec4(vDepth);
+  float depth = 0.5 * (vNDC.z/vNDC.w) + 0.5;
+  depthColor = vec4(depth);
 
   // 白。デフォルト。
   vec4 col = vec4(1.0);
