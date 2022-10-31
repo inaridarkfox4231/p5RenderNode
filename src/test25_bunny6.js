@@ -195,28 +195,12 @@ uniform mat4 uViewMatrix;
 // 汎用色
 uniform vec3 uAmbientColor;
 uniform float uShininess; // specularに使う、まあこれが大きくないと見栄えが悪いのです。光が集中する。
-uniform vec3 uAttenuation; // デフォルトは1,0,0. pointLightで使う
 
 // directionalLight関連
 uniform int uDirectionalLightCount; // デフォ0なのでフラグ不要
 uniform vec3 uLightingDirection[5];
 uniform vec3 uDirectionalDiffuseColor[5];
 uniform vec3 uDirectionalSpecularColor[5]; // specular用
-
-// pointLight関連
-uniform int uPointLightCount; // これがデフォルトゼロであることによりフラグが不要となる。
-uniform vec3 uPointLightLocation[5];
-uniform vec3 uPointLightDiffuseColor[5];
-uniform vec3 uPointLightSpecularColor[5]; // specular用
-
-// spotLight関連
-uniform int uSpotLightCount; // 0～5
-uniform vec3 uSpotLightDirection[5];
-uniform vec3 uSpotLightLocation[5];
-uniform float uSpotLightAngle[5];
-uniform float uSpotLightConc[5];
-uniform vec3 uSpotLightDiffuseColor[5];
-uniform vec3 uSpotLightSpecularColor[5]; // specular用
 
 // light flag.
 uniform bool uUseSpecular; // デフォルトはfalse;
@@ -253,58 +237,6 @@ void applyDirectionalLight(vec3 direction, vec3 diffuseColor, vec3 specularColor
   }
 }
 
-// PointLight項の計算。attenuationも考慮。
-void applyPointLight(vec3 location, vec3 diffuseColor, vec3 specularColor,
-                     vec3 modelPosition, vec3 normal, out vec3 diffuse, out vec3 specular){
-  vec3 viewDirection = normalize(-modelPosition);
-  vec3 lightPosition = (uViewMatrix * vec4(location, 1.0)).xyz;
-  vec3 lightVector = modelPosition - lightPosition;
-  vec3 lightDir = normalize(lightVector);
-  float lightDistance = length(lightVector);
-  float d = lightDistance;
-  float lightFalloff = 1.0 / dot(uAttenuation, vec3(1.0, d, d*d));
-  // 色計算
-  vec3 lightColor = lightFalloff * diffuseColor;
-  float diffuseFactor = lambertDiffuse(lightDir, normal);
-  diffuse += diffuseFactor * lightColor; // diffuse成分を足す。
-  if(uUseSpecular){
-    float specularFactor = phongSpecular(lightDir, viewDirection, normal);
-    specular += specularFactor * lightColor * specularColor;
-  }
-}
-
-// SpotLight項の計算。attenuationは共通で。
-// locationとdirectionが両方入っているうえ、光源の開き(angle)と集中度合い(conc)が追加されて複雑になってる。
-void applySpotLight(vec3 location, vec3 direction, float angle, float conc, vec3 diffuseColor, vec3 specularColor,
-                    vec3 modelPosition, vec3 normal, out vec3 diffuse, out vec3 specular){
-  vec3 viewDirection = normalize(-modelPosition);
-  vec3 lightPosition = (uViewMatrix * vec4(location, 1.0)).xyz; // locationは光の射出位置
-  vec3 lightVector = modelPosition - lightPosition; // 光源 → モデル位置
-  vec3 lightDir = normalize(lightVector);
-  float lightDistance = length(lightVector);
-  float d = lightDistance;
-  float lightFalloff = 1.0 / dot(uAttenuation, vec3(1.0, d, d*d));
-  // falloffは光それ自身の減衰で、これに加えてspot（angleで定義されるcone状の空間）からのずれによる減衰を考慮
-  float spotFalloff;
-  vec3 lightDirection = (uViewMatrix * vec4(direction, 0.0)).xyz;
-  // lightDirはモデルに向かうベクトル、lightDirectionはスポットライトの向きとしての光の向き。そこからのずれで減衰させる仕組み。
-  float spotDot = dot(lightDir, normalize(lightDirection));
-  if(spotDot < cos(angle)){
-    spotFalloff = 0.0;
-  }else{
-    spotFalloff = pow(spotDot, conc); // cosが大きいとは角度が小さいということ
-  }
-  lightFalloff *= spotFalloff;
-  // あとはpointLightと同じ計算を行ない最後にfalloffを考慮する
-  // 色計算
-  vec3 lightColor = lightFalloff * diffuseColor;
-  float diffuseFactor = lambertDiffuse(lightDir, normal);
-  diffuse += diffuseFactor * lightColor; // diffuse成分を足す。
-  if(uUseSpecular){
-    float specularFactor = phongSpecular(lightDir, viewDirection, normal);
-    specular += specularFactor * lightColor * specularColor;
-  }
-}
 
 // _lightはこれで。
 vec3 totalLight(vec3 modelPosition, vec3 normal, vec3 materialColor){
@@ -314,17 +246,6 @@ vec3 totalLight(vec3 modelPosition, vec3 normal, vec3 materialColor){
   for(int i=0; i<uDirectionalLightCount; i++){
     applyDirectionalLight(uLightingDirection[i], uDirectionalDiffuseColor[i], uDirectionalSpecularColor[i],
                           modelPosition, normal, diffuse, specular);
-  }
-  // pointLightの影響を加味する
-  for(int i=0; i<uPointLightCount; i++){
-    applyPointLight(uPointLightLocation[i], uPointLightDiffuseColor[i], uPointLightSpecularColor[i],
-                    modelPosition, normal, diffuse, specular);
-  }
-  // spotLightの影響を加味する
-  for(int i=0; i<uSpotLightCount; i++){
-    applySpotLight(uSpotLightLocation[i], uSpotLightDirection[i], uSpotLightAngle[i], uSpotLightConc[i],
-                   uSpotLightDiffuseColor[i], uSpotLightSpecularColor[i],
-                   modelPosition, normal, diffuse, specular);
   }
   diffuse *= diffuseCoefficient;
   specular *= specularCoefficient;
@@ -411,7 +332,7 @@ void main(){
   p = floor(p);
   vec4 result;
   float index = p.y;
-  float theta = PI*uTime*0.0;
+  float theta = PI*uTime*2.0;
   float phi = (PI/3.0)*(index + uTime);
   float c = cos(theta+phi);
   float s = sin(theta+phi);
@@ -475,59 +396,6 @@ function getBunny(size, colorHue){
   return {v:positions, n:normals, vc:colors, uv:uvs, f:faces};
 }
 
-function getTorus(a = 1.0, b = 0.4, ds = 32, dt = 32, colorHue = 0){
-  // 今回はトーラスで。紙の上で計算してるけどロジックは難しくないのよ。
-  // a:長半径、b:短半径、ds:断面ディテール、dt:外周ディテール
-  // colorIndexでカラフルに。
-  const torusPositions = new Array(3*(ds+1)*(dt+1));
-  const torusNormals = new Array(3*(ds+1)*(dt+1));
-  const torusColors = new Array(3*(ds+1)*(dt+1));
-  const torusUVs = new Array(2*(ds+1)*(dt+1));
-  const torusFaces = new Array(6*ds*dt);
-  const dTheta = Math.PI*2/ds;
-  const dPhi = Math.PI*2/dt;
-  // イメージ的にはkがx軸でlがy軸で原点左下の座標系を考えている
-  // この原点はx軸aでz軸bの点で、そこから右と上にxとyをそれぞれ伸ばす感じ。
-  for(let l=0; l<=dt; l++){
-    for(let k=0; k<=ds; k++){
-      const index = (dt+1)*l + k;
-      const px = Math.cos(dPhi*l);
-      const py = Math.sin(dPhi*l);
-      const nx = Math.sin(dTheta*k)*px;
-      const ny = Math.sin(dTheta*k)*py;
-      const nz = Math.cos(dTheta*k);
-      const x = a*px + b*nx;
-      const y = a*py + b*ny;
-      const z = b*nz;
-      torusPositions[3*index] = x;
-      torusPositions[3*index+1] = y;
-      torusPositions[3*index+2] = z;
-      torusNormals[3*index] = nx;
-      torusNormals[3*index+1] = ny;
-      torusNormals[3*index+2] = nz;
-      const col = ex.hsv2rgb(colorHue, 0.7, 1);
-      torusColors[3*index] = col.r;
-      torusColors[3*index+1] = col.g;
-      torusColors[3*index+2] = col.b;
-      torusUVs[2*index] = (k+1)/ds;
-      torusUVs[2*index+1] = (l+1)/dt;
-    }
-  }
-  // kとlに着目すると分かりやすいかもしれない。
-  for(let l=0; l<dt; l++){
-    for(let k=0; k<ds; k++){
-      const index = dt*l + k;
-      torusFaces[6*index] = l*(ds+1) + k;
-      torusFaces[6*index+1] = l*(ds+1) + k+1;
-      torusFaces[6*index+2] = (l+1)*(ds+1) + k+1;
-      torusFaces[6*index+3] = l*(ds+1) + k;
-      torusFaces[6*index+4] = (l+1)*(ds+1) + k+1;
-      torusFaces[6*index+5] = (l+1)*(ds+1) + k;
-    }
-  }
-  return {v:torusPositions, n:torusNormals, vc:torusColors, uv:torusUVs, f:torusFaces};
-}
-
 // 雑。z軸に平行な平面。
 function getPlane(left=-1, right=1, bottom=-1, top=1, height=0){
   const p0 = [left, bottom, height];
@@ -579,11 +447,9 @@ function registCompositeMeshes(node, meshs, name = "scene"){
 function setLight(node, info = {}){
   if(info.ambient === undefined){ info.ambient = [64.0/255.0, 64.0/255.0, 64.0/255.0]; }
   if(info.shininess === undefined){ info.shininess = 40; }
-  if(info.attenuation === undefined){ info.attenuation = [1, 0, 0]; }
   if(info.useSpecular === undefined){ info.useSpecular = false; }
   node.setUniform("uAmbientColor", info.ambient);
   node.setUniform("uShininess", info.shininess);
-  node.setUniform("uAttenuation", info.attenuation);
   node.setUniform("uUseSpecular", info.useSpecular);
 }
 
@@ -600,42 +466,6 @@ function setDirectionalLight(node, info = {}){
   node.setUniform("uDirectionalSpecularColor", info.specularColor);
 }
 
-// 点光源
-function setPointLight(node, info = {}){
-  if(info.count === undefined){ info.count = 1; }
-  if(info.location === undefined){ info.location = [0, 0, 0]; } // デフォは中心で
-  if(info.diffuseColor === undefined){ info.diffuseColor = [1, 1, 1]; } // 白一色。
-  if(info.specularColor === undefined){ info.specularColor = [1, 1, 1]; } // 白。
-  // 2以上の場合は配列で長さを増やせばいい。
-  node.setUniform("uPointLightCount", info.count);
-  node.setUniform("uPointLightLocation", info.location);
-  node.setUniform("uPointLightDiffuseColor", info.diffuseColor);
-  node.setUniform("uPointLightSpecularColor", info.specularColor);
-}
-
-// お待ちかねのスポットライト
-// count, location, direction, 拡散色と反射色の他に範囲角度とconcentrationを決めないといけないのです
-// 大変
-// なんかひらひら飛ばして可視化でもしないとはっきり言ってpointLightと区別つかないです
-// 影において基本となるLightなので真面目に取り組みましょう
-function setSpotLight(node, info = {}){
-  if(info.count === undefined){ info.count = 1; }
-  if(info.location === undefined){ info.location = [0, 0, 4]; } // z軸上方向を想定
-  if(info.direction === undefined){ info.direction = [0, 0, -1]; } // z軸下方へ
-  if(info.angle === undefined){ info.angle = [Math.PI/4]; } // 90°が一般的かなぁ（分かんないけど）
-  if(info.conc === undefined){ info.conc = [100]; } // デフォ、p5jsだと100なんだって...
-  if(info.diffuseColor === undefined){ info.diffuseColor = [1, 1, 1]; } // 白一色。
-  if(info.specularColor === undefined){ info.specularColor = [1, 1, 1]; } // 白。
-  // 2以上の場合は配列で長さを増やせばいい。
-  node.setUniform("uSpotLightCount", info.count);
-  node.setUniform("uSpotLightLocation", info.location);
-  node.setUniform("uSpotLightDirection", info.direction);
-  node.setUniform("uSpotLightAngle", info.angle);
-  node.setUniform("uSpotLightConc", info.conc);
-  node.setUniform("uSpotLightDiffuseColor", info.diffuseColor);
-  node.setUniform("uSpotLightSpecularColor", info.specularColor);
-}
-
 // -------------------------- main ------------------------------- //
 
 function preload(){
@@ -647,6 +477,7 @@ function setup(){
   _timer.initialize("slot0");
   createCanvas(800, 600, WEBGL);
   _node = new ex.RenderNode(this._renderer.GL);
+  frameRate(30);
 
   // 撮影用カメラ
   cam0 = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[12, 0, 9], pers:{near:0.1, far:4}});
