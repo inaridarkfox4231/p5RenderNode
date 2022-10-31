@@ -1,3 +1,7 @@
+// bunny6？
+
+// torusの代わりにウサギのモデルを使うだけ。
+
 // torus6.js
 // bunny6.jsの前段階。ライト増やしたいのでドローコール減らす。
 
@@ -5,12 +9,22 @@
 
 // とりあえず。
 
+// 1. lightCamから深度値を計算（2つ分）
+// 2. それをdefer準備で使う、2種類のNDCをfsに送る
+// 3. fsでそれらを元に係数を計算してその結果をmodelPositionの4番目の引数に格納する
+// 4. defer最終段階でそれを掛ける。
+// できました。
+
+// bunny6匹は重いね。重過ぎる。修業が足りませんでした（出直し）
+
 // --------------------------------------------- global ----------------------------------------------- //
 const ex = p5wgex;
 let _node;
 const _timer = new ex.Timer();
 let cam0, cam1;
 let _tf = new ex.TransformEx();
+
+let bunny; // まだ未実装なので雰囲気だけ...
 
 // ----------------------------------------------- light ------------------------------------------------ //
 const colorVert =
@@ -24,6 +38,8 @@ in float aIndex;
 uniform sampler2D uData; // これ。
 uniform mat4 uViewMatrix;
 uniform mat4 uProjMatrix; // ModelViewProjectionだとさすがに長すぎるので統一目的でProjに短縮
+uniform mat4 uLightVPMatrix1;
+uniform mat4 uLightVPMatrix2;
 
 out vec3 vVertexColor;
 out vec3 vNormal;
@@ -32,6 +48,8 @@ out vec2 vTexCoord;
 out float vIndex;
 
 out vec4 vNDC;
+out vec4 vNDClight1;
+out vec4 vNDClight2;
 
 void main(void){
   // 場合によってはaPositionをいじる（頂点位置）
@@ -61,12 +79,17 @@ void main(void){
   vVertexColor = aVertexColor;
   vTexCoord = aTexCoord;
   vIndex = aIndex;
+
+  // lightサイドのNDCを格納して送信
+  vec4 globalPos = modelMatrix * vec4(aPosition, 1.0);
+  vNDClight1 = uLightVPMatrix1 * globalPos;
+  vNDClight2 = uLightVPMatrix2 * globalPos;
 }
 `;
 
 const colorFrag =
 `#version 300 es
-precision mediump float;
+precision highp float;
 
 // -------------------- マテリアル関連 -------------------- //
 
@@ -80,6 +103,9 @@ uniform vec3 uMonoColor; // monoColorの場合
 uniform sampler2D uTex; // uvColorの場合
 uniform vec3 uTint; // texture関連でtextureに色を付与したい場合のためのオプション。掛けるだけ。
 
+uniform sampler2D uDepthMap1; // 深度比較用
+uniform sampler2D uDepthMap2;
+
 in vec3 vVertexColor;
 in vec3 vNormal;
 in vec3 vViewPosition;
@@ -87,6 +113,19 @@ in vec2 vTexCoord; // テクスチャ
 in float vIndex;
 
 in vec4 vNDC;
+in vec4 vNDClight1; // 深度比較用
+in vec4 vNDClight2;
+
+// -------------------- 深度マスク適用 ----------------- //
+float depthMask(vec4 ndcLight, sampler2D depthMap){
+  vec3 ndc = ndcLight.xyz / ndcLight.w;
+  ndc = 0.5*(ndc + 1.0);
+  float localDepth = ndc.z;
+  float correctDepth = texture(depthMap, ndc.xy).r;
+  if(ndc.x < 0.0 || ndc.x > 1.0 || ndc.y < 0.0 || ndc.y > 1.0){ return 1.0; } // 画面外
+  if(localDepth < correctDepth){ return 1.0; }
+  return 0.6;
+}
 
 // -------------------- 出力その他 -------------------- //
 layout (location = 0) out vec4 materialColor;
@@ -118,8 +157,14 @@ void main(void){
   }
   materialColor = col;
   float depth = 0.5 * (vNDC.z / vNDC.w) + 0.5;
+
+  // 深度比較計算
+  float mask = 1.0;
+  mask *= depthMask(vNDClight1, uDepthMap1);
+  mask *= depthMask(vNDClight2, uDepthMap2);
+  viewPosition = vec4(vViewPosition, mask); // maskでも入れておこう
+
   normal = vec4(vNormal, depth);
-  viewPosition = vec4(vViewPosition, 1.0); // んー...んー...
 }
 `;
 
@@ -296,7 +341,9 @@ out vec4 finalColor;
 // ----- メインコード ----- //
 void main(){
   vec3 normal = normalize(texture(uNormal, vUv).xyz);
-  vec3 viewPosition = texture(uViewPosition, vUv).xyz;
+  vec4 viewData = texture(uViewPosition, vUv);
+  vec3 viewPosition = viewData.xyz;
+  float depthMask = viewData.w;
   vec4 color = texture(uMaterialColor, vUv);
 
   vec3 result = totalLight(viewPosition, normal, color.rgb);
@@ -304,7 +351,7 @@ void main(){
   // ディファードの場合、この計算前のcol(rgba)と、normal, vViewPosition, 場合によってはvTexCoordが
   // MRTで送られる対象になる。もしくはついでにデプスなど。doxasさんのサイトではこれらが可視化されていましたね。
 
-  color.rgb = result;
+  color.rgb = result * depthMask; // これでいける？
   finalColor = color;
 }
 `;
@@ -341,78 +388,6 @@ void main(){
 }
 `;
 
-// 2. generateDepthMask. さっきのdepthと計算値を比べてより大きいなら係数を格納
-
-// MVP2種類の方が合理的...だけどいろいろめんどくさいのでmとvpにわけるわ。
-const maskVert =
-`#version 300 es
-in vec3 aPosition;
-in float aIndex;
-uniform sampler2D uData;
-uniform mat4 uViewProjMatrix;
-uniform mat4 uLightVPMatrix;
-out vec4 vNDC;
-void main(){
-  mat4 modelMatrix;
-  for(int i=0; i<4; i++){
-    modelMatrix[i] = texture(uData, vec2((float(i) + 0.5) / 4.0, (aIndex + 0.5) / 7.0)); // たぶんこれでいける。
-  }
-  vec4 globalPos = modelMatrix * vec4(aPosition, 1.0);
-  gl_Position = uViewProjMatrix * globalPos;
-  // NDCはそのまま送る。cam1のVPで計算する。
-  vNDC = uLightVPMatrix * globalPos;
-}
-`;
-
-// 1を付けて区別しないとエラーになる
-const maskFrag =
-`#version 300 es
-precision highp float;
-uniform sampler2D uDepthMap; // あー、改名しないと。
-in vec4 vNDC;
-out float mask;
-void main(){
-  vec3 ndc = vNDC.xyz / vNDC.w;
-  ndc = 0.5*(ndc + 1.0);
-  float localDepth = ndc.z;
-  float correctDepth = texture(uDepthMap, ndc.xy).r;
-  if(localDepth < correctDepth){
-    mask = 1.0;
-  }else{
-    mask = 0.6;
-  }
-  if(ndc.x < 0.0 || ndc.x > 1.0 || ndc.y < 0.0 || ndc.y > 1.0){ mask = 1.0; } // 画面外
-}
-`;
-
-// 3. 乗算影計算のクライマックス
-const shadowVert =
-`#version 300 es
-in vec2 aPosition;
-out vec2 vUv;
-void main(){
-  vUv = 0.5 + 0.5 * aPosition;
-  gl_Position = vec4(aPosition, 0.0, 1.0);
-}
-`;
-
-// これを出力する
-const shadowFrag =
-`#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uBase;
-uniform sampler2D uShadow1;
-uniform sampler2D uShadow2;
-out vec4 fragColor;
-void main(){
-  vec4 color = texture(uBase, vUv);
-  if(color.a < 0.001){ discard; }
-  float shadow = texture(uShadow1, vUv).r * texture(uShadow2, vUv).r;
-  fragColor = color * vec4(vec3(shadow), 1.0); // おわり。
-}
-`;
-
 // fbにmodelMatrixの成分を書き込むシェーダ（実態は板ポリ芸）. vsは何もしない。gl_FragCoordのfloor値でいろいろやる。
 const dataVert =
 `#version 300 es
@@ -436,7 +411,7 @@ void main(){
   p = floor(p);
   vec4 result;
   float index = p.y;
-  float theta = PI*uTime*2.0;
+  float theta = PI*uTime*0.0;
   float phi = (PI/3.0)*(index + uTime);
   float c = cos(theta+phi);
   float s = sin(theta+phi);
@@ -444,8 +419,8 @@ void main(){
   float z = 1.0 + 4.0*uHeight*t*(1.0-t);
   if(index > 0.0){
     if(p.x == 0.0){ result = vec4(c, s, 0.0, 0.0); }
-    if(p.x == 1.0){ result = vec4(0.0, 0.0, -1.0, 0.0); }
-    if(p.x == 2.0){ result = vec4(-s, c, 0.0, 0.0); }
+    if(p.x == 2.0){ result = vec4(0.0, 0.0, 1.0, 0.0); }
+    if(p.x == 1.0){ result = vec4(-s, c, 0.0, 0.0); }
     if(p.x == 3.0){ result = vec4(uRadius*cos(phi), uRadius*sin(phi), z, 1.0); }
   }else{
     if(p.x == 0.0){ result = vec4(1.0, 0.0, 0.0, 0.0); }
@@ -459,6 +434,46 @@ void main(){
 
 // ------------------------------------------------------ mesh ---------------------------------------------------------------- //
 // 数増やそう。
+
+function getBunny(size, colorHue){
+  // bunnyModelからデータを取得したりする
+  // verticesはベクトル3Dが入っててx,y,z成分を抜き出さないと無理
+  // facesも各番号に長さ3の配列がもちろん入ってる
+  // uvsは何にも入ってないけど内容的には[0,0]が延々と並んでる
+  // vertexNormalsが法線でvertexColorsが色。
+  // normalsは色々入ってるみたい。vertexColorsは死んでる。長さ0. 好きに使わせてもらおう。
+  const N = bunny.vertices.length; // 4564.
+  const F = bunny.faces.length;
+  const positions = new Array(N*3);
+  const normals = new Array(N*3);
+  const colors = new Array(N*3);
+  const uvs = new Array(N*2);
+  const faces = new Array(F*3);
+  // 続きは...
+  for(let i=0; i<N; i++){
+    const v = bunny.vertices[i];
+    positions[3*i] = v.x * size;
+    positions[3*i+1] = v.y * size;
+    positions[3*i+2] = v.z * size;
+    const n = bunny.vertices[i];
+    normals[3*i] = n.x;
+    normals[3*i+1] = n.y;
+    normals[3*i+2] = n.z;
+    const col = ex.hsv2rgb(colorHue, 0.7, 1);
+    colors[3*i] = col.r;
+    colors[3*i+1] = col.g;
+    colors[3*i+2] = col.b;
+    uvs[2*i] = 0;
+    uvs[2*i+1] = 0;
+  }
+  for(let i=0; i<F; i++){
+    const f = bunny.faces[i];
+    faces[3*i] = f[0];
+    faces[3*i+1] = f[1];
+    faces[3*i+2] = f[2];
+  }
+  return {v:positions, n:normals, vc:colors, uv:uvs, f:faces};
+}
 
 function getTorus(a = 1.0, b = 0.4, ds = 32, dt = 32, colorHue = 0){
   // 今回はトーラスで。紙の上で計算してるけどロジックは難しくないのよ。
@@ -623,6 +638,10 @@ function setSpotLight(node, info = {}){
 
 // -------------------------- main ------------------------------- //
 
+function preload(){
+  bunny = loadModel("https://inaridarkfox4231.github.io/models/bunnyYZ.obj");
+}
+
 // トーラスの位置はfbで決めるので、...あとでいいか。
 function setup(){
   _timer.initialize("slot0");
@@ -643,12 +662,11 @@ function setup(){
   _node.registPainter("defer", deferVert, deferFrag);
   // 影用のシェーダは後で
   _node.registPainter("calcDepth", calcDepthVert, calcDepthFrag); // cam1から見た深度値を記録
-  _node.registPainter("generateDepthMask", maskVert, maskFrag); // cam1から見た深度値と比較して係数を計算
-  _node.registPainter("applyShadow", shadowVert, shadowFrag); // 係数を加味して描画
 
   const meshes = [];
   meshes.push(getPlane(-18, 18, -18, 18, 0));
-  for(let i=0; i<6; i++){ meshes.push(getTorus(1, 0.4, 24, 24, 0.16*i)); }
+  for(let i=0; i<6; i++){ meshes.push(getBunny(4, 0.16*i)); }
+  //for(let i=0; i<6; i++){ meshes.push(getTorus(1, 0.4, 24, 24, 0.16*i)); }
   registCompositeMeshes(_node, meshes, "scene"); // いわゆる「シーン」
 
   const {w, h} = _node.getDrawingBufferSize(null);
@@ -656,9 +674,9 @@ function setup(){
   _node.registFBO("defer", {w:w, h:h, color:{info:[{}, {type:"float"}, {type:"float"}]}});
   // 結果格納用
   _node.registFBO("base", {w:w, h:h, color:{info:{}}});
-  // そして影...float32の単独。
-  _node.registDoubleFBO("shadow1", {w:w, h:h, color:{info:{type:"float", internalFormat:"r32f", format:"red", magFilter:"nearest"}}});
-  _node.registDoubleFBO("shadow2", {w:w, h:h, color:{info:{type:"float", internalFormat:"r32f", format:"red", magFilter:"nearest"}}});
+  // そして影...float32の単独。doubleをやめて、代わりに先に計算する。
+  _node.registFBO("shadow1", {w:w, h:h, color:{info:{type:"float", internalFormat:"r32f", format:"red", magFilter:"nearest"}}});
+  _node.registFBO("shadow2", {w:w, h:h, color:{info:{type:"float", internalFormat:"r32f", format:"red", magFilter:"nearest"}}});
 
   // カリング
   _node.enable("cull_face");
@@ -690,13 +708,25 @@ function draw(){
   configCamera();
   createModelMatrix(); // ここで作っちゃえ
 
-  _node.bindFBO(null).clearColor(0,0,0,1).clear();
+  //_node.bindFBO(null).clearColor(0,0,0,1).clear();
+
+  // さきにshadow.
+  createShadowMap("shadow1", cam1); // あ、引数減らしたの忘れてたわ...
+  createShadowMap("shadow2", cam2);
 
   // とりあえずdefer.
   _node.bindFBO("defer").clearColor(0,0,0,0).clear();
 
   // 色などの情報を格納する。
   _node.usePainter("color");
+
+  // defer本番前にこれをやってしまう
+  const vpLight1 = ex.getMult4x4(cam1.getViewMat().m, cam1.getProjMat().m);
+  const vpLight2 = ex.getMult4x4(cam2.getViewMat().m, cam2.getProjMat().m);
+  _node.setUniform("uLightVPMatrix1", vpLight1)
+       .setUniform("uLightVPMatrix2", vpLight2)
+       .setFBOtexture2D("uDepthMap1", "shadow1")
+       .setFBOtexture2D("uDepthMap2", "shadow2");
 
   // sceneをdrawFigureして、vとpを入れて、dataをsetTextureするだけ。
   // あとはbindIBO.draw.
@@ -711,7 +741,7 @@ function draw(){
   _node.unbind();
 
   // 次に
-  _node.bindFBO("base").clearColor(0,0,0,1).clear();
+  _node.bindFBO("base").clear();
 
   // deferをやる（板ポリ芸）
   _node.use("defer", "foxBoard");
@@ -741,24 +771,9 @@ function draw(){
   _node.drawArrays("triangle_strip");
   _node.unbind();
 
-  //ex.copyPainter(_node, {src:{type:"fb", name:"base"}}); // とりあえずここまで
-  // さてと。
-
-  createShadowMap("shadow1", cam0, cam1);
-  createShadowMap("shadow2", cam0, cam2);
-
-  //ex.copyPainter(_node, {src:{type:"fb", name:"shadow2"}});
-
-  // 仕上げ。colorに落とした方がいいんかな
   updateInfo();
   showInfo();
-  _node.bindFBO(null);
-  _node.use("applyShadow", "foxBoard");
-  _node.setFBOtexture2D("uBase", "base");
-  _node.setFBOtexture2D("uShadow1", "shadow1");
-  _node.setFBOtexture2D("uShadow2", "shadow2");
-  _node.drawArrays("triangle_strip")
-  _node.unbind();
+  ex.copyPainter(_node, {src:{type:"fb", name:"base"}}); // とりあえずここまで
 
   _node.flush();
 }
@@ -782,36 +797,21 @@ function createModelMatrix(){
   _node.drawArrays("triangle_strip").unbind();
 }
 
-function createShadowMap(shadowFBOName, modelCam, lightCam){
-  const vpModel = ex.getMult4x4(modelCam.getViewMat().m, modelCam.getProjMat().m);
+// lightCamだけ使う感じで
+function createShadowMap(shadowFBOName, lightCam){
+  //const vpModel = ex.getMult4x4(modelCam.getViewMat().m, modelCam.getProjMat().m);
   const vpLight = ex.getMult4x4(lightCam.getViewMat().m, lightCam.getProjMat().m);
 
-  // まずcam1からの深度値が欲しい。
+  // lightCamからの深度値を記録
   _node.bindFBO(shadowFBOName).clearColor(0,0,0,0).clear();
-  _node.usePainter("calcDepth");
 
-  _node.drawFigure("scene")
+  _node.use("calcDepth", "scene")
        .setFBOtexture2D("uData", "data")
        .setUniform("uViewProjMatrix", vpLight)
        .bindIBO("sceneIBO")
-       .drawElements("triangles");
-
-  _node.swapFBO(shadowFBOName).unbind();
-
-  // 次に比較を行なう。ただしさっきの...を使う。
-  _node.bindFBO(shadowFBOName);
-  _node.clearColor(0,0,0,0).clear();
-  _node.usePainter("generateDepthMask");
-  _node.setFBOtexture2D("uDepthMap", shadowFBOName); // さっきの結果をここで読み込んで
-
-  _node.drawFigure("scene")
-       .setFBOtexture2D("uData", "data")
-       .setUniform("uViewProjMatrix", vpModel)
-       .setUniform("uLightVPMatrix", vpLight)
-       .bindIBO("sceneIBO")
-       .drawElements("triangles");
-
-  _node.swapFBO(shadowFBOName).unbind();
+       .drawElements("triangles")
+       .unbind();
+  // ここまで。
 }
 
 function updateInfo(){
@@ -822,5 +822,5 @@ function updateInfo(){
 }
 
 function showInfo(){
-  ex.copyPainter(_node, {src:{name:"info", gradationFlag:1, gradationStart:[1, 0.5, 0, 0, 0, 1], gradationStop:[0, 0.5, 0, 0, 1, 1]}});
+  ex.copyPainter(_node, {src:{name:"info", gradationFlag:1, gradationStart:[0, 0.5, 0, 0, 0, 1], gradationStop:[1, 0.5, 0, 0, 1, 1]}});
 }
