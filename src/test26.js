@@ -1,30 +1,22 @@
-// bunny6？
+// 何でもいいよ。何でも。昔のコードの焼き直しでも。いいし。
+// あー、真上からのスポットでウサギやってみるかぁ、それくらいなら...
+// planeとrabbit1匹、真上からスポットライト、側面から平行光、あ、spotLight消してしまった...復元しないと。
+// まあでもすぐに戻せるけど...
 
-// torusの代わりにウサギのモデルを使うだけ。
-
-// torus6.js
-// bunny6.jsの前段階。ライト増やしたいのでドローコール減らす。
-
-// 第一段階突破。modelMatrixの構築は合ってるみたいです。
-
-// とりあえず。
-
-// 1. lightCamから深度値を計算（2つ分）
-// 2. それをdefer準備で使う、2種類のNDCをfsに送る
-// 3. fsでそれらを元に係数を計算してその結果をmodelPositionの4番目の引数に格納する
-// 4. defer最終段階でそれを掛ける。
-// できました。
-
-// bunny6匹は重いね。重過ぎる。修業が足りませんでした（出直し）
+// ちょっと軽くなりました。
+// このsceneっていうのは
+// まあでも個別に扱うのは難しそうです。
+// GPGPUで動かすこともできるのでいろんなやり方があるということで
+// あれもmodel変換を作ったり、んー。3Dだと難しいのよね...ていうか法線とか計算しないとだし。難しいよ。
 
 // --------------------------------------------- global ----------------------------------------------- //
 const ex = p5wgex;
 let _node;
 const _timer = new ex.Timer();
-let cam0, cam1;
+let cam0, cam1, cam2;
 let _tf = new ex.TransformEx();
 
-let bunny; // まだ未実装なので雰囲気だけ...
+let rabbit; // まだ未実装なので雰囲気だけ...
 
 // ----------------------------------------------- light ------------------------------------------------ //
 const colorVert =
@@ -124,7 +116,7 @@ float depthMask(vec4 ndcLight, sampler2D depthMap){
   float correctDepth = texture(depthMap, ndc.xy).r;
   if(ndc.x < 0.0 || ndc.x > 1.0 || ndc.y < 0.0 || ndc.y > 1.0){ return 1.0; } // 画面外
   if(localDepth < correctDepth){ return 1.0; }
-  return 0.6;
+  return 0.5;
 }
 
 // -------------------- 出力その他 -------------------- //
@@ -195,12 +187,28 @@ uniform mat4 uViewMatrix;
 // 汎用色
 uniform vec3 uAmbientColor;
 uniform float uShininess; // specularに使う、まあこれが大きくないと見栄えが悪いのです。光が集中する。
+uniform vec3 uAttenuation; // デフォルトは1,0,0. pointLightで使う
 
 // directionalLight関連
 uniform int uDirectionalLightCount; // デフォ0なのでフラグ不要
 uniform vec3 uLightingDirection[5];
 uniform vec3 uDirectionalDiffuseColor[5];
 uniform vec3 uDirectionalSpecularColor[5]; // specular用
+
+// pointLight関連
+uniform int uPointLightCount; // これがデフォルトゼロであることによりフラグが不要となる。
+uniform vec3 uPointLightLocation[5];
+uniform vec3 uPointLightDiffuseColor[5];
+uniform vec3 uPointLightSpecularColor[5]; // specular用
+
+// spotLight関連
+uniform int uSpotLightCount; // 0～5
+uniform vec3 uSpotLightDirection[5];
+uniform vec3 uSpotLightLocation[5];
+uniform float uSpotLightAngle[5];
+uniform float uSpotLightConc[5];
+uniform vec3 uSpotLightDiffuseColor[5];
+uniform vec3 uSpotLightSpecularColor[5]; // specular用
 
 // light flag.
 uniform bool uUseSpecular; // デフォルトはfalse;
@@ -237,6 +245,58 @@ void applyDirectionalLight(vec3 direction, vec3 diffuseColor, vec3 specularColor
   }
 }
 
+// PointLight項の計算。attenuationも考慮。
+void applyPointLight(vec3 location, vec3 diffuseColor, vec3 specularColor,
+                     vec3 modelPosition, vec3 normal, out vec3 diffuse, out vec3 specular){
+  vec3 viewDirection = normalize(-modelPosition);
+  vec3 lightPosition = (uViewMatrix * vec4(location, 1.0)).xyz;
+  vec3 lightVector = modelPosition - lightPosition;
+  vec3 lightDir = normalize(lightVector);
+  float lightDistance = length(lightVector);
+  float d = lightDistance;
+  float lightFalloff = 1.0 / dot(uAttenuation, vec3(1.0, d, d*d));
+  // 色計算
+  vec3 lightColor = lightFalloff * diffuseColor;
+  float diffuseFactor = lambertDiffuse(lightDir, normal);
+  diffuse += diffuseFactor * lightColor; // diffuse成分を足す。
+  if(uUseSpecular){
+    float specularFactor = phongSpecular(lightDir, viewDirection, normal);
+    specular += specularFactor * lightColor * specularColor;
+  }
+}
+
+// SpotLight項の計算。attenuationは共通で。
+// locationとdirectionが両方入っているうえ、光源の開き(angle)と集中度合い(conc)が追加されて複雑になってる。
+void applySpotLight(vec3 location, vec3 direction, float angle, float conc, vec3 diffuseColor, vec3 specularColor,
+                    vec3 modelPosition, vec3 normal, out vec3 diffuse, out vec3 specular){
+  vec3 viewDirection = normalize(-modelPosition);
+  vec3 lightPosition = (uViewMatrix * vec4(location, 1.0)).xyz; // locationは光の射出位置
+  vec3 lightVector = modelPosition - lightPosition; // 光源 → モデル位置
+  vec3 lightDir = normalize(lightVector);
+  float lightDistance = length(lightVector);
+  float d = lightDistance;
+  float lightFalloff = 1.0 / dot(uAttenuation, vec3(1.0, d, d*d));
+  // falloffは光それ自身の減衰で、これに加えてspot（angleで定義されるcone状の空間）からのずれによる減衰を考慮
+  float spotFalloff;
+  vec3 lightDirection = (uViewMatrix * vec4(direction, 0.0)).xyz;
+  // lightDirはモデルに向かうベクトル、lightDirectionはスポットライトの向きとしての光の向き。そこからのずれで減衰させる仕組み。
+  float spotDot = dot(lightDir, normalize(lightDirection));
+  if(spotDot < cos(angle)){
+    spotFalloff = 0.0;
+  }else{
+    spotFalloff = pow(spotDot, conc); // cosが大きいとは角度が小さいということ
+  }
+  lightFalloff *= spotFalloff;
+  // あとはpointLightと同じ計算を行ない最後にfalloffを考慮する
+  // 色計算
+  vec3 lightColor = lightFalloff * diffuseColor;
+  float diffuseFactor = lambertDiffuse(lightDir, normal);
+  diffuse += diffuseFactor * lightColor; // diffuse成分を足す。
+  if(uUseSpecular){
+    float specularFactor = phongSpecular(lightDir, viewDirection, normal);
+    specular += specularFactor * lightColor * specularColor;
+  }
+}
 
 // _lightはこれで。
 vec3 totalLight(vec3 modelPosition, vec3 normal, vec3 materialColor){
@@ -246,6 +306,17 @@ vec3 totalLight(vec3 modelPosition, vec3 normal, vec3 materialColor){
   for(int i=0; i<uDirectionalLightCount; i++){
     applyDirectionalLight(uLightingDirection[i], uDirectionalDiffuseColor[i], uDirectionalSpecularColor[i],
                           modelPosition, normal, diffuse, specular);
+  }
+  // pointLightの影響を加味する
+  for(int i=0; i<uPointLightCount; i++){
+    applyPointLight(uPointLightLocation[i], uPointLightDiffuseColor[i], uPointLightSpecularColor[i],
+                    modelPosition, normal, diffuse, specular);
+  }
+  // spotLightの影響を加味する
+  for(int i=0; i<uSpotLightCount; i++){
+    applySpotLight(uSpotLightLocation[i], uSpotLightDirection[i], uSpotLightAngle[i], uSpotLightConc[i],
+                   uSpotLightDiffuseColor[i], uSpotLightSpecularColor[i],
+                   modelPosition, normal, diffuse, specular);
   }
   diffuse *= diffuseCoefficient;
   specular *= specularCoefficient;
@@ -333,16 +404,17 @@ void main(){
   vec4 result;
   float index = p.y;
   float theta = PI*uTime*2.0;
-  float phi = (PI/3.0)*(index + uTime);
+  float phi = PI*index + (PI/3.0)*uTime;
   float c = cos(theta+phi);
   float s = sin(theta+phi);
   float t = fract(uTime);
   float z = 1.0 + 4.0*uHeight*t*(1.0-t);
+  float r = uRadius * (0.8 + 0.2 * sin(PI*uTime*0.5));
   if(index > 0.0){
     if(p.x == 0.0){ result = vec4(c, s, 0.0, 0.0); }
-    if(p.x == 2.0){ result = vec4(0.0, 0.0, 1.0, 0.0); }
     if(p.x == 1.0){ result = vec4(-s, c, 0.0, 0.0); }
-    if(p.x == 3.0){ result = vec4(uRadius*cos(phi), uRadius*sin(phi), z, 1.0); }
+    if(p.x == 2.0){ result = vec4(0.0, 0.0, 1.0, 0.0); }
+    if(p.x == 3.0){ result = vec4(r*cos(phi), r*sin(phi), z, 1.0); }
   }else{
     if(p.x == 0.0){ result = vec4(1.0, 0.0, 0.0, 0.0); }
     if(p.x == 1.0){ result = vec4(0.0, 1.0, 0.0, 0.0); }
@@ -356,15 +428,15 @@ void main(){
 // ------------------------------------------------------ mesh ---------------------------------------------------------------- //
 // 数増やそう。
 
-function getBunny(size, colorHue){
-  // bunnyModelからデータを取得したりする
+function getRabbit(size, colorHue){
+  // rabbitModelからデータを取得したりする
   // verticesはベクトル3Dが入っててx,y,z成分を抜き出さないと無理
   // facesも各番号に長さ3の配列がもちろん入ってる
   // uvsは何にも入ってないけど内容的には[0,0]が延々と並んでる
   // vertexNormalsが法線でvertexColorsが色。
   // normalsは色々入ってるみたい。vertexColorsは死んでる。長さ0. 好きに使わせてもらおう。
-  const N = bunny.vertices.length; // 4564.
-  const F = bunny.faces.length;
+  const N = rabbit.vertices.length; // 4564.
+  const F = rabbit.faces.length;
   const positions = new Array(N*3);
   const normals = new Array(N*3);
   const colors = new Array(N*3);
@@ -372,11 +444,11 @@ function getBunny(size, colorHue){
   const faces = new Array(F*3);
   // 続きは...
   for(let i=0; i<N; i++){
-    const v = bunny.vertices[i];
+    const v = rabbit.vertices[i];
     positions[3*i] = v.x * size;
     positions[3*i+1] = v.y * size;
     positions[3*i+2] = v.z * size;
-    const n = bunny.vertices[i];
+    const n = rabbit.vertices[i];
     normals[3*i] = n.x;
     normals[3*i+1] = n.y;
     normals[3*i+2] = n.z;
@@ -388,7 +460,7 @@ function getBunny(size, colorHue){
     uvs[2*i+1] = 0;
   }
   for(let i=0; i<F; i++){
-    const f = bunny.faces[i];
+    const f = rabbit.faces[i];
     faces[3*i] = f[0];
     faces[3*i+1] = f[1];
     faces[3*i+2] = f[2];
@@ -447,9 +519,11 @@ function registCompositeMeshes(node, meshs, name = "scene"){
 function setLight(node, info = {}){
   if(info.ambient === undefined){ info.ambient = [64.0/255.0, 64.0/255.0, 64.0/255.0]; }
   if(info.shininess === undefined){ info.shininess = 40; }
+  if(info.attenuation === undefined){ info.attenuation = [1, 0, 0]; }
   if(info.useSpecular === undefined){ info.useSpecular = false; }
   node.setUniform("uAmbientColor", info.ambient);
   node.setUniform("uShininess", info.shininess);
+  node.setUniform("uAttenuation", info.attenuation);
   node.setUniform("uUseSpecular", info.useSpecular);
 }
 
@@ -466,26 +540,63 @@ function setDirectionalLight(node, info = {}){
   node.setUniform("uDirectionalSpecularColor", info.specularColor);
 }
 
+// 点光源
+function setPointLight(node, info = {}){
+  if(info.count === undefined){ info.count = 1; }
+  if(info.location === undefined){ info.location = [0, 0, 0]; } // デフォは中心で
+  if(info.diffuseColor === undefined){ info.diffuseColor = [1, 1, 1]; } // 白一色。
+  if(info.specularColor === undefined){ info.specularColor = [1, 1, 1]; } // 白。
+  // 2以上の場合は配列で長さを増やせばいい。
+  node.setUniform("uPointLightCount", info.count);
+  node.setUniform("uPointLightLocation", info.location);
+  node.setUniform("uPointLightDiffuseColor", info.diffuseColor);
+  node.setUniform("uPointLightSpecularColor", info.specularColor);
+}
+
+// お待ちかねのスポットライト
+// count, location, direction, 拡散色と反射色の他に範囲角度とconcentrationを決めないといけないのです
+// 大変
+// なんかひらひら飛ばして可視化でもしないとはっきり言ってpointLightと区別つかないです
+// 影において基本となるLightなので真面目に取り組みましょう
+function setSpotLight(node, info = {}){
+  if(info.count === undefined){ info.count = 1; }
+  if(info.location === undefined){ info.location = [0, 0, 4]; } // z軸上方向を想定
+  if(info.direction === undefined){ info.direction = [0, 0, -1]; } // z軸下方へ
+  if(info.angle === undefined){ info.angle = [Math.PI/4]; } // 90°が一般的かなぁ（分かんないけど）
+  if(info.conc === undefined){ info.conc = [100]; } // デフォ、p5jsだと100なんだって...
+  if(info.diffuseColor === undefined){ info.diffuseColor = [1, 1, 1]; } // 白一色。
+  if(info.specularColor === undefined){ info.specularColor = [1, 1, 1]; } // 白。
+  // 2以上の場合は配列で長さを増やせばいい。
+  node.setUniform("uSpotLightCount", info.count);
+  node.setUniform("uSpotLightLocation", info.location);
+  node.setUniform("uSpotLightDirection", info.direction);
+  node.setUniform("uSpotLightAngle", info.angle);
+  node.setUniform("uSpotLightConc", info.conc);
+  node.setUniform("uSpotLightDiffuseColor", info.diffuseColor);
+  node.setUniform("uSpotLightSpecularColor", info.specularColor);
+}
+
 // -------------------------- main ------------------------------- //
 
 function preload(){
-  bunny = loadModel("https://inaridarkfox4231.github.io/models/bunnyYZ.obj");
+  rabbit = loadModel("https://inaridarkfox4231.github.io/models/bunnyYZ.obj");
 }
 
 // トーラスの位置はfbで決めるので、...あとでいいか。
 function setup(){
-  _timer.initialize("slot0");
+  _timer.initialize("slot0");    // モーション用
+  _timer.initialize("moveCam");  // カメラ用
   createCanvas(800, 600, WEBGL);
   _node = new ex.RenderNode(this._renderer.GL);
-  frameRate(30);
+  //frameRate(30); // 妥協。それでもモーションが時間制御なのでレート落ちてもそれなりの見た目にはなります。ああ、時間制御で書いてきて良かった。
 
   // 撮影用カメラ
   cam0 = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[12, 0, 9], pers:{near:0.1, far:4}});
   // 平行光を表現するカメラ
   cam1 = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[4, 4, 12]});
-  cam1.setOrtho({left:-16, right:16, bottom:-12, top:12, near:0.1, far:2});
+  //cam1.setOrtho({left:-16, right:16, bottom:-12, top:12, near:0.1, far:2});
   cam2 = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[-4, -4, 12]});
-  cam2.setOrtho({left:-16, right:16, bottom:-12, top:12, near:0.1, far:2});
+  //cam2.setOrtho({left:-16, right:16, bottom:-12, top:12, near:0.1, far:2});
 
   _node.registPainter("data", dataVert, dataFrag); // データ登録用shader.
   _node.registFBO("data", {w:4, h:7, color:{info:{type:"float"}}}); // 小さなものですがこれでもmodelMatrixの代用品です
@@ -495,8 +606,9 @@ function setup(){
   _node.registPainter("calcDepth", calcDepthVert, calcDepthFrag); // cam1から見た深度値を記録
 
   const meshes = [];
-  meshes.push(getPlane(-18, 18, -18, 18, 0));
-  for(let i=0; i<6; i++){ meshes.push(getBunny(4, 0.16*i)); }
+  meshes.push(getPlane(-6, 6, -6, 6, 0));
+  meshes.push(getRabbit(3, 0.55));
+  meshes.push(getRabbit(3, 0.65));
   //for(let i=0; i<6; i++){ meshes.push(getTorus(1, 0.4, 24, 24, 0.16*i)); }
   registCompositeMeshes(_node, meshes, "scene"); // いわゆる「シーン」
 
@@ -509,7 +621,7 @@ function setup(){
   _node.registFBO("shadow1", {w:w, h:h, color:{info:{type:"float", internalFormat:"r32f", format:"red", magFilter:"nearest"}}});
   _node.registFBO("shadow2", {w:w, h:h, color:{info:{type:"float", internalFormat:"r32f", format:"red", magFilter:"nearest"}}});
 
-  // カリング
+  // カリング（ミラーの際に反転させる？）
   _node.enable("cull_face");
 
   // info.
@@ -527,7 +639,7 @@ function setup(){
     gr.noStroke();
     for(let x=0; x<16; x++){
       for(let y=0; y<16; y++){
-        gr.fill(128+128*((x+y)%2));
+        gr.fill(64+64*((x+y)%2));
         gr.rect(16*x,16*y,16,16);
       }
     }
@@ -581,14 +693,19 @@ function draw(){
   // 環境光
   setLight(_node, {useSpecular:true});
 
-  // 平行光
+  // 平行光はおやすみで。
+
+  // 照射光
   const {eye:e1, center:c1} = cam1.getViewData();
   const {eye:e2, center:c2} = cam2.getViewData();
-  setDirectionalLight(_node, {
+  setSpotLight(_node, {
     count:2,
-    direction:[c1.x-e1.x, c1.y-e1.y, c1.z-e1.z, c2.x-e2.x, c2.y-e2.y, c2.z-e2.z], // eyeからcenterへ。
-    diffuseColor:[1, 1, 1, 1, 1, 1],
-    specularColor:[0.5,1,1, 1, 1, 0.5]
+    location:[e2.x, e2.y, e2.z, e1.x, e1.y, e1.z],
+    direction:[c2.x-e2.x, c2.y-e2.y, c2.z-e2.z, c1.x-e1.x, c1.y-e1.y, c1.z-e1.z],
+    angle:[Math.PI/3, Math.PI/3],
+    conc:[20, 20],
+    diffuseColor:[0.5, 0.75, 1, 0.5, 1, 0.75],
+    specularColor:[0.75, 1, 0.75, 0.5, 0.75, 1]
   });
 
   // 行列もvしか使わないよ
@@ -610,9 +727,11 @@ function draw(){
 }
 
 function configCamera(){
-  cam0.spin(0.01);
-  cam1.spin(0.01);
-  cam2.spin(-0.01);
+  const _delta = _timer.getDelta("moveCam");
+  _timer.set("moveCam");
+  cam0.spin(_delta * 0.6);
+  cam1.spin(_delta * 0.6);
+  cam2.spin(-_delta * 0.6);
   const {eye} = cam0.getViewData();
 	if(keyIsDown(UP_ARROW)){ cam0.arise(0.01); }
 	else if(keyIsDown(DOWN_ARROW) && eye.z > 0.5){ cam0.arise(-0.01); }
@@ -622,7 +741,7 @@ function createModelMatrix(){
   _node.bindFBO("data").clearColor(0,0,0,0).clear();
   _node.use("data", "foxBoard")
        .setUniform("uTime", _timer.getDelta("slot0"))
-       .setUniform("uRadius", 6.0)
+       .setUniform("uRadius", 3.0)
        .setUniform("uHeight", 2.0);
   // setUniform. いずれね。
   _node.drawArrays("triangle_strip").unbind();
@@ -653,5 +772,5 @@ function updateInfo(){
 }
 
 function showInfo(){
-  ex.copyPainter(_node, {src:{name:"info", gradationFlag:1, gradationStart:[0, 0.5, 0, 0, 0, 1], gradationStop:[1, 0.5, 0, 0, 1, 1]}});
+  ex.copyPainter(_node, {src:{name:"info", gradationFlag:1, gradationStart:[0.5, 0, 0, 0, 0, 1], gradationStop:[0.5, 1, 0, 0.5, 0.75, 1]}});
 }

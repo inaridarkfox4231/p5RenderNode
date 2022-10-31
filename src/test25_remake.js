@@ -26,7 +26,7 @@
 const ex = p5wgex;
 let _node;
 const _timer = new ex.Timer();
-let cam0, cam1;
+let cam0, cam1, cam2;
 let _tf = new ex.TransformEx();
 
 // ----------------------------------------------- light ------------------------------------------------ //
