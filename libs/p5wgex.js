@@ -584,6 +584,7 @@ const p5wgex = (function(){
   // テクスチャ作る関数も作るつもり。そのうち...
   // r32fとか使ってみたいわね。効率性よさそう
   // これtextureの話しかしてないからこれでいいね？
+  // reference: https://registry.khronos.org/webgl/specs/latest/2.0/#TEXTURE_TYPES_FORMATS_FROM_DOM_ELEMENTS_TABLE
   // gl.RGBA32F --- gl.RGBA --- gl.FLOAT
   // gl.RGBA16F --- gl.RGBA --- gl.FLOAT
   // gl.RGBA16F --- gl.RGBA --- gl.HALF_FLOAT
@@ -1458,6 +1459,10 @@ const p5wgex = (function(){
       node.disable("depth_test");
     }
     const {dst:_dst, src:_src} = info;
+
+    // 終わったらその時のFBOに戻すので
+    const previousFBO = node.getCurrentFBO();
+
     // fboのbind
     if(_dst.type === null){
       node.bindFBO(null);
@@ -1527,6 +1532,9 @@ const p5wgex = (function(){
     // 呼び出すたびにreadが空になるのおかしいでしょ。
     // 後始末
     node.unbind();
+
+    // 元のFBOに戻す
+    node.bindFBO(previousFBO);
   }
 
   // ---------------------------------------------------------------------------------------------- //

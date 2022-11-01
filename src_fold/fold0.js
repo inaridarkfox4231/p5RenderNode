@@ -24,9 +24,13 @@
 
 // y軸上にしました。なのでもうupベクトルの符号いじる必要ないです。ご苦労さま。
 
-// フレームバッファ使う方法一旦やめようか。パフォーマンス逆に落ちてる。撤退。
-
-// cam2への移行完了
+// 20221101
+// p5wgexの更新が滞ってたのでいろいろいじったんですが
+// ほとんどいじらずに済んだ
+// すげぇよな相変わらず
+// dir.z += length(st) * 0.15;
+// これでfisheyeになるよ
+// ただ地面が無いとあんま実感できないけどね（おい）
 
 // ----global---- //
 const ex = p5wgex;
@@ -35,8 +39,7 @@ let _timer = new ex.Timer();
 let info, infoTex;
 
 // カメラ
-//let cam;
-let cam2;
+let cam;
 
 // ----shaders---- //
 const rayMVert =
@@ -118,6 +121,7 @@ float march(vec3 ray, vec3 eye){
 void main(){
   // 背景色
   vec3 color = vec3(0.0);
+  float alpha = 0.0;
   // rayを計算する
   vec3 ray = vec3(0.0);
   // uFrontだけマイナス、これで近づく形。さらにuSideで右、uUpで上に。分かりやすいね。
@@ -137,35 +141,9 @@ void main(){
     baseColor *= diff;
     // 遠くでフェードアウトするように調整する
     color = mix(baseColor, color, tanh(t * 0.02));
+    alpha = 1.0;
   }
-  fragColor = vec4(color, 1.0); // これでOK?
-}
-`;
-
-// info用
-let copyVert =
-`#version 300 es
-
-in vec2 aPosition;
-out vec2 vUv; // vertexStageのvaryingはoutで、
-
-void main(void){
-  vUv = aPosition * 0.5 + 0.5;
-  vUv.y = 1.0 - vUv.y;
-  gl_Position = vec4(aPosition, 0.0, 1.0);
-}`;
-
-let copyFrag =
-`#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 vUv; // fragmentStageのinと呼応するシステム。vertexStageのinはattributeなので
-uniform sampler2D uTex;
-out vec4 fragColor;
-
-void main(void){
-  fragColor = texture(uTex, vUv); // なんとtextureでいいらしい...！
+  fragColor = vec4(color, alpha); // これでOK?
 }
 `;
 
@@ -178,64 +156,55 @@ function setup(){
 
   const positions = [-1,-1,1,-1,-1,1,1,1];
   _node.registPainter("rayM", rayMVert, rayMFrag);
-  _node.registFigure("board", [{name:"aPosition", size:2, data:positions}]);
-  _timer.set("cur");
+  _timer.initialize("cur");
 
-  // for info.
-  _node.registPainter("copy", copyVert, copyFrag);
-  _node.registFigure("board", [{name:"aPosition", size:2, data:[-1,-1,1,-1,-1,1,1,1]}]);
-
+  // info texture.
   info = createGraphics(width, height);
   info.fill(255);
   info.noStroke();
   info.textSize(16);
   info.textAlign(LEFT, TOP);
-  infoTex = new p5.Texture(this._renderer, info);
-
-	_timer.set("fps"); // 最初に1回だけ
-
-  // clearColor.
-  _node.clearColor(0,0,0,1);
+  _node.registTexture("info", {src:info});
 
   // カメラ
-  //cam = new ex.CameraEx(width, height);
-  //cam.setView({eye:{x:0,y:0,z:1.732}, center:{x:0,y:0,z:0}, up:{x:0,y:1,z:0}});
-  // カメラ2のテスト
-  cam2 = new ex.CameraEx2({w:width, h:height, eye:[0, 0, 1.732], center:[0, 0, 0], top:[0, 1, 0]});
+  cam = new ex.CameraEx({w:width, h:height, eye:[0, 0, 1.732], center:[0, 0, 0], top:[0, 1, 0]});
 }
 
 // ----draw---- //
 function draw(){
-  const currentTime = _timer.getDeltaSecond("cur"); // そのうち
-  const fps = _timer.getDeltaFPStext("fps", frameRate());
-	_timer.set("fps");
+  const currentTime = _timer.getDelta("cur"); // そのうち
+
   _node.bindFBO(null)
+       .clearColor(0,0,0,0)
        .clear();
 
+  updateInfo();
+  ex.copyPainter(_node, {src:{name:"info", gradationFlag:1, gradationStart:[0,0,0,0,0,1], gradationStop:[0,1,0,0.5,0.75,1]}});
+
   // レイマーチングスタート
-  _node.use("rayM", "board")
+  _node.use("rayM", "foxBoard");
 
   // カメラ設定
   moveCamera(currentTime);
   setCameraParameter();
 
+  _node.enable("blend").blendFunc("src_alpha", "one_minus_src_alpha");
+
   // 光の設定、レンダリング
-  _node.setUniform("uLightDirection", [-1, -1, -1])
-       .drawArrays("triangle_strip")
+  _node.drawArrays("triangle_strip")
        .unbind();
 
-  // for info.
-  showPerformance(fps);
+  _node.disable("blend");
+
+  _node.flush();
 }
 
 function moveCamera(currentTime){
   // 動かしてみる。マウスで動かしてもいいと思う。
-  //const curTime = _timer.getDeltaSecond("cur");
   const _x = Math.sqrt(3) * Math.cos(currentTime * Math.PI*2 * 0.5);
   const _y = 0.7 * Math.sin(currentTime * Math.PI*2 * 0.4);
   const _z = Math.sqrt(3) * Math.sin(currentTime * Math.PI*2 * 0.5);
-  //cam.setView({eye:{x:_x, y:_y, z:_z}});
-  cam2.setView({eye:[_x, _y, _z]});
+  cam.setView({eye:{x:_x, y:_y, z:_z}});
 }
 
 function setCameraParameter(){
@@ -246,35 +215,23 @@ function setCameraParameter(){
   // uTopも(0,0,1)ですっきり。
 
   // まずgetViewData.
-  //const viewData = cam.getViewData();
-  //const perseData = cam.getPerseParam();
-  //const {side, up, top, eye} = viewData;
-  //const {fov, aspect} = perseData;
-  const {side, up, front} = cam2.getLocalAxes();
-  const {eye} = cam2.getViewData();
-  const {fov, aspect} = cam2.getProjData(); // persモードに固定してあるので
+  const {side, up, front} = cam.getLocalAxes();
+  const {eye} = cam.getViewData();
+  const {fov, aspect} = cam.getProjData(); // persモードに固定してあるので
 
   _node.setUniform("uEye", [eye.x, eye.y, eye.z])
        .setUniform("uFov", fov)
        .setUniform("uAspect", aspect)
        .setUniform("uSide", [side.x, side.y, side.z])
        .setUniform("uUp", [up.x, up.y, up.z])
-       .setUniform("uFront", [front.x, front.y, front.z]);
+       .setUniform("uFront", [front.x, front.y, front.z])
+       .setUniform("uLightDirection", [-front.x, -front.y, -front.z]); // 面倒なので見る方向の後方から光を当てよう
 }
 
-function showPerformance(fps){
-  _node.enable("blend")
-       .blendFunc("one", "one_minus_src_alpha");
-
-  _node.use("copy", "board")
-       .setTexture2D("uTex", infoTex.glTex)
-       .drawArrays("triangle_strip")
-       .unbind()
-       .flush()
-       .disable("blend");
-
-  info.clear();
-  info.text("fpsRate:" + fps, 5, 5);
-  info.text("frameRate:" + frameRate().toFixed(2), 5, 25);
-  infoTex.update();
+function updateInfo(){
+  const gr = _node.getTextureSource("info");
+  gr.clear();
+  gr.text("ray marching test.", 5, 5);
+  gr.text(frameRate().toFixed(3), 5, 25);
+  _node.updateTexture("info");
 }

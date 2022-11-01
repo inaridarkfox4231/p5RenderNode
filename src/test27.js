@@ -1,15 +1,25 @@
-// torus6.js
-// bunny6.jsの前段階。ライト増やしたいのでドローコール減らす。
+// ライティングシェーダの基本ということで
+// テンプレート作る。さすがに面倒になってきた。
+// とはいえ改造する場合も多いしmodelに関してもああやってコンポジットしないと大量に動かすのに不便だから
+// modelは使うかどうか選べるように
+// しますか
+// いや、もうこの際それをデフォにしたいかな...たとえば512個あるとして
+// 4x512のfloatのあれを作って、とか。で、indexで参照して、どうせ単純な動きしか指定しない、
+// 固定なら初めからそういう風に作ったうえで単位行列でOKだし。自由に選べるように枠組み用意するとか。何でもできる。
 
-// 第一段階突破。modelMatrixの構築は合ってるみたいです。
+// ディファードはそれで速くなるとは限らないということで保留で、今回は普通にやる。
+// けど、もういいや。
+// え、sphereをばうんしんぐ？はい。わかりました。
 
-// とりあえず。
+// タイトル：light.
+
+// サイズに関する付加情報をフレームバッファにぶちこんでおいてデータ作る際に参照するのもありかもしれない
 
 // --------------------------------------------- global ----------------------------------------------- //
 const ex = p5wgex;
 let _node;
 const _timer = new ex.Timer();
-let cam0, cam1, cam2;
+let cam0;
 
 // ----------------------------------------------- light ------------------------------------------------ //
 const colorVert =
@@ -21,6 +31,7 @@ in vec2 aTexCoord;
 in float aIndex;
 
 uniform sampler2D uData; // これ。
+uniform float uDataNum;
 uniform mat4 uViewMatrix;
 uniform mat4 uProjMatrix; // ModelViewProjectionだとさすがに長すぎるので統一目的でProjに短縮
 
@@ -38,7 +49,7 @@ void main(void){
 
   mat4 modelMatrix;
   for(int i=0; i<4; i++){
-    modelMatrix[i] = texture(uData, vec2((float(i) + 0.5) / 4.0, (aIndex + 0.5) / 7.0)); // たぶんこれでいける。
+    modelMatrix[i] = texture(uData, vec2((float(i) + 0.5) / 4.0, (aIndex + 0.5) / uDataNum)); // たぶんこれでいける。
   }
   mat4 modelViewMatrix = uViewMatrix * modelMatrix;
 
@@ -98,8 +109,8 @@ void main(void){
 
   // 白。デフォルト。
   vec4 col = vec4(1.0);
-  int colorFlag = 0; // とりあえず頂点色
-  if(vIndex == 0.0){ colorFlag = 2; } // 床だけtexture.
+  int colorFlag = USE_VERTEX_COLOR; // とりあえず頂点色
+  if(vIndex == 0.0){ colorFlag = USE_UV_COLOR; } // 床だけtexture.
 
   // マテリアルカラーの計算
   if(colorFlag == USE_VERTEX_COLOR){
@@ -308,110 +319,6 @@ void main(){
 }
 `;
 
-// 影作成
-// 1. calcDepth. cam1のMVPでNDCを計算 → fsに渡す → depth(0~1)を計算して格納
-const calcDepthVert =
-`#version 300 es
-in vec3 aPosition;
-in float aIndex;
-uniform sampler2D uData;
-uniform mat4 uViewProjMatrix;
-out vec4 vNDC;
-void main(){
-  mat4 modelMatrix;
-  for(int i=0; i<4; i++){
-    modelMatrix[i] = texture(uData, vec2((float(i) + 0.5) / 4.0, (aIndex + 0.5) / 7.0)); // たぶんこれでいける。
-  }
-  vec4 globalPos = modelMatrix * vec4(aPosition, 1.0);
-  vec4 NDC = uViewProjMatrix * globalPos;
-  gl_Position = NDC; // 送る前にwで割らないこと。
-  vNDC = NDC;
-}
-`;
-
-const calcDepthFrag =
-`#version 300 es
-precision highp float;
-in vec4 vNDC;
-const float bias = 0.01; // 微妙に遠ざからせて判定を助ける
-out float depth;
-void main(){
-  depth = 0.5 * (vNDC.z / vNDC.w) + 0.5 + bias; // え、*が+に??
-}
-`;
-
-// 2. generateDepthMask. さっきのdepthと計算値を比べてより大きいなら係数を格納
-
-// MVP2種類の方が合理的...だけどいろいろめんどくさいのでmとvpにわけるわ。
-const maskVert =
-`#version 300 es
-in vec3 aPosition;
-in float aIndex;
-uniform sampler2D uData;
-uniform mat4 uViewProjMatrix;
-uniform mat4 uLightVPMatrix;
-out vec4 vNDC;
-void main(){
-  mat4 modelMatrix;
-  for(int i=0; i<4; i++){
-    modelMatrix[i] = texture(uData, vec2((float(i) + 0.5) / 4.0, (aIndex + 0.5) / 7.0)); // たぶんこれでいける。
-  }
-  vec4 globalPos = modelMatrix * vec4(aPosition, 1.0);
-  gl_Position = uViewProjMatrix * globalPos;
-  // NDCはそのまま送る。cam1のVPで計算する。
-  vNDC = uLightVPMatrix * globalPos;
-}
-`;
-
-// 1を付けて区別しないとエラーになる
-const maskFrag =
-`#version 300 es
-precision highp float;
-uniform sampler2D uDepthMap; // あー、改名しないと。
-in vec4 vNDC;
-out float mask;
-void main(){
-  vec3 ndc = vNDC.xyz / vNDC.w;
-  ndc = 0.5*(ndc + 1.0);
-  float localDepth = ndc.z;
-  float correctDepth = texture(uDepthMap, ndc.xy).r;
-  if(localDepth < correctDepth){
-    mask = 1.0;
-  }else{
-    mask = 0.6;
-  }
-  if(ndc.x < 0.0 || ndc.x > 1.0 || ndc.y < 0.0 || ndc.y > 1.0){ mask = 1.0; } // 画面外
-}
-`;
-
-// 3. 乗算影計算のクライマックス
-const shadowVert =
-`#version 300 es
-in vec2 aPosition;
-out vec2 vUv;
-void main(){
-  vUv = 0.5 + 0.5 * aPosition;
-  gl_Position = vec4(aPosition, 0.0, 1.0);
-}
-`;
-
-// これを出力する
-const shadowFrag =
-`#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uBase;
-uniform sampler2D uShadow1;
-uniform sampler2D uShadow2;
-out vec4 fragColor;
-void main(){
-  vec4 color = texture(uBase, vUv);
-  if(color.a < 0.001){ discard; }
-  float shadow = texture(uShadow1, vUv).r * texture(uShadow2, vUv).r;
-  fragColor = color * vec4(vec3(shadow), 1.0); // おわり。
-}
-`;
-
 // fbにmodelMatrixの成分を書き込むシェーダ（実態は板ポリ芸）. vsは何もしない。gl_FragCoordのfloor値でいろいろやる。
 const dataVert =
 `#version 300 es
@@ -421,141 +328,41 @@ void main(){
 }
 `;
 
-// 4x7です。4x1それぞれ、縦方向に並びます。
+// 4x512でやる。512=1+511.
 const dataFrag =
 `#version 300 es
 precision highp float;
 uniform float uTime;
-uniform float uRadius;
 uniform float uHeight;
 out vec4 data;
 const float PI = 3.14159;
+const float TAU = 6.28318;
 void main(){
   vec2 p = gl_FragCoord.xy;
   p = floor(p);
   vec4 result;
   float index = p.y;
-  float theta = PI*uTime*2.0;
-  float phi = (PI/3.0)*(index + uTime);
-  float c = cos(theta+phi);
-  float s = sin(theta+phi);
-  float t = fract(uTime);
+  float t = fract(uTime * 0.25 + index * 31.46);
+  float u = uTime*TAU;
   float z = 1.0 + 4.0*uHeight*t*(1.0-t);
-  if(index > 0.0){
-    if(p.x == 0.0){ result = vec4(c, s, 0.0, 0.0); }
-    if(p.x == 1.0){ result = vec4(0.0, 0.0, -1.0, 0.0); }
-    if(p.x == 2.0){ result = vec4(-s, c, 0.0, 0.0); }
-    if(p.x == 3.0){ result = vec4(uRadius*cos(phi), uRadius*sin(phi), z, 1.0); }
-  }else{
+  float phi = TAU*index/16.0;
+  float r = sqrt(phi/2.4) * 0.8;
+  float x = r * cos(phi);
+  float y = r * sin(phi);
+  if(index == 0.0){
     if(p.x == 0.0){ result = vec4(1.0, 0.0, 0.0, 0.0); }
     if(p.x == 1.0){ result = vec4(0.0, 1.0, 0.0, 0.0); }
     if(p.x == 2.0){ result = vec4(0.0, 0.0, 1.0, 0.0); }
     if(p.x == 3.0){ result = vec4(0.0, 0.0, 0.0, 1.0); }
+  }else{
+    if(p.x == 0.0){ result = vec4(cos(u), -sin(u), 0.0, 0.0); }
+    if(p.x == 1.0){ result = vec4(sin(u), cos(u), 0.0, 0.0); }
+    if(p.x == 2.0){ result = vec4(0.0, 0.0, 1.0, 0.0); }
+    if(p.x == 3.0){ result = vec4(x, y, z, 1.0); }
   }
   data = result;
 }
 `;
-
-// ------------------------------------------------------ mesh ---------------------------------------------------------------- //
-// 数増やそう。
-
-function getTorus(a = 1.0, b = 0.4, ds = 32, dt = 32, colorHue = 0){
-  // 今回はトーラスで。紙の上で計算してるけどロジックは難しくないのよ。
-  // a:長半径、b:短半径、ds:断面ディテール、dt:外周ディテール
-  // colorIndexでカラフルに。
-  const torusPositions = new Array(3*(ds+1)*(dt+1));
-  const torusNormals = new Array(3*(ds+1)*(dt+1));
-  const torusColors = new Array(3*(ds+1)*(dt+1));
-  const torusUVs = new Array(2*(ds+1)*(dt+1));
-  const torusFaces = new Array(6*ds*dt);
-  const dTheta = Math.PI*2/ds;
-  const dPhi = Math.PI*2/dt;
-  // イメージ的にはkがx軸でlがy軸で原点左下の座標系を考えている
-  // この原点はx軸aでz軸bの点で、そこから右と上にxとyをそれぞれ伸ばす感じ。
-  for(let l=0; l<=dt; l++){
-    for(let k=0; k<=ds; k++){
-      const index = (dt+1)*l + k;
-      const px = Math.cos(dPhi*l);
-      const py = Math.sin(dPhi*l);
-      const nx = Math.sin(dTheta*k)*px;
-      const ny = Math.sin(dTheta*k)*py;
-      const nz = Math.cos(dTheta*k);
-      const x = a*px + b*nx;
-      const y = a*py + b*ny;
-      const z = b*nz;
-      torusPositions[3*index] = x;
-      torusPositions[3*index+1] = y;
-      torusPositions[3*index+2] = z;
-      torusNormals[3*index] = nx;
-      torusNormals[3*index+1] = ny;
-      torusNormals[3*index+2] = nz;
-      const col = ex.hsv2rgb(colorHue, 0.7, 1);
-      torusColors[3*index] = col.r;
-      torusColors[3*index+1] = col.g;
-      torusColors[3*index+2] = col.b;
-      torusUVs[2*index] = (k+1)/ds;
-      torusUVs[2*index+1] = (l+1)/dt;
-    }
-  }
-  // kとlに着目すると分かりやすいかもしれない。
-  for(let l=0; l<dt; l++){
-    for(let k=0; k<ds; k++){
-      const index = dt*l + k;
-      torusFaces[6*index] = l*(ds+1) + k;
-      torusFaces[6*index+1] = l*(ds+1) + k+1;
-      torusFaces[6*index+2] = (l+1)*(ds+1) + k+1;
-      torusFaces[6*index+3] = l*(ds+1) + k;
-      torusFaces[6*index+4] = (l+1)*(ds+1) + k+1;
-      torusFaces[6*index+5] = (l+1)*(ds+1) + k;
-    }
-  }
-  return {v:torusPositions, n:torusNormals, vc:torusColors, uv:torusUVs, f:torusFaces};
-}
-
-// 雑。z軸に平行な平面。
-function getPlane(left=-1, right=1, bottom=-1, top=1, height=0){
-  const p0 = [left, bottom, height];
-  const p1 = [right, bottom, height];
-  const p2 = [left, top, height];
-  const p3 = [right, top, height];
-  const positions = [p0, p1, p2, p3].flat();
-  const uvs = [0, 1, 1, 1, 0, 0, 1, 0];
-  const faces = [0, 1, 2, 2, 1, 3];
-  const normals = [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1];
-  const colors = [1,1,1, 1,1,1, 1,1,1, 1,1,1]; // 真っ白
-  return {v:positions, n:normals, vc:colors, uv:uvs, f:faces};
-}
-
-function registCompositeMeshes(node, meshs, name = "scene"){
-  const positions = [];
-  const normals = [];
-  const faces = [];
-  const vertexColors = [];
-  const uvs = [];
-  const ids = [];
-  let offset = 0;
-  for(let i=0; i<meshs.length; i++){
-    const mesh = meshs[i];
-    const size = mesh.v.length/3;
-    positions.push(...mesh.v);
-    normals.push(...mesh.n);
-    vertexColors.push(...mesh.vc);
-    uvs.push(...mesh.uv);
-    for(let k=0, N=mesh.f.length; k<N; k++){
-      faces.push(offset + mesh.f[k]);
-    }
-    offset += size;
-    for(let k=0; k<size; k++){ ids.push(i); } // 識別子
-  }
-  node.registFigure(name, [
-    {name:"aPosition", size:3, data:positions},
-    {name:"aNormal", size:3, data:normals},
-    {name:"aVertexColor", size:3, data:vertexColors},
-    {name:"aTexCoord", size:2, data:uvs},
-    {name:"aIndex", size:1, data:ids}
-  ]);
-  node.registIBO(name + "IBO", {data:faces, large:true}); // 一応。
-}
 
 // --------------------------------------------------- lightconfig ------------------------------------------------------------- //
 
@@ -620,64 +427,160 @@ function setSpotLight(node, info = {}){
   node.setUniform("uSpotLightSpecularColor", info.specularColor);
 }
 
-// -------------------------- main ------------------------------- //
+// ------------------------------------------------- primitive ----------------------------- //
+// under construction.
 
-// トーラスの位置はfbで決めるので、...あとでいいか。
+// 立方体
+function getCube(size = 1, hue = 0){
+  const v=[-1,-1,-1, -1,1,-1, -1,-1,1, -1,1,1, // x-minus
+           -1,-1,1, -1,1,1, 1,-1,1, 1,1,1, // z-plus
+           1,-1,1, 1,1,1, 1,-1,-1, 1,1,-1, // x-plus
+           1,-1,-1, 1,1,-1, -1,-1,-1, -1,1,-1, // z-minus
+           -1,-1,-1, -1,-1,1, 1,-1,-1, 1,-1,1, // y-minus
+           -1,1,1, -1,1,-1, 1,1,1, 1,1,-1] // y-plus.
+  for(let i=0; i<v.length; i++){ v[i] *= size; }
+  const f = [0,2,3, 0,3,1, 4,6,7, 4,7,5, 8,10,11, 8,11,9, 12,14,15, 12,15,13, 16,18,19, 16,19,17, 20,22,23, 20,23,21];
+  const n = ex.getNormals(v, f);
+  const createUV = (a,b) => { return [a, b, a+0.25, b, a, b+0.25, a+0.25, b+0.25]; }
+  const uv = [];
+  uv.push(...createUV(0.375, 0));
+  uv.push(...createUV(0.375, 0.25));
+  uv.push(...createUV(0.375, 0.5));
+  uv.push(...createUV(0.375, 0.75));
+  uv.push(...createUV(0.125, 0.25));
+  uv.push(...createUV(0.625, 0.25));
+  const vc = [];
+  for(let i=0; i<24; i++){
+    const x = v[3*i];
+    const y = v[3*i+1];
+    const z = v[3*i+2];
+    const col = ex.hsv2rgb(hue, 0.4*(z+1), 1);
+    vc.push(col.r, col.g, col.b);
+  }
+  return {v:v, f:f, n:n, uv:uv, vc:vc};
+}
+
+// z軸に平行な平面
+function getPlane(left=-1, right=1, bottom=-1, top=1, height=0){
+  const p0 = [left, bottom, height];
+  const p1 = [right, bottom, height];
+  const p2 = [left, top, height];
+  const p3 = [right, top, height];
+  const v = [p0, p1, p2, p3].flat();
+  const f = [0, 1, 2, 2, 1, 3];
+  const n = [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1];
+  const uv = [0, 1, 1, 1, 0, 0, 1, 0];
+  const vc = [1,1,1, 1,1,1, 1,1,1, 1,1,1]; // 真っ白
+  return {v:v, f:f, n:n, uv:uv, vc:vc};
+}
+
+// メッシュ結合関数。
+function registCompositeMeshes(node, meshes, name = "scene"){
+  const positions = [];
+  const normals = [];
+  const faces = [];
+  const vertexColors = [];
+  const uvs = [];
+  const ids = [];
+  let offset = 0;
+  for(let i=0; i<meshes.length; i++){
+    const mesh = meshes[i];
+    const size = mesh.v.length/3;
+    positions.push(...mesh.v);
+    normals.push(...mesh.n);
+    vertexColors.push(...mesh.vc);
+    uvs.push(...mesh.uv);
+    for(let k=0, N=mesh.f.length; k<N; k++){
+      faces.push(offset + mesh.f[k]);
+    }
+    offset += size;
+    for(let k=0; k<size; k++){ ids.push(i); } // 識別子
+  }
+  node.registFigure(name, [
+    {name:"aPosition", size:3, data:positions},
+    {name:"aNormal", size:3, data:normals},
+    {name:"aVertexColor", size:3, data:vertexColors},
+    {name:"aTexCoord", size:2, data:uvs},
+    {name:"aIndex", size:1, data:ids}
+  ]);
+  node.registIBO(name + "IBO", {data:faces, large:true}); // 一応。
+}
+
+// -------------------------- main ------------------------------- //
+// テンプレートなので手順を考えようね
 function setup(){
+  // timer.
   _timer.initialize("slot0");
+
+  // setup.
   createCanvas(800, 600, WEBGL);
   _node = new ex.RenderNode(this._renderer.GL);
 
-  // 撮影用カメラ
-  cam0 = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[12, 0, 9], pers:{near:0.1, far:4}});
-  // 平行光を表現するカメラ
-  cam1 = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[4, 4, 12]});
-  cam1.setOrtho({left:-16, right:16, bottom:-12, top:12, near:0.1, far:2});
-  cam2 = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[-4, -4, 12]});
-  cam2.setOrtho({left:-16, right:16, bottom:-12, top:12, near:0.1, far:2});
+  // camera.
+  cam0 = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[16, 8, 8], pers:{near:0.1, far:4}});
 
-  _node.registPainter("data", dataVert, dataFrag); // データ登録用shader.
-  _node.registFBO("data", {w:4, h:7, color:{info:{type:"float"}}}); // 小さなものですがこれでもmodelMatrixの代用品です
+  // shaders.
   _node.registPainter("color", colorVert, colorFrag);
   _node.registPainter("defer", deferVert, deferFrag);
-  // 影用のシェーダは後で
-  _node.registPainter("calcDepth", calcDepthVert, calcDepthFrag); // cam1から見た深度値を記録
-  _node.registPainter("generateDepthMask", maskVert, maskFrag); // cam1から見た深度値と比較して係数を計算
-  _node.registPainter("applyShadow", shadowVert, shadowFrag); // 係数を加味して描画
+  _node.registPainter("data", dataVert, dataFrag);
 
-  const meshes = [];
-  meshes.push(getPlane(-18, 18, -18, 18, 0));
-  for(let i=0; i<6; i++){ meshes.push(getTorus(1, 0.4, 24, 24, 0.16*i)); }
-  registCompositeMeshes(_node, meshes, "scene"); // いわゆる「シーン」
-
+  // defer用とdata用のfbは標準装備。
   const {w, h} = _node.getDrawingBufferSize(null);
-  // defer用のMRT.
   _node.registFBO("defer", {w:w, h:h, color:{info:[{}, {type:"float"}, {type:"float"}]}});
-  // 結果格納用
   _node.registFBO("base", {w:w, h:h, color:{info:{}}});
-  // そして影...float32の単独。
-  _node.registDoubleFBO("shadow1", {w:w, h:h, color:{info:{type:"float", internalFormat:"r32f", format:"red", magFilter:"nearest"}}});
-  _node.registDoubleFBO("shadow2", {w:w, h:h, color:{info:{type:"float", internalFormat:"r32f", format:"red", magFilter:"nearest"}}});
+  _node.registFBO("data", {w:4, h:1024, color:{info:{type:"float"}}});
 
-  // カリング
+  // meshes.
+  registMeshes();
+
+  // culling.
   _node.enable("cull_face");
 
-  // info.
-  _node.registTexture("info", {src:(function(){
-    const gr = createGraphics(width, height);
-    gr.fill(255);
-    gr.textSize(16);
-    gr.textAlign(LEFT, TOP);
-    return gr;
-  })()});
+  registInfoBoardTexture();
+  registFloorTexture();
+}
 
-  // checkerBoard.
+// --------- draw --------- //
+function draw(){
+  moveCamera(cam0); // カメラ動かそう
+
+  createModelMatrix(); // モデル行列を構築
+
+  prepareDrawData(); // deferに各種情報を格納
+
+  drawBase(); // 板ポリ芸としてメイン描画
+
+  render();
+
+  _node.flush();
+}
+
+// -------------------------- preparation ------------------------------- //
+function registMeshes(){
+  const meshes = [];
+  meshes.push(getPlane(-10, 10, -10, 10, 0));
+  for(let i=0; i<1023; i++){
+    meshes.push(getCube(0.1+0.1*Math.random(), 0.5+0.1*Math.random()));
+  }
+  registCompositeMeshes(_node, meshes, "scene");
+}
+
+function registInfoBoardTexture(){
+  const info = createGraphics(width, height);
+  info.textAlign(LEFT, TOP);
+  info.textSize(16);
+  info.fill(255);
+  info.noStroke();
+  _node.registTexture("info", {src:info});
+}
+
+function registFloorTexture(){
   _node.registTexture("checkerBoard", {src:(function(){
     const gr = createGraphics(256, 256);
     gr.noStroke();
     for(let x=0; x<16; x++){
       for(let y=0; y<16; y++){
-        gr.fill(128+128*((x+y)%2));
+        gr.fill(255*((x+y)%2));
         gr.rect(16*x,16*y,16,16);
       }
     }
@@ -685,48 +588,65 @@ function setup(){
   })()});
 }
 
-function draw(){
-  configCamera();
-  createModelMatrix(); // ここで作っちゃえ
+// ------------------------------------- config -------------------------------- //
+function moveCamera(cam){
+  if(keyIsDown(RIGHT_ARROW)){ cam.spin(0.03); }
+  if(keyIsDown(LEFT_ARROW)){ cam.spin(-0.03); }
+  if(keyIsDown(UP_ARROW)){ cam.arise(0.04); } // 上
+  if(keyIsDown(DOWN_ARROW)){ cam.arise(-0.04); } // 下
+  if(keyIsDown(69)){ cam.dolly(0.05); } // Eキー
+  if(keyIsDown(68)){ cam.dolly(-0.05); } // Dキー
+}
 
-  _node.bindFBO(null).clearColor(0,0,0,1).clear();
+// ------------------------- drawing --------------------------- //
 
-  // とりあえずdefer.
+function createModelMatrix(){
+  _node.bindFBO("data").clearColor(0,0,0,0).clear();
+  _node.use("data", "foxBoard")
+       .setUniform("uTime", _timer.getDelta("slot0"))
+       .setUniform("uHeight", 6.0);
+  _node.drawArrays("triangle_strip").unbind();
+}
+
+function prepareDrawData(){
+  // 透明部分の色ってここで決まるんだ、それはそうか。だよね...
+  // だからここは透明でクリアしておいて...ってやる。
   _node.bindFBO("defer").clearColor(0,0,0,0).clear();
 
-  // 色などの情報を格納する。
-  _node.usePainter("color");
-
-  // sceneをdrawFigureして、vとpを入れて、dataをsetTextureするだけ。
-  // あとはbindIBO.draw.
-  _node.drawFigure("scene")
+  _node.use("color", "scene")
        .setUniform("uViewMatrix", cam0.getViewMat().m)
        .setUniform("uProjMatrix", cam0.getProjMat().m)
        .setFBOtexture2D("uData", "data") // これがmodelMatrixの代わり
-       .setTexture2D("uTex", "checkerBoard").setUniform("uTint", [1, 1, 1])
+       .setUniform("uDataNum", 1024)
+       .setTexture2D("uTex", "checkerBoard").setUniform("uTint", [1, 1, 1]) // 床用
        .bindIBO("sceneIBO")
        .drawElements("triangles");
 
   _node.unbind();
+}
 
-  // 次に
-  _node.bindFBO("base").clearColor(0,0,0,1).clear();
+function updateInfo(){
+  const info = _node.getTextureSource("info");
+  info.clear();
+  info.text(frameRate().toFixed(3), 5, 5);
+  _node.updateTexture("info");
+}
 
-  // deferをやる（板ポリ芸）
+function drawBase(){
+  // クリア
+  _node.bindFBO("base").clearColor(0,0,0,0).clear();
   _node.use("defer", "foxBoard");
 
-  // 今回はライティングは平行光のみ
   // 環境光
   setLight(_node, {useSpecular:true});
 
   // 平行光
-  const {eye:e1, center:c1} = cam1.getViewData();
-  const {eye:e2, center:c2} = cam2.getViewData();
+  const {center:c0, eye:e0} = cam0.getViewData();
   setDirectionalLight(_node, {
-    count:2,
-    direction:[c1.x-e1.x, c1.y-e1.y, c1.z-e1.z, c2.x-e2.x, c2.y-e2.y, c2.z-e2.z], // eyeからcenterへ。
-    diffuseColor:[1, 1, 1, 1, 1, 1],
-    specularColor:[0.5,1,1, 1, 1, 0.5]
+    count:1,
+    direction:[c0.x-e0.x, c0.y-e0.y, c0.z-e0.z],
+    diffuseColor:[1, 1, 1],
+    specularColor:[0.5,1,1]
   });
 
   // 行列もvしか使わないよ
@@ -739,87 +659,12 @@ function draw(){
 
   _node.drawArrays("triangle_strip");
   _node.unbind();
-
-  //ex.copyPainter(_node, {src:{type:"fb", name:"base"}}); // とりあえずここまで
-  // さてと。
-
-  createShadowMap("shadow1", cam0, cam1);
-  createShadowMap("shadow2", cam0, cam2);
-
-  //ex.copyPainter(_node, {src:{type:"fb", name:"shadow2"}});
-
-  // 仕上げ。colorに落とした方がいいんかな
-  updateInfo();
-  showInfo();
-  _node.bindFBO(null);
-  _node.use("applyShadow", "foxBoard");
-  _node.setFBOtexture2D("uBase", "base");
-  _node.setFBOtexture2D("uShadow1", "shadow1");
-  _node.setFBOtexture2D("uShadow2", "shadow2");
-  _node.drawArrays("triangle_strip")
-  _node.unbind();
-
-  _node.flush();
 }
 
-function configCamera(){
-  cam0.spin(0.01);
-  cam1.spin(0.01);
-  cam2.spin(-0.01);
-  const {eye} = cam0.getViewData();
-	if(keyIsDown(UP_ARROW)){ cam0.arise(0.01); }
-	else if(keyIsDown(DOWN_ARROW) && eye.z > 0.5){ cam0.arise(-0.01); }
-}
-
-function createModelMatrix(){
-  _node.bindFBO("data").clearColor(0,0,0,0).clear();
-  _node.use("data", "foxBoard")
-       .setUniform("uTime", _timer.getDelta("slot0"))
-       .setUniform("uRadius", 6.0)
-       .setUniform("uHeight", 2.0);
-  // setUniform. いずれね。
-  _node.drawArrays("triangle_strip").unbind();
-}
-
-function createShadowMap(shadowFBOName, modelCam, lightCam){
-  const vpModel = ex.getMult4x4(modelCam.getViewMat().m, modelCam.getProjMat().m);
-  const vpLight = ex.getMult4x4(lightCam.getViewMat().m, lightCam.getProjMat().m);
-
-  // まずcam1からの深度値が欲しい。
-  _node.bindFBO(shadowFBOName).clearColor(0,0,0,0).clear();
-  _node.usePainter("calcDepth");
-
-  _node.drawFigure("scene")
-       .setFBOtexture2D("uData", "data")
-       .setUniform("uViewProjMatrix", vpLight)
-       .bindIBO("sceneIBO")
-       .drawElements("triangles");
-
-  _node.swapFBO(shadowFBOName).unbind();
-
-  // 次に比較を行なう。ただしさっきの...を使う。
-  _node.bindFBO(shadowFBOName);
-  _node.clearColor(0,0,0,0).clear();
-  _node.usePainter("generateDepthMask");
-  _node.setFBOtexture2D("uDepthMap", shadowFBOName); // さっきの結果をここで読み込んで
-
-  _node.drawFigure("scene")
-       .setFBOtexture2D("uData", "data")
-       .setUniform("uViewProjMatrix", vpModel)
-       .setUniform("uLightVPMatrix", vpLight)
-       .bindIBO("sceneIBO")
-       .drawElements("triangles");
-
-  _node.swapFBO(shadowFBOName).unbind();
-}
-
-function updateInfo(){
-  const gr = _node.getTextureSource("info");
-  gr.clear();
-  gr.text(frameRate().toFixed(2), 5, 5);
-  _node.updateTexture("info");
-}
-
-function showInfo(){
-  ex.copyPainter(_node, {src:{name:"info", gradationFlag:1, gradationStart:[1, 0.5, 0, 0, 0, 1], gradationStop:[0, 0.5, 0, 0, 1, 1]}});
+function render(){
+  // ポスエフかけるならここ
+  _node.bindFBO(null).clearColor(0,0,0,0).clear();
+  updateInfo(); // info関連
+  ex.copyPainter(_node, {src:{name:"info", gradationFlag:1, gradationStart:[0.5, 0, 0, 0, 0, 1], gradationStop:[0.5,1,0.8,0.4,0.2,1]}});
+  ex.copyPainter(_node, {src:{type:"fb", name:"base"}});
 }
