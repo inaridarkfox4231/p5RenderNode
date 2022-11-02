@@ -67,11 +67,40 @@
 // 外部のベクトルは3つ。1つはuniqueQ構成用の係数、残り2つはSTANDARD以外のパターンを記述するためのもの。
 // どう使うかをインデックスで指定するだけ。ラクチン。
 
+// 13と14がクソ重いです。
+// ただもはやどうでもいいな。おしまい。
+
 // ----global---- //
 const ex = p5wgex;
 let _node;
 let _timer = new ex.Timer();
 let info, infoTex;
+
+//SQRT_FIVE_INV = 0.44721; // √5の逆数
+//SQRT_FIVE = 2.236; // √5
+//G_RATIO = 1.618; // 黄金比
+
+const uniqueQ = new ex.Vec3(0);
+const _qab = new ex.Vec3(0, 0, 0.8090);
+const _qbc = new ex.Vec3(0.5, 0, 0.8090);
+const _qca = new ex.Vec3(0, 0.2697, 0.7060);
+
+const defaultPolygonArray = (function(){
+  const result = [];
+  const k = 1.618;
+  const t = 2.236;
+  result.push([1, 0, 0], [0, 1, 0], [0, 0, 1],
+              [1/t, 0, 1-1/t], [2/3, 1/3, 0], [0, k/(3+k), 3/(3+k)], [(t-1)/3, (t-1)/6,(3-t)/2]);
+  return result;
+})();
+const customPolygonArray = (function(){
+  const result = [];
+  const k = 1.618;
+
+  result.push([-1/2, 0, k/2], [0, k/2, 1/2], [0, -k/2, 1/2],
+              [0, -k/6, (2*k+1)/6], [(k+1)/6, (k+1)/6, (k+1)/6], [0, 0, k/2]);
+  return result;
+})();
 
 // カメラ
 let cam;
@@ -99,27 +128,33 @@ uniform vec3 uUp; // 画面下方向で、マイナスで使う
 uniform vec3 uFront; // 画面手前方向...マイナスで使う。
 uniform vec3 uLightDirection; // 光を使う場合。光の進む向き。マイナスで使って法線と内積を取る。
 
+// 計算用外部入力変数
+uniform int uId;
+uniform vec3 uVector0; // coeffとqab, qbc, qcaから事前に計算して渡す
+uniform vec3 uVector1;
+uniform vec3 uVector2;
+
 in vec2 vUv;
 
-const float MAX_DIST = 10.0;   // 限界距離。これ越えたら無いとみなす。
+const float MAX_DIST = 20.0;   // 限界距離。これ越えたら無いとみなす。
 const float THRESHOLD = 0.001; // 閾値。これより近付いたら到達とみなす。
-const int ITERATION = 48; // マーチング回数限界
+const int ITERATION = 80; // マーチング回数限界
 const vec2 EPS = vec2(0.0001, 0.0); // 法線計算用
 
 out vec4 fragColor;
 
-vec3 uniqueQ; // グローバル～基本領域のどっか
+//vec3 uniqueQ; // グローバル～基本領域のどっか
 
 // fold用const.
 const float phi = (1.0+sqrt(5.0))/2.0; //(黄金比)
 // ミラーベクトル
 vec3 na = vec3(1.0, 0.0, 0.0);
 vec3 nb = vec3(0.0, 1.0, 0.0);
-vec3 nc = vec3(-0.5, -phi*0.5, (phi - 1.0) * 0.5);
+vec3 nc = vec3(-0.5, -0.8090, 0.3090);
 // 基本領域の境界点（境界線と領域の交点）で、サイズを掛けて使う。
-vec3 qab = vec3(0.0, 0.0, phi*0.5);
-vec3 qbc = vec3(0.5, 0.0, phi*0.5);
-vec3 qca = vec3(0.0, phi/6.0, (2.0*phi+1.0)/6.0);
+//vec3 qab = vec3(0.0, 0.0, phi*0.5);
+//vec3 qbc = vec3(0.5, 0.0, phi*0.5);
+//vec3 qca = vec3(0.0, phi/6.0, (2.0*phi+1.0)/6.0);
 // na,nb,ncの外積でできる領域面の境界の法線ベクトル。これで平面を作り、fold立体の面を作る。
 vec3 pab = vec3(0.0, 0.0, 0.8090);
 vec3 pbc = vec3(0.5, 0.0, 0.8090);
@@ -150,13 +185,13 @@ float foldH3CustomPolygon(vec3 p, vec3 q1, vec3 q2){
   return t;
 }
 
-float foldH3OtherMin(vec3 p, vec3 q1, vec3 q2, vec3 q3){
+float foldH3OtherMinPolygon(vec3 p, vec3 q1, vec3 q2, vec3 q3){
   foldH3(p);
   float t = min(dot(p - q1, q2), dot(p - q1, q3));
   return t;
 }
 
-float foldH3OtherMax(vec3 p, vec3 q1, vec3 q2, vec3 q3){
+float foldH3OtherMaxPolygon(vec3 p, vec3 q1, vec3 q2, vec3 q3){
   foldH3(p);
   float t = max(dot(p - q1, q2), dot(p - q1, q3));
   return t;
@@ -165,7 +200,11 @@ float foldH3OtherMax(vec3 p, vec3 q1, vec3 q2, vec3 q3){
 // 総合距離関数、map.
 vec4 map(vec3 p){
   vec3 col = vec3(1.0);
-  float t = foldH3DefaultPolygon(p, uniqueQ);
+  float t = 0.0;
+  if(uId == 0){ t = foldH3DefaultPolygon(p, uVector0); }
+  if(uId == 1){ t = foldH3CustomPolygon(p, uVector0, uVector1); }
+  if(uId == 2){ t = foldH3OtherMinPolygon(p, uVector0, uVector1, uVector2); }
+  if(uId == 3){ t = foldH3OtherMaxPolygon(p, uVector0, uVector1, uVector2); }
   return vec4(col, t);
 }
 // 法線ベクトルの取得
@@ -201,8 +240,8 @@ float march(vec3 ray, vec3 eye){
 void main(){
 
   // uniqueQの計算
-  vec3 co = vec3(0.0, 1.0, 0.0);
-  uniqueQ = (co.x * qab + co.y * qbc + co.z * qca) * 0.6 / (co.x + co.y + co.z);
+  //vec3 co = vec3(0.0, 1.0, 0.0);
+  //uniqueQ = (co.x * qab + co.y * qbc + co.z * qca) * 0.6 / (co.x + co.y + co.z);
 
   // 背景色
   vec3 color = vec3(0.0);
@@ -277,7 +316,7 @@ function draw(){
   _node.enable("blend").blendFunc("src_alpha", "one_minus_src_alpha");
 
   // パラメータ設定
-  setPolygonParameter();
+  setPolygonParameter(15, 0.6);
   // 光の設定、レンダリング
   _node.drawArrays("triangle_strip")
        .unbind();
@@ -324,11 +363,61 @@ function setCameraParameter(){
        .setUniform("uLightDirection", [-front.x, -front.y, -front.z]); // 面倒なので見る方向の後方から光を当てよう
 }
 
-function setPolygonParameter(){
-  /*
-  _node.setUniform("uCoeff", [1, 0, 0]);
-       .setUniform("uVector1", [0, 0, 0]);
-       .setUniform("uVector2", [0, 0, 0]);
-       .setUniform("uVector3", [0, 0, 0]);
-  */
+function setPolygonParameter(polygonId, size){
+  if(polygonId < 7){
+    setParamForDefaultPolygon(polygonId, size); return; // 0,1,2,3,4,5,6
+  }
+  if(polygonId < 13){
+    setParamForCustomPolygon(polygonId, size); return; // 7,8,9,10,11,12
+  }
+  if(polygonId < 14){
+    setParamForOtherMinPolygon(polygonId, size); return; // 13
+  }
+  setParamForOtherMaxPolygon(polygonId, size); return; // 14, 15
+}
+
+function getUniqueQ(v, size = 1){
+  uniqueQ.set(0)
+         .addScalar(_qab, v[0])
+         .addScalar(_qbc, v[1])
+         .addScalar(_qca, v[2])
+         .mult(size)
+         .divide(v[0] + v[1] + v[2]);
+  return uniqueQ.toArray();
+}
+
+function setParamForDefaultPolygon(polygonId, size){
+  _node.setUniform("uId", 0)
+       .setUniform("uVector0", getUniqueQ(defaultPolygonArray[polygonId], size));
+}
+
+function setParamForCustomPolygon(polygonId, size){
+  _node.setUniform("uId", 1)
+       .setUniform("uVector0", getUniqueQ([0, 0, 1], size))
+       .setUniform("uVector1", customPolygonArray[polygonId - 7]);
+}
+
+function setParamForOtherMinPolygon(polygonId, size){
+  // 13限定
+  const k = 1.618;
+  _node.setUniform("uId", 2)
+       .setUniform("uVector0", getUniqueQ([0, 0, 1], size))
+       .setUniform("uVector1", [(2*k+1)/6, 0, k/6])
+       .setUniform("uVector2", [-(k+1)/6, -(k+1)/6, (k+1)/6]);
+}
+
+function setParamForOtherMaxPolygon(polygonId, size){
+  // 14と15でuCoeffが異なる
+  const k = 1.618;
+  _node.setUniform("uId", 3);
+  if(polygonId === 14){
+    _node.setUniform("uVector0", getUniqueQ([0, 0, 1], 0.3))
+    .setUniform("uVector1", [k/6, (2*k+1)/6, 0])
+    .setUniform("uVector2", [-(2*k+1)/6, 0, k/6]);
+  }
+  if(polygonId === 15){
+    _node.setUniform("uVector0", getUniqueQ([1, 0, 0], size))
+    .setUniform("uVector1", [0, k/2, 1/2])
+    .setUniform("uVector2", [1/2, 0, k/2]);
+  }
 }
