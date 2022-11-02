@@ -53,19 +53,35 @@
 // (1,0,0)(というかpab)において(0, k/2, 1/2), (1/2, 0, k/2)
 // を法とする平面でmaxを取る。
 
-// 16種類。圧巻。
-// やり方
-// まず5種類に分ける
-// 初めのやつはSTANDARD
-// つぎのやつはCUSTOM
-// 最後の3つはOTHER_0, OTHER_1, OTHER_2でいく
-// STANDARDは今のやつでベクトルだけ変える
-// CUSTOMはpcaに限ったうえでベクトルだけ変える
-// 残りは完全に個別で制御
-// 今uniqueQってやってるところをuniformにして一つ増やす感じ
+// 16s種類。圧巻。
 
-// 外部のベクトルは3つ。1つはuniqueQ構成用の係数、残り2つはSTANDARD以外のパターンを記述するためのもの。
-// どう使うかをインデックスで指定するだけ。ラクチン。
+// まあこれでもスマホだと重いんですよね
+// 知ってた
+// lilでバリエーション変えられるようにするよ
+// それでおわり
+// 3Typeあるでしょ
+// それで分けられるからね
+
+// マルチレンダーターゲットで分解してみました
+// んー...どゆこと？
+// まず距離の方
+// t/MAX_DISTでやると黒いところはまあその
+// 黒？？
+// まずここに関しては画面外のところについては真っ赤になるのが理想的で
+// いくらまで下げても真っ赤なままかっていうのを見るんだと思う。
+// iterの方は...
+// これが赤っていうのは越えちゃってるので
+// 輪郭が赤く光ってるのよねこれは
+// 限界までレイマすると赤くなるわけだけど
+// ぎりぎりだからってことだと思う
+
+// MAX_DISTですが6.0まで下げてもまっかっかです
+// 大きく見積りすぎたようだ...
+
+// 判断保留といこう。まあいいやね。
+
+// 減らしてもなんか見た目変わらないね...4でもいいのか...
+// よく考えたら表面に辿り着けばいいのよね
 
 // ----global---- //
 const ex = p5wgex;
@@ -73,6 +89,21 @@ let _node;
 let _timer = new ex.Timer();
 let info, infoTex;
 
+// lil.
+const config = {
+  iteration_max: 48,
+  iteration_border:32,
+  dist_max:12,
+  dist_border:6,
+}
+
+function createGUI(){
+  const gui = new lil.GUI();
+  gui.add(config, "iteration_max", 12, 48, 1).name("iteration");
+  gui.add(config, "iteration_border", 12, 48, 1).name("iter_border");
+  gui.add(config, "dist_max", 4, 16, 0.1).name("dist");
+  gui.add(config, "dist_border", 4, 16, 0.1).name("dist_border");
+}
 // カメラ
 let cam;
 
@@ -101,12 +132,19 @@ uniform vec3 uLightDirection; // 光を使う場合。光の進む向き。マ�
 
 in vec2 vUv;
 
-const float MAX_DIST = 10.0;   // 限界距離。これ越えたら無いとみなす。
+uniform float uIteration_max;
+uniform float uIteration_border;
+uniform float uDist_max;
+uniform float uDist_border;
+
+//const float MAX_DIST = 12.0;   // 限界距離。これ越えたら無いとみなす。
 const float THRESHOLD = 0.001; // 閾値。これより近付いたら到達とみなす。
-const int ITERATION = 48; // マーチング回数限界
+//const int ITERATION = 48; // マーチング回数限界
 const vec2 EPS = vec2(0.0001, 0.0); // 法線計算用
 
-out vec4 fragColor;
+layout (location = 0) out vec4 fragColor;
+layout (location = 1) out vec4 reachColor;
+layout (location = 2) out vec4 iterColor;
 
 vec3 uniqueQ; // グローバル～基本領域のどっか
 
@@ -134,7 +172,8 @@ void foldH3(inout vec3 p){
   }
 }
 
-// まずSTANDARD, これはpab,pbc,pcaでそれぞれ平面取るもの
+// 距離関数
+// 簡単なものでいいです。qは計算済みとする。qは基本領域のどっか。
 float foldH3DefaultPolygon(vec3 p, vec3 q){
   foldH3(p);
   float t = dot(p - q, pab);
@@ -143,26 +182,7 @@ float foldH3DefaultPolygon(vec3 p, vec3 q){
   return t;
 }
 
-// pca限定で、特別なベクトルで平面を取るもの
-float foldH3CustomPolygon(vec3 p, vec3 q1, vec3 q2){
-  foldH3(p);
-  float t = dot(p - q1, q2);
-  return t;
-}
-
-float foldH3OtherMin(vec3 p, vec3 q1, vec3 q2, vec3 q3){
-  foldH3(p);
-  float t = min(dot(p - q1, q2), dot(p - q1, q3));
-  return t;
-}
-
-float foldH3OtherMax(vec3 p, vec3 q1, vec3 q2, vec3 q3){
-  foldH3(p);
-  float t = max(dot(p - q1, q2), dot(p - q1, q3));
-  return t;
-}
-
-// 総合距離関数、map.
+// 総合距離関数、map. 色も返せる。今回はテストなので半径0.3の球で。
 vec4 map(vec3 p){
   vec3 col = vec3(1.0);
   float t = foldH3DefaultPolygon(p, uniqueQ);
@@ -179,23 +199,26 @@ vec3 calcNormal(vec3 p){
   return normalize(n);
 }
 // マーチング
-float march(vec3 ray, vec3 eye){
+vec2 march(vec3 ray, vec3 eye){
   float h = THRESHOLD * 2.0; // 毎フレームの見積もり関数の値。
   // 初期値は0.0で初期化されてほしくないのでそうでない値を与えてる。
   // これがTHRESHOLDを下回れば到達とみなす
   float t = 0.0;
   // tはcameraからray方向に進んだ距離の累計。
   // 到達ならこれが返る。失敗なら-1.0が返る。つまりresultが返る。
-  float result = -1.0;
-  for(int i = 0; i < ITERATION; i++){
-    if(h < THRESHOLD || t > MAX_DIST){ break; }
+  //float result = -1.0;
+  float iter = 0.0;
+  for(float i = 0.0; i < uIteration_max; i += 1.0){
+    if(h < THRESHOLD || t > uDist_max){ break; }
     // tだけ進んだ位置で見積もり関数の値hを取得し、tに足す。
     h = map(eye + t * ray).w;
     t += h;
+    iter += 1.0; // いてれ...いってんれい...（とか言って）(samuiyo)
   }
   // t < MAX_DISTなら、h < THRESHOLDで返ったということなのでマーチング成功。
-  if(t < MAX_DIST){ result = t; }
-  return result;
+  //if(t < uDist_max){ result = t; }
+  //return result;
+  return vec2(t, iter); // 要はt < MAX_DISTならいいんでしょ？
 }
 // メイン
 void main(){
@@ -215,21 +238,35 @@ void main(){
   ray += uUp * tan(uFov * 0.5) * vUv.y;
   ray = normalize(ray);
   // レイマーチング
-  float t = march(ray, uEye);
-  // tはマーチングに失敗すると-1.0が返る。
-  if(t > -THRESHOLD){
+  vec2 result = march(ray, uEye);
+  float t = result.x;
+  float iter = result.y;
+  // tはマーチングに失敗すると-1.0が返る。やめようよ。
+  if(t < uDist_max){
     vec3 pos = uEye + t * ray; // 到達位置
     vec3 n = calcNormal(pos); // 法線
     // 明るさ。内積の値に応じて0.3を最小とし1.0まで動かす。
     float diff = clamp((dot(n, -uLightDirection) + 0.5) * 0.75, 0.3, 1.0);
-    //vec3 baseColor = map(pos).xyz; // bodyColor取得。
-    vec3 baseColor = 0.5 + 0.5 * n; // 面倒なのでnormalMap. 負荷もかからないし。
+    vec3 baseColor = map(pos).xyz; // bodyColor取得。
     baseColor *= diff;
     // 遠くでフェードアウトするように調整する
     color = mix(baseColor, color, tanh(t * 0.02));
     alpha = 1.0;
   }
   fragColor = vec4(color, alpha); // これでOK?
+
+  float db = min(uDist_border, uDist_max);
+  if(t < db){
+    reachColor = vec4(1.0, t/db, 0.0, 1.0);
+  }else{
+    reachColor = vec4(0.0, db/t, 1.0, 1.0);
+  }
+  float ib = min(uIteration_border, uIteration_max);
+  if(iter < ib){
+    iterColor = vec4(1.0, iter/ib, 0.0, 1.0);
+  }else{
+    iterColor = vec4(0.0, ib/iter, 1.0, 1.0);
+  }
 }
 `;
 
@@ -237,6 +274,7 @@ void main(){
 function setup(){
   createCanvas(800, 640, WEBGL);
   _node = new ex.RenderNode(this._renderer.GL);
+  createGUI();
 
   // for ray marching.
 
@@ -254,13 +292,20 @@ function setup(){
 
   // カメラ
   cam = new ex.CameraEx({w:width, h:height, eye:[0, 0, 1.732], center:[0, 0, 0], top:[0, 1, 0]});
+
+  // フレームバッファは今回3つ用意する。サイズはwidthとheight使います
+  _node.registFBO("rayM_H3", {w:width, h:height, color:{info:[
+        {}, {}, {} // 全部色でいいや
+  ]}});
+  // 後者2つにはそれぞれ...そうね...レイマ回数の方は0～255でいいか。距離の方はfloatで。
+  // 黒と白で...上限用意して...
 }
 
 // ----draw---- //
 function draw(){
   const currentTime = _timer.getDelta("cur"); // そのうち
 
-  _node.bindFBO(null)
+  _node.bindFBO("rayM_H3")
        .clearColor(0,0,0,0)
        .clear();
 
@@ -271,28 +316,24 @@ function draw(){
   _node.use("rayM", "foxBoard");
 
   // カメラ設定
-  moveCamera(currentTime * 0.5);
+  moveCamera(currentTime);
   setCameraParameter();
 
-  _node.enable("blend").blendFunc("src_alpha", "one_minus_src_alpha");
-
-  // パラメータ設定
-  setPolygonParameter();
   // 光の設定、レンダリング
-  _node.drawArrays("triangle_strip")
+  _node.setUniform("uIteration_max", config.iteration_max)
+       .setUniform("uIteration_border", config.iteration_border)
+       .setUniform("uDist_max", config.dist_max)
+       .setUniform("uDist_border", config.dist_border)
+       .drawArrays("triangle_strip")
        .unbind();
 
-  _node.disable("blend");
+  ex.copyPainter(_node, {src:[
+    {type:"fb", name:"rayM_H3", index:0, view:[0, 0, 0.5, 0.5]},
+    {type:"fb", name:"rayM_H3", index:1, view:[0.5, 0, 0.5, 0.5]},
+    {type:"fb", name:"rayM_H3", index:2, view:[0, 0.5, 0.5, 0.5]}
+  ]});
 
   _node.flush();
-}
-
-function updateInfo(){
-  const gr = _node.getTextureSource("info");
-  gr.clear();
-  gr.text("fold H3.", 5, 5);
-  gr.text(frameRate().toFixed(3), 5, 25);
-  _node.updateTexture("info");
 }
 
 function moveCamera(currentTime){
@@ -324,11 +365,10 @@ function setCameraParameter(){
        .setUniform("uLightDirection", [-front.x, -front.y, -front.z]); // 面倒なので見る方向の後方から光を当てよう
 }
 
-function setPolygonParameter(){
-  /*
-  _node.setUniform("uCoeff", [1, 0, 0]);
-       .setUniform("uVector1", [0, 0, 0]);
-       .setUniform("uVector2", [0, 0, 0]);
-       .setUniform("uVector3", [0, 0, 0]);
-  */
+function updateInfo(){
+  const gr = _node.getTextureSource("info");
+  gr.clear();
+  gr.text("fold H3.", 5, 5);
+  gr.text(frameRate().toFixed(3), 5, 25);
+  _node.updateTexture("info");
 }
