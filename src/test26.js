@@ -727,6 +727,8 @@ function draw(){
 }
 
 function configCamera(){
+  // const _delta = (config.pause ? 0 : _timer.getDelta("moveCam")); // 今のところこうするしかない。
+  // もしくは毎フレーム計測し続ける何らかの、別の何かが必要、それはpauseの時は0を返す、0を返すが計測は続ける、と。
   const _delta = _timer.getDelta("moveCam");
   _timer.set("moveCam");
   cam0.spin(_delta * 0.6);

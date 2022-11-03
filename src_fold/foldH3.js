@@ -69,16 +69,15 @@
 
 // 13と14がクソ重いです。
 // ただもはやどうでもいいな。おしまい。
+// shadertoyだとそれなりに速かったんで
+// ただパソコンは悲鳴上げてたけど
+// ここら辺が限界かな...さ、やめるか。
 
 // ----global---- //
 const ex = p5wgex;
 let _node;
 let _timer = new ex.Timer();
 let info, infoTex;
-
-//SQRT_FIVE_INV = 0.44721; // √5の逆数
-//SQRT_FIVE = 2.236; // √5
-//G_RATIO = 1.618; // 黄金比
 
 const uniqueQ = new ex.Vec3(0);
 const _qab = new ex.Vec3(0, 0, 0.8090);
@@ -101,9 +100,40 @@ const customPolygonArray = (function(){
               [0, -k/6, (2*k+1)/6], [(k+1)/6, (k+1)/6, (k+1)/6], [0, 0, k/2]);
   return result;
 })();
+// 0:0.6, 1:0.6, 2:0.6, 3:0.6, 4:0.6, 5:0.6, 6:0.6, 7:0.4, 8:0.4, 9:0.7, 10:0.7,
+// 11:0.55, 12:0.6, 13:0.4, 14:0.25, 15:0.6
+const sizeArray = [0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.4, 0.4, 0.7, 0.7, 0.55, 0.6, 0.4, 0.25, 0.6];
+
+const polygonNames_jp = ["二十・十二面体", "正二十面体", "正十二面体", "切頂十二面体", "切頂二十面体", "斜方二十・十二面体",
+							           "斜方切頂二十・十二面体", "小星型十二面体", "大十二面体", "大星型十二面体", "小三角六辺形二十面体",
+							           "正八面体の複合多面体", "菱形三十面体", "大二十面体", "完全二十面体", "十二・十二面体"];
+const polygonNames_en = ["icosidodecahedron", "icosahedron", "dodecahedron", "truncated dodecahedron",
+                         "truncated icosahedron", "rhombicosidodecahedron", "rhombitruncated icosidodecahedron",
+                         "Small stellated dodecahedron", "Great dodecahedron", "Great stellated dodecahedron",
+                         "small triambic icosahedron", "Polyhedral compound of octahedrons", "rhombic triacontahedron",
+                         "Great icosahedron", "Final stellation of the icosahedron", "dodecadodecahedron"];
 
 // カメラ
 let cam;
+
+// -------config------- //
+
+const config = {
+  patternId:0,
+  pause:false,
+}
+
+function createGUI(){
+  const gui = new lil.GUI();
+  // 手始めに
+  gui.add(config, "patternId", {"二十・十二面体":0, "正二十面体":1, "正十二面体":2, "切頂十二面体":3, "切頂二十面体":4,
+                                "斜方二十・十二面体":5, "斜方切頂二十・十二面体":6, "小星型十二面体":7, "大十二面体":8,
+                                "大星型十二面体":9, "小三角六辺形二十面体":10, "正八面体の複合多面体":11, "菱形三十面体":12,
+                                "大二十面体":13, "完全二十面体":14, "十二・十二面体":15});
+  gui.add(config, "pause").onChange(value => {
+    if(value){ _timer.pause("cur"); }else{ _timer.reStart("cur"); }
+  });
+}
 
 // ----shaders---- //
 const rayMVert =
@@ -151,10 +181,6 @@ const float phi = (1.0+sqrt(5.0))/2.0; //(黄金比)
 vec3 na = vec3(1.0, 0.0, 0.0);
 vec3 nb = vec3(0.0, 1.0, 0.0);
 vec3 nc = vec3(-0.5, -0.8090, 0.3090);
-// 基本領域の境界点（境界線と領域の交点）で、サイズを掛けて使う。
-//vec3 qab = vec3(0.0, 0.0, phi*0.5);
-//vec3 qbc = vec3(0.5, 0.0, phi*0.5);
-//vec3 qca = vec3(0.0, phi/6.0, (2.0*phi+1.0)/6.0);
 // na,nb,ncの外積でできる領域面の境界の法線ベクトル。これで平面を作り、fold立体の面を作る。
 vec3 pab = vec3(0.0, 0.0, 0.8090);
 vec3 pbc = vec3(0.5, 0.0, 0.8090);
@@ -239,10 +265,6 @@ float march(vec3 ray, vec3 eye){
 // メイン
 void main(){
 
-  // uniqueQの計算
-  //vec3 co = vec3(0.0, 1.0, 0.0);
-  //uniqueQ = (co.x * qab + co.y * qbc + co.z * qca) * 0.6 / (co.x + co.y + co.z);
-
   // 背景色
   vec3 color = vec3(0.0);
   float alpha = 0.0;
@@ -262,7 +284,7 @@ void main(){
     // 明るさ。内積の値に応じて0.3を最小とし1.0まで動かす。
     float diff = clamp((dot(n, -uLightDirection) + 0.5) * 0.75, 0.3, 1.0);
     //vec3 baseColor = map(pos).xyz; // bodyColor取得。
-    vec3 baseColor = 0.5 + 0.5 * n; // 面倒なのでnormalMap. 負荷もかからないし。
+    vec3 baseColor = 0.5+0.5*n; // 面倒なのでnormalMap. 負荷もかからないし。
     baseColor *= diff;
     // 遠くでフェードアウトするように調整する
     color = mix(baseColor, color, tanh(t * 0.02));
@@ -288,11 +310,13 @@ function setup(){
   info.fill(255);
   info.noStroke();
   info.textSize(16);
-  info.textAlign(LEFT, TOP);
   _node.registTexture("info", {src:info});
 
   // カメラ
   cam = new ex.CameraEx({w:width, h:height, eye:[0, 0, 1.732], center:[0, 0, 0], top:[0, 1, 0]});
+
+  // GUI
+  createGUI();
 }
 
 // ----draw---- //
@@ -304,7 +328,7 @@ function draw(){
        .clear();
 
   updateInfo();
-  ex.copyPainter(_node, {src:{name:"info", gradationFlag:1, gradationStart:[0,0,0,0,0,1], gradationStop:[0,1,0.75,0.75,0.25,1]}});
+  ex.copyPainter(_node, {src:{name:"info", gradationFlag:1, gradationStart:[0,0,0,0,0,1], gradationStop:[0,1,0.5,0.5,0.5,1]}});
 
   // レイマーチングスタート
   _node.use("rayM", "foxBoard");
@@ -316,7 +340,7 @@ function draw(){
   _node.enable("blend").blendFunc("src_alpha", "one_minus_src_alpha");
 
   // パラメータ設定
-  setPolygonParameter(15, 0.6);
+  setPolygonParameter(config.patternId);
   // 光の設定、レンダリング
   _node.drawArrays("triangle_strip")
        .unbind();
@@ -329,8 +353,12 @@ function draw(){
 function updateInfo(){
   const gr = _node.getTextureSource("info");
   gr.clear();
+  gr.textAlign(LEFT, TOP);
   gr.text("fold H3.", 5, 5);
   gr.text(frameRate().toFixed(3), 5, 25);
+  gr.textAlign(CENTER, CENTER);
+  gr.text(polygonNames_jp[config.patternId], width/2, height*13/16);
+  gr.text(polygonNames_en[config.patternId], width/2, height*14/16);
   _node.updateTexture("info");
 }
 
@@ -363,60 +391,61 @@ function setCameraParameter(){
        .setUniform("uLightDirection", [-front.x, -front.y, -front.z]); // 面倒なので見る方向の後方から光を当てよう
 }
 
-function setPolygonParameter(polygonId, size){
+function setPolygonParameter(polygonId){
+  const _size = sizeArray[polygonId];
   if(polygonId < 7){
-    setParamForDefaultPolygon(polygonId, size); return; // 0,1,2,3,4,5,6
+    setParamForDefaultPolygon(polygonId, _size); return; // 0,1,2,3,4,5,6
   }
   if(polygonId < 13){
-    setParamForCustomPolygon(polygonId, size); return; // 7,8,9,10,11,12
+    setParamForCustomPolygon(polygonId, _size); return; // 7,8,9,10,11,12
   }
   if(polygonId < 14){
-    setParamForOtherMinPolygon(polygonId, size); return; // 13
+    setParamForOtherMinPolygon(polygonId, _size); return; // 13
   }
-  setParamForOtherMaxPolygon(polygonId, size); return; // 14, 15
+  setParamForOtherMaxPolygon(polygonId, _size); return; // 14, 15
 }
 
-function getUniqueQ(v, size = 1){
+function getUniqueQ(v, _size = 1){
   uniqueQ.set(0)
          .addScalar(_qab, v[0])
          .addScalar(_qbc, v[1])
          .addScalar(_qca, v[2])
-         .mult(size)
+         .mult(_size)
          .divide(v[0] + v[1] + v[2]);
   return uniqueQ.toArray();
 }
 
-function setParamForDefaultPolygon(polygonId, size){
+function setParamForDefaultPolygon(polygonId, _size){
   _node.setUniform("uId", 0)
-       .setUniform("uVector0", getUniqueQ(defaultPolygonArray[polygonId], size));
+       .setUniform("uVector0", getUniqueQ(defaultPolygonArray[polygonId], _size));
 }
 
-function setParamForCustomPolygon(polygonId, size){
+function setParamForCustomPolygon(polygonId, _size){
   _node.setUniform("uId", 1)
-       .setUniform("uVector0", getUniqueQ([0, 0, 1], size))
+       .setUniform("uVector0", getUniqueQ([0, 0, 1], _size))
        .setUniform("uVector1", customPolygonArray[polygonId - 7]);
 }
 
-function setParamForOtherMinPolygon(polygonId, size){
+function setParamForOtherMinPolygon(polygonId, _size){
   // 13限定
   const k = 1.618;
   _node.setUniform("uId", 2)
-       .setUniform("uVector0", getUniqueQ([0, 0, 1], size))
+       .setUniform("uVector0", getUniqueQ([0, 0, 1], _size))
        .setUniform("uVector1", [(2*k+1)/6, 0, k/6])
        .setUniform("uVector2", [-(k+1)/6, -(k+1)/6, (k+1)/6]);
 }
 
-function setParamForOtherMaxPolygon(polygonId, size){
+function setParamForOtherMaxPolygon(polygonId, _size){
   // 14と15でuCoeffが異なる
   const k = 1.618;
   _node.setUniform("uId", 3);
   if(polygonId === 14){
-    _node.setUniform("uVector0", getUniqueQ([0, 0, 1], 0.3))
+    _node.setUniform("uVector0", getUniqueQ([0, 0, 1], _size))
     .setUniform("uVector1", [k/6, (2*k+1)/6, 0])
     .setUniform("uVector2", [-(2*k+1)/6, 0, k/6]);
   }
   if(polygonId === 15){
-    _node.setUniform("uVector0", getUniqueQ([1, 0, 0], size))
+    _node.setUniform("uVector0", getUniqueQ([1, 0, 0], _size))
     .setUniform("uVector1", [0, k/2, 1/2])
     .setUniform("uVector2", [1/2, 0, k/2]);
   }
