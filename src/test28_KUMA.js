@@ -35,6 +35,8 @@ const _timer = new ex.Timer();
 let _cam;
 const _tf = new ex.TransformEx();
 
+let kumaleon;
+
 const config =
 {
   brushColor: {r:0, g:0, b:0},
@@ -477,13 +479,55 @@ function setModelView(node, tf, cam){
 }
 
 // 今回はtexture彩色
-function render(node, tf, cam, x, y, z){
-  tf.initialize();
+function render(node, tf, cam){
+  tf.initialize().translate(0, 0, -1);
   setModelView(node, tf, cam);
   node.setUniform("uUseColorFlag", 2);
   node.setFBOtexture2D("uTex", "customTexture");
   node.setUniform("uTint", [1, 1, 1]);
   node.drawElements("triangles");
+}
+
+// robot.
+function registKumaleon(node, size){
+  // rabbitModelからデータを取得したりする
+  // verticesはベクトル3Dが入っててx,y,z成分を抜き出さないと無理
+  // facesも各番号に長さ3の配列がもちろん入ってる
+  // uvsは何にも入ってないけど内容的には[0,0]が延々と並んでる
+  // vertexNormalsが法線でvertexColorsが色。
+  // normalsは色々入ってるみたい。vertexColorsは死んでる。長さ0. 好きに使わせてもらおう。
+  const N = kumaleon.vertices.length; // 4564.
+  const F = kumaleon.faces.length;
+  const positions = new Array(N*3);
+  const normals = new Array(N*3);
+  const uvs = new Array(N*2);
+  const faces = new Array(F*3);
+  // 続きは...
+  for(let i=0; i<N; i++){
+    const v = kumaleon.vertices[i];
+    positions[3*i] = v.x * size;
+    positions[3*i+1] = v.y * size;
+    positions[3*i+2] = v.z * size;
+    const n = kumaleon.vertices[i];
+    normals[3*i] = n.x;
+    normals[3*i+1] = n.y;
+    normals[3*i+2] = n.z;
+    const uv = kumaleon.uvs[i];
+    uvs[2*i] = uv[0];
+    uvs[2*i+1] = uv[1];
+  }
+  for(let i=0; i<F; i++){
+    const f = kumaleon.faces[i];
+    faces[3*i] = f[0];
+    faces[3*i+1] = f[1];
+    faces[3*i+2] = f[2];
+  }
+  node.registFigure("kumaleon", [
+    {name:"aPosition", size:3, data:positions},
+    {name:"aNormal", size:3, data:normals},
+    {name:"aTexCoord", size:2, data:uvs}
+  ]);
+  node.registIBO("kumaleonIBO", {data:faces, large:true}); // 一応。
 }
 
 // 立方体
@@ -562,7 +606,7 @@ function showInfo(){
 // ----------
 
 function drawGraphic(){
-  _node.bindFBO("airBrush");
+  _node.bindFBO("airBrush").clearColor(0,0,0,0).clear();
   const col = config.brushColor;
   _node.use("airBrush", "foxBoard")
        .setUniform("uDensity", config.density)
@@ -591,6 +635,10 @@ function texturePaint(){
 
 // ----------------------------------------------------------------------------------- //
 
+function preload(){
+  kumaleon = loadModel("https://inaridarkfox4231.github.io/models/newKL4.obj");
+}
+
 function setup(){
   // timer.
   _timer.initialize("slot0");
@@ -600,7 +648,7 @@ function setup(){
   _node = new ex.RenderNode(this._renderer.GL);
 
   // camera.
-  _cam = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[4, 4, 2], pers:{near:0.1, far:10}});
+  _cam = new ex.CameraEx({w:width, h:height, top:[0, 0, 1], eye:[4, 0, 0], pers:{near:0.1, far:10}});
 
   // shaders.
   _node.registPainter("color", colorVert, colorFrag);
@@ -611,13 +659,13 @@ function setup(){
   const {w, h} = _node.getDrawingBufferSize(null);
   _node.registFBO("defer", {w:w, h:h, color:{info:[{}, {type:"float"}, {type:"float"},
                   {type:"float"}]}});
-  _node.registFBO("customTexture", {w:1024, h:1024, color:{info:{}}}); // ここになんか描き込む
+  _node.registFBO("customTexture", {w:2048, h:2048, color:{info:{}}}); // ここになんか描き込む
 
   // UV用のあれを初期化
   _node.bindFBO("customTexture").clearColor(1, 1, 1, 1).clear().bindFBO(null);
 
   // meshes.
-  registCube(_node);
+  registKumaleon(_node, 3);
   registPoints(_node, 128, w, h); // 上記のwとhをそのまま使う
 
   // culling.
@@ -647,13 +695,13 @@ function draw(){
 
   _node.bindFBO("defer");
   _node.clearColor(0,0,0,0).clear();
-  _node.use("color", "cube").bindIBO("cubeIBO");
+  _node.use("color", "kumaleon").bindIBO("kumaleonIBO");
 
   // 射影
   const projMat = _cam.getProjMat().m;
   _node.setUniform("uProjMatrix", projMat);
   // deferに各種情報を格納
-  render(_node, _tf, _cam, 0, 0, 0);
+  render(_node, _tf, _cam);
 
   // uv情報を使って...
   if(mouseIsPressed){
