@@ -562,7 +562,7 @@ function showInfo(){
 // ----------
 
 function drawGraphic(){
-  _node.bindFBO("airBrush");
+  _node.bindFBO("airBrush").clearColor(0,0,0,0).clear();
   const col = config.brushColor;
   _node.use("airBrush", "foxBoard")
        .setUniform("uDensity", config.density)
