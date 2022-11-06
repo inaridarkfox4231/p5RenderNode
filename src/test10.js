@@ -97,7 +97,7 @@ function draw(){
   _node.clear();
 
   //ex.copyProgram(_node, null, "bg");
-  ex.copyPainter(_node, {src:{name:"bg", gradationStart:[0,0,0,0,0,1], gradationStop:[0,1,1,1,1,1]}});
+  ex.copyPainter(_node, {src:{name:"bg", gradationFlag:1, gradationStart:[0,0,0,0,0,1], gradationStop:[0,1,1,1,1,1]}});
 
   _node.enable("blend")
        .blendFunc("src_alpha", "one_minus_src_alpha");
