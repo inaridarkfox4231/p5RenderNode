@@ -1,0 +1,67 @@
+# Blender MTL File: 'None'
+# Material Count: 6
+
+newmtl body
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.000000 0.034720
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+
+newmtl ear
+Ns 179.999996
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 0.000000
+illum 9
+
+newmtl eye
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd C:\\Users\\INARI_~1\\AppData\\Local\\Temp\\gltfimg-nsa9t_nz\\eye01.png
+map_d C:\\Users\\INARI_~1\\AppData\\Local\\Temp\\gltfimg-nsa9t_nz\\eye01.png
+
+newmtl hoho
+Ns 179.999996
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd C:\\Users\\INARI_~1\\AppData\\Local\\Temp\\gltfimg-ujil53kg\\hoho01.png
+map_d C:\\Users\\INARI_~1\\AppData\\Local\\Temp\\gltfimg-ujil53kg\\hoho01.png
+
+newmtl line
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 0.000000 0.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl mouth
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd C:\\Users\\INARI_~1\\AppData\\Local\\Temp\\gltfimg-ug7jfgcj\\mouth01.png

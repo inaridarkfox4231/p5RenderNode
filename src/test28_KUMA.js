@@ -29,6 +29,8 @@
 // baseColor:色々
 // そんな感じでlilでいじる。
 
+// 中途半端だね
+
 const ex = p5wgex;
 let _node;
 const _timer = new ex.Timer();
