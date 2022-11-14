@@ -11,6 +11,8 @@
 
 // さらにスキャンラインを使うかどうかのフラグが要る。
 
+// 作ったけど何が面白いんだろこれ
+
 const ex = p5wgex;
 let _node;
 const _timer = new ex.Timer();
@@ -331,7 +333,7 @@ function renderMesh(node, tf, cam, x, y, z, r, g, b){
 // --------------------------- meshes ---------------------------------- //
 
 // 立方体
-function registCube(node, size = 1, hue = 0){
+function registCube(node, name, size = 1, hue = 0){
   const v=[-1,-1,-1, -1,1,-1, -1,-1,1, -1,1,1, // x-minus
            -1,-1,1, -1,1,1, 1,-1,1, 1,1,1, // z-plus
            1,-1,1, 1,1,1, 1,-1,-1, 1,1,-1, // x-plus
@@ -357,17 +359,17 @@ function registCube(node, size = 1, hue = 0){
     const col = ex.hsv2rgb(hue, 0.4*(z+1), 1);
     vc.push(col.r, col.g, col.b);
   }
-  node.registFigure("cube", [
+  node.registFigure(name, [
     {name:"aPosition", size:3, data:v},
     {name:"aNormal", size:3, data:n},
     {name:"aVertexColor", size:3, data:vc},
     {name:"aTexCoord", size:2, data:uv}
   ]);
-  node.registIBO("cubeIBO", {data:f}); // 一応。
+  node.registIBO(name + "IBO", {data:f}); // 一応。
 }
 
 // 雑。z軸に平行な平面。
-function registPlane(node, left=-1, right=1, bottom=-1, top=1, height=0){
+function registPlane(node, name, left=-1, right=1, bottom=-1, top=1, height=0){
   const p0 = [left, bottom, height];
   const p1 = [right, bottom, height];
   const p2 = [left, top, height];
@@ -377,59 +379,59 @@ function registPlane(node, left=-1, right=1, bottom=-1, top=1, height=0){
   const f = [0, 1, 2, 2, 1, 3];
   const n = [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1];
   const vc = [1,1,1, 1,1,1, 1,1,1, 1,1,1]; // 真っ白
-  node.registFigure("plane", [
+  node.registFigure(name, [
     {name:"aPosition", size:3, data:v},
     {name:"aNormal", size:3, data:n},
     {name:"aVertexColor", size:3, data:vc},
     {name:"aTexCoord", size:2, data:uv}
   ]);
-  node.registIBO("planeIBO", {data:f}); // 一応。
+  node.registIBO(name + "IBO", {data:f}); // 一応。
 }
 
-function registRabbit(node, size = 1, colorHue = 0){
+function registModel(node, model, name, size = 1, colorHue = 0){
   // rabbitModelからデータを取得したりする
   // verticesはベクトル3Dが入っててx,y,z成分を抜き出さないと無理
   // facesも各番号に長さ3の配列がもちろん入ってる
   // uvsは何にも入ってないけど内容的には[0,0]が延々と並んでる
   // vertexNormalsが法線でvertexColorsが色。
   // normalsは色々入ってるみたい。vertexColorsは死んでる。長さ0. 好きに使わせてもらおう。
-  const N = rabbit.vertices.length; // 4564.
-  const F = rabbit.faces.length;
-  const positions = new Array(N*3);
-  const normals = new Array(N*3);
-  const colors = new Array(N*3);
-  const uvs = new Array(N*2);
-  const faces = new Array(F*3);
+  const N = model.vertices.length; // 4564.
+  const F = model.faces.length;
+  const v = new Array(N*3);
+  const n = new Array(N*3);
+  const vc = new Array(N*3);
+  const uv = new Array(N*2);
+  const f = new Array(F*3);
   // 続きは...
   for(let i=0; i<N; i++){
-    const v = rabbit.vertices[i];
-    positions[3*i] = v.x * size;
-    positions[3*i+1] = v.y * size;
-    positions[3*i+2] = v.z * size;
-    const n = rabbit.vertices[i];
-    normals[3*i] = n.x;
-    normals[3*i+1] = n.y;
-    normals[3*i+2] = n.z;
+    const positions = model.vertices[i];
+    v[3*i] = positions.x * size;
+    v[3*i+1] = positions.y * size;
+    v[3*i+2] = positions.z * size;
+    const normals = model.vertexNormals[i];
+    n[3*i] = normals.x;
+    n[3*i+1] = normals.y;
+    n[3*i+2] = normals.z;
     const col = ex.hsv2rgb(colorHue, 0.7, 1);
-    colors[3*i] = col.r;
-    colors[3*i+1] = col.g;
-    colors[3*i+2] = col.b;
-    uvs[2*i] = 0;
-    uvs[2*i+1] = 0;
+    vc[3*i] = col.r;
+    vc[3*i+1] = col.g;
+    vc[3*i+2] = col.b;
+    uv[2*i] = 0;
+    uv[2*i+1] = 0;
   }
   for(let i=0; i<F; i++){
-    const f = rabbit.faces[i];
-    faces[3*i] = f[0];
-    faces[3*i+1] = f[1];
-    faces[3*i+2] = f[2];
+    const faceIndices = model.faces[i];
+    f[3*i] = faceIndices[0];
+    f[3*i+1] = faceIndices[1];
+    f[3*i+2] = faceIndices[2];
   }
-  node.registFigure("rabbit", [
-    {name:"aPosition", size:3, data:positions},
-    {name:"aNormal", size:3, data:normals},
-    {name:"aVertexColor", size:3, data:colors},
-    {name:"aTexCoord", size:2, data:uvs}
+  node.registFigure(name, [
+    {name:"aPosition", size:3, data:v},
+    {name:"aNormal", size:3, data:n},
+    {name:"aVertexColor", size:3, data:vc},
+    {name:"aTexCoord", size:2, data:uv}
   ]);
-  node.registIBO("rabbitIBO", {data:faces, large:true}); // 一応。
+  node.registIBO(name + "IBO", {data:f, large:true}); // 一応。
 }
 
 // ------------------------------------- config -------------------------------- //
@@ -464,9 +466,9 @@ function setup(){
   _node.registPainter("light", lightVert, lightFrag);
 
   // meshes.
-  registCube(_node);
-  registPlane(_node, -4, 4, -4, 4, 0);
-  registRabbit(_node, 6);
+  registCube(_node, "cube");
+  registPlane(_node, "plane", -4, 4, -4, 4, 0);
+  registModel(_node, rabbit, "rabbit", 6);
 
   // culling.
   _node.enable("cull_face");
@@ -513,7 +515,7 @@ function draw(){
   _node.setUniform("uScanLineColor", [1,0,0,0,1,0,0,0,1]);
   _node.setUniform("uScanLineNormal", [0,0,1,1,0,0,0,1,0]);
   _node.drawFigure("rabbit").bindIBO("rabbitIBO");
-  renderMesh(_node, _tf, _cam, 0,0,0,0.8,0.9,1);
+  renderMesh(_node, _tf, _cam, 0,0,0,0.2,0.3,0.4);
 
   _node.unbind();
 

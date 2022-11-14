@@ -448,7 +448,7 @@ function getRabbit(size, colorHue){
     positions[3*i] = v.x * size;
     positions[3*i+1] = v.y * size;
     positions[3*i+2] = v.z * size;
-    const n = rabbit.vertices[i];
+    const n = rabbit.vertexNormals[i];
     normals[3*i] = n.x;
     normals[3*i+1] = n.y;
     normals[3*i+2] = n.z;
