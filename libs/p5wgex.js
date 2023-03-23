@@ -4,7 +4,6 @@
 
 // まるごと移してしまえ。えいっ
 // でもってalphaをtrueで上書き。えいっ（どうなっても知らないよ...）
-
 p5.RendererGL.prototype._setAttributeDefaults = function(pInst) {
   // See issue #3850, safer to enable AA in Safari
   var applyAA = navigator.userAgent.toLowerCase().includes('safari');
@@ -38,11 +37,9 @@ p5.RendererGL.prototype._initContext = function() {
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LEQUAL);
       gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-      /* // これ使って無いや...
       this._viewport = this.drawingContext.getParameter(
         this.drawingContext.VIEWPORT
       );
-      */
     }
   } catch (er) {
     throw er;
@@ -90,6 +87,15 @@ const p5wgex = (function(){
       return {r:red(col), g:green(col), b:blue(col)};
     }
     return {r:255, g:255, b:255};
+  }
+
+  // エラー処理用
+  // 文字列に対してconsole.errorを実行したうえでnoLoop()を実行する
+  // んだけど、色々機能追加してエラーの詳細がわかりやすいようにしてもいいかもしれない
+  // 引数を増やすとか。エラーの種類もわかるとうれしいみたいな。
+  function consoleError(_string){
+    console.error(_string);
+    noLoop();
   }
 
   // ---------------------------------------------------------------------------------------------- //
@@ -652,10 +658,6 @@ const p5wgex = (function(){
   }
 
   // info.srcが用意されてないならnullを返す。一種のバリデーション。
-  // HTMLCanvasElementを追加したいですね。2dでもwebglでもコンテクストの.canvasで取得出来るやつ。
-  // HTMLImageElementはImage()で取得したやつです。
-  // たとえばRenderNodeのthis.glに対してthis.gl.canvasってやるとそれがHTMLCanvasElementです。
-  // instanceofは自作クラスOKだそうです。2Dの自作クラス作ってgetCanvas用意して...ってやればいけるな。
   function _getTextureDataFromSrc(src){
     if(src === undefined){ return null; }
     if(src instanceof Uint8Array || src instanceof Float32Array){ return src; }
