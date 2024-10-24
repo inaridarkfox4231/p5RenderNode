@@ -3444,3 +3444,856 @@ FALさんのコードを解析してた頃に戻りましょ
 破棄！！！
 
 もうやめようよ
+
+射影テクスチャマッピングというのは要するにNDCでtexturingするだけ
+プロジェクションほにゃららがこの原理を使ってるようです
+ラスタライズってポリゴンを描画するんですがdepthを取得するのであれば不要ですよね
+で
+これはカメラ（ていうかMVP）さえあれば出来てしまうので
+対象のポリゴンに対してマテリアルカラーとして用意できるわけです
+チャクリさん
+で、つまりまあたとえばビルみたいなのが立ち並んでいる状況でそこにこっちの画像を落とすわけですけど
+普通に落とした場合
+画面全体ですから、面白いことにならないわけ
+そこで別のカメラを用意してそっちの画像が映し出されるようにする
+それがおそらく正しい使い方なのでしょう
+それとは別になにかテクスチャがあってそれとブレンドするとかだとなお、ですね。
+だって実際のプロマにしてもビルの壁の質感とか、あるでしょう？
+
+というわけでカメラが2つ必要になるわけね
+片方はmvpしか必要としないけれどね
+videoElementの導入考えようか...
+
+videoの場合はvideoWidthとvideoHeightを取得すればよいそうです
+https://lab.syncer.jp/Web/JavaScript/Snippet/36/
+ありがとうございます！
+HTMLVideoElementの場合にvideoWidth/Heightを使うようにしよう
+
+h_doxasさんのサイト：https://wgld.org/d/webgl/w078.html
+
+おわりました
+鏡面反射と動的キューブ？
+キューブマップでフレームバッファ
+関連付けの関数framebufferTexture2Dを動的キューブマップのサンプルでは使ってないんですが
+どうもあれ描画前にやればいいみたいであのサンプルでは描画時にコロコロきりかえてるのであそこではやんなくていいだろ
+そういうことらしいです
+こっちでもbindFBOを改造すればいけるぜ
+って思ったけどやめよう
+bindした後はテクスチャだけ切り替えればいい仕様みたいなのでそういう関数を用意した方が柔軟性が高いと思う
+おそらく...
+infoのtextureTargetにcube_mapを指定する
+ただしtextureの場合です...attachType:"texture"の場合に、target:"texture_2d"かtexture_cube_mapを指定する
+全部nullです
+ちょっとまってもしかしてsrcになんかテクスチャのソースを指定するとデフォルトでなんかぶち込まれた状態の
+？？
+まあいいや
+src.xpとかsrc.xnとかあるけどsrcがundefinedだとおそらくここでエラー食らうのでcube_mapの場合はsrc={}とでもしておかないとやばいね
+ちゃんとnullが返らないと思う
+src格納済みのfboはおそらく作れる...のか？分からん。実験してない。infoにsrc:~~~ってやればいいのかも？
+
+まとめ
+infoにtargetもう準備されてました（cube_map導入時にいじってあった）のでそのままtarget:"cube_map"とすればOKです
+OKなんですがtarget:"cube_map"の場合にはそのあとcolorInfo.target = "texture_cube_map"になるんですがその場合に
+connectWith～～をしなければいい、あとsrc={}が必要。これは!info.MRTのところで_createEachBufferの前に実行すればいいです。
+いや、_validateForTextureでcube_mapでsrcがundefinedの場合に{}で初期化すればいい。
+最後にbind時ですがRenderNodeの関数でframebufferTexture2Dを作って、.....
+ああー
+MRTのケース？おそらくだけどMRTで普通にレンダリングする場合の格納先を0でなく1や2にできる...ということみたいです？
+もしくは読み取り時の0番オンリーを崩すのかしら。うーむ。attachmentとtargetについてdictを一通り用意してそれを使えばいいわね。
+attachmentで1番以降も使えるの気になるけどまた今度でいいです
+んでそれを使う。それ使って切り替えて描画するだけ。変更点は多くないですね。後はカメラの用意。
+それだけですね。楽ちん
+
+まあ難しいわね。やってみよ
+今ターゲットにしてるのはこの動的キューブマップ、あとステンシル鏡面反射、パーティクルフォグ、各種フィルタ
+ああまあsobelとlaplaはもうやったけど...ハーフトーンとラインが割と複雑なことしてたから気になってる
+
+全然関係ないけどvertexAttribPointerのnormalizeFlagについて、これ、attributeのtypeっていつもfloatでしょう。
+あそこをunsigned_byteにしてnormalizeをtrueにするとunsigned_byteがfloatに変換されるようです。この場合、
+バッファには4バイトで色が格納されるのでバッファが節約できるようです。そりゃそうだ、0～255までしか表現できないものね。
+なるほど...詳しくは：https://webglfundamentals.org/webgl/lessons/ja/webgl-how-it-works.html
+ファンダメンタルは時間があるときにきちんと読まないとね...知らないことまだまだいっぱいあるんだから。
+
+framebufferTexture2Dの仕様。そのときバインドされているfboに対して、そのテクスチャ（.t）に対する処理。
+
+つまり.tじゃないのよ。デプスだってテクスチャになるんだから。そういうわけで...
+framebufferTexture2Dですが、デプスやステンシルもあるわけ。そういうわけで、同じようによういしましょ。colorは未指定ならそれになる方向で。
+どうせその形式で使うんだから。で、.tのところにはその、colorなりdepthなりが入る。まあdepthは使わないだろうが....
+depthもtextureで使う場合はこれを呼び出してるんだよな。というか使ってる。でしょう？
+
+よし。
+
+ああそうか
+MRTの場合にあれ使ってるじゃん。よく見たら。だからあれMRT用なんだよ。
+/*
+d.color_attach_0 = gl.COLOR_ATTACHMENT0;
+d.color_attach_1 = gl.COLOR_ATTACHMENT1;
+d.color_attach_2 = gl.COLOR_ATTACHMENT2;
+d.color_attach_3 = gl.COLOR_ATTACHMENT3;
+d.color_attach_4 = gl.COLOR_ATTACHMENT4;
+d.color_attach_5 = gl.COLOR_ATTACHMENT5;
+d.color_attach_6 = gl.COLOR_ATTACHMENT6;
+d.color_attach_7 = gl.COLOR_ATTACHMENT7;
+d.color_attach_8 = gl.COLOR_ATTACHMENT8;
+d.color_attach_9 = gl.COLOR_ATTACHMENT9;
+d.color_attach_10 = gl.COLOR_ATTACHMENT10;
+d.color_attach_11 = gl.COLOR_ATTACHMENT11;
+d.color_attach_12 = gl.COLOR_ATTACHMENT12;
+d.color_attach_13 = gl.COLOR_ATTACHMENT13;
+d.color_attach_14 = gl.COLOR_ATTACHMENT14;
+d.color_attach_15 = gl.COLOR_ATTACHMENT15;
+d.depth_attach = gl.DEPTH_ATTACHMENT;
+d.stencil_attach = gl.STENCIL_ATTACHMENT;
+d.depth_stencil_attach = gl.DEPTH_STENCIL_ATTACHMENT;
+d.texture_2d = gl.TEXTURE_2D;
+d.texture_cube_map = gl.TEXTURE_CUBE_MAP;
+d.cube_map_px = gl.TEXTURE_CUBE_MAP_POSITIVE_X; xpだよ馬鹿
+d.cube_map_nx = gl.TEXTURE_CUBE_MAP_NEGATIVE_X;
+d.cube_map_py = gl.TEXTURE_CUBE_MAP_POSITIVE_Y;
+d.cube_map_ny = gl.TEXTURE_CUBE_MAP_NEGATIVE_Y;
+d.cube_map_pz = gl.TEXTURE_CUBE_MAP_POSITIVE_Z;
+d.cube_map_nz = gl.TEXTURE_CUBE_MAP_NEGATIVE_Z;
+*/
+
+一応できました。これであとはfboを作る際に、infoの中でtarget:"cube_map"とすればOKです。
+そして描画時にframebufferTexture2D(fboName, {target:"px"とか"nx"とかいろいろ})とすればOKです。
+2dでも呼び出すことができ、{}が未指定の場合はそれが実行されますが、おそらく何も起きません。
+
+そうだった。あそこはwとhが未定義でもいいようにするための処理だからfboの場合はどうでもいいんだったわ。忘れてた。
+そうですね。それでいいですね。だめでした。srcが未定義の場合に{}にする必要がありました。ばかかっ
+
+pxじゃなくてxpですね。たびたびほんとにすみません。pxやpyは別に役割がありますからね。
+
+ほとんど変更点なかったですね...新しい関数作ったくらいですね。素晴らしい！！！
+復習（何回でも復習）
+            yp
+zn -- xn -- zp -- xp
+            yn
+ですから、そういう感じでカメラを用意すればOKです。
+upベクトルが上下逆ですね。まあー難しい。これは結局のところ、その、中央から外側に向かうので、...
+むずかしい。
+
+// -------------------------------------------------------------- いろいろありました ------------------------------------------------------ //
+
+というわけで
+
+mebiusboxさんの物理ベースを読んでみる
+
+Lighting関連でもうp5っぽくやりたくない
+ので
+やめようかと
+SpotLightとか機能してないし
+ね、...
+
+varying vec3 vViewPosition;
+varying vec3 vNormal;
+
+// uniforms
+// 物体ごとのあれ
+// metalicとroughnessと
+// albedoはざっくりいうと物体の色で
+// 今現在頂点色とか単色とかテクスチャでやってるやつって認識でいいと思う
+uniform float metallic;
+uniform float roughness;
+uniform vec3 albedo;
+
+// defines
+#define PI 3.14159265359
+#define PI2 6.28318530718
+#define RECIPROCAL_PI 0.31830988618  // 未使用
+#define RECIPROCAL_PI2 0.15915494 // 未使用
+#define LOG2 1.442695 // 未使用
+#define EPSILON 1e-6
+
+struct IncidentLight {
+  vec3 color;
+  vec3 direction;
+  bool visible;
+};
+
+struct ReflectedLight {
+  vec3 directDiffuse;
+  vec3 directSpecular;
+  vec3 indirectDiffuse;
+  vec3 indirectSpecular;
+};
+
+// ライティングに使ういわゆる「ビュー情報」
+// 頂点ごとにこれが設定されており補間したうえでなんかする
+// なんか、する
+// このメソッドでpositionはビューから見た値
+
+// じゃあ今はどうやってるのか？
+// vViewPositionとvViewNormal
+// そこまでは同じ
+// こっちのvierDirに相当するものが無いですが...
+// ああ一緒ですね
+// z軸がカメラの方向
+// というか「こっち」を向いてるせいで
+// vViewPositionがマイナスになるので
+// このコードではそれをマイナスにして
+// カメラから見た場合の位置として扱ってる（z軸が逆方向になる）
+// で、viewDirはそれを正規化する
+// こっちでも最初の方で
+// ライトベクトル作るために反転させて正規化してる
+// 一緒ですね......一緒ですが、一緒だから楽ちん。とはいかない？
+// で、それを全部でやってるのよね
+// 無駄
+// 正規化って大きさ計算するから重いのよね
+// というかコードが汚いからやめようって話ではあるね
+
+// 同じ結果になるように書き換えるということか
+// ...
+struct GeometricContext {
+  vec3 position;
+  vec3 normal;
+  vec3 viewDir;
+};
+
+struct Material {
+  vec3 diffuseColor;
+  float specularRoughness;
+  vec3 specularColor;
+};
+
+// lights
+
+bool testLightInRange(const in float lightDistance, const in float cutoffDistance) {
+  return any(bvec2(cutoffDistance == 0.0, lightDistance < cutoffDistance));
+}
+
+float punctualLightIntensityToIrradianceFactor(const in float lightDistance, const in float cutoffDistance, const in float decayExponent) {
+  if (decayExponent > 0.0) {
+    return pow(saturate(-lightDistance / cutoffDistance + 1.0), decayExponent);
+  }
+
+  return 1.0;
+}
+
+struct DirectionalLight {
+  vec3 direction;
+  vec3 color;
+};
+
+void getDirectionalDirectLightIrradiance(const in DirectionalLight directionalLight, const in GeometricContext geometry, out IncidentLight directLight) {
+  directLight.color = directionalLight.color;
+  directLight.direction = directionalLight.direction;
+  directLight.visible = true;
+}
+
+// 点光源とスポットで色の減衰を計算している
+// 場合によっては描画に反映しないと
+// これ
+// こっちでIntensityって出してる値がたとえばPointLightだと
+
+// えー...とですね
+// p5が悪いんじゃないんだよな
+// p5を真似した自分が悪いのよ
+// どうでもいいんですが
+
+// あのですね
+// positionをモデルビュー変換でviewPositionにして送る
+// そこまでは良いんだけど
+// ライトってグローバルでしょ
+// そのままでは計算できない
+// そこで、明らかに不自然なんですが、
+// フラグメントシェーダにビュー行列を送ることで
+// モデルベースのライトのベクトルをビューベースにして
+// そうしたうえでビューベースのポジションと比べてライティングしてるんですよ
+// 無駄。
+// 無駄すぎる
+// だってフラグメントシェーダよ？？
+// ピクセルごとに...
+// 全部内容が一緒のライトベクトルの変換をやってるわけ
+// 無駄無駄無駄むだぁぁぁっぁぁ！！
+// なことは最初から気付いてたけどな...
+// この際だからな。やめよう。我々はp5を捨てるのだ。
+
+// だからね
+// 送るときにビュー行列を掛け算すればいい
+// それでOK.
+// 加えて正規化とか無駄が多い、処理に無駄が多いのでそこもちょっといじらないとまずいんだが
+// この手の作業をディファードでもやってしまってる
+// ただあれ
+// 外面はいじらなくて大丈夫ですね
+// あくまで内部仕様を変えるだけ
+
+// というのがプランA
+// プランBは？
+// そういう仕様でPBRをとりあえず書いてしまう
+// 書いたうえで
+// 今現在のあれをそういう形にするのが現実的なら
+// そういう風に書きかえればいい
+// どうせライティング部分は切り離してあるんでそこまで問題にはならない
+// 壊れることもない
+// その方がいいかもしれないです
+
+// 構造体使ったり
+// ライトベクトルを先にビュー変換したり
+// 色々違う感じになるけどまあ
+// 何とかなるんじゃないでしょうか？？？
+
+// 名付けて「PBRLightingSystem extends RenderingSystem」ですね
+// システム的に
+// ほぼ同じで...
+
+// で、まああの...ディファードとかも考えないので、めちゃ簡略化されるかと...
+// あとメソッド的には構造体とか使って全面的に書き直しますね。
+// 基本的なメソッドは同じ感じでやります。
+// ShaderPrototypeについてもPBRLightingShaderを一つだけ用意するだけでよいかと。
+
+// 一つ聞いていい...attenuationって何。使ってないでしょこれ。
+// 点光源とスポットライトで使ってるどうでもいい計算で...ねぇ
+// mebiusBoxさんはどうしてるのか？
+// まあここに書いてあるが
+// 単純ですね
+// 距離に応じて単一指数で減衰させてるだけ
+// そりゃ逆二乗の方がそれっぽいのかもしれないけどこっちのがシンプルで分かりやすいわね
+// 多分策定した人がなんか、気取ってみたかったんでしょ...（知らんけども）
+// 。。。
+// あれですね。
+// メソッド泥棒しただけの人に発言権は無いのです。
+// だから潔くp5を捨ててこっちになびこうっていうわけ
+// p5wgexやろうってなる前からあの記事には目を付けてたんで
+// こうなる流れだった。最初から。
+
+struct PointLight {
+  vec3 position;
+  vec3 color;
+  float distance;
+  float decay;
+};
+
+void getPointDirectLightIrradiance(const in PointLight pointLight, const in GeometricContext geometry, out IncidentLight directLight) {
+  vec3 L = pointLight.position - geometry.position;
+  directLight.direction = normalize(L);
+
+  float lightDistance = length(L);
+  if (testLightInRange(lightDistance, pointLight.distance)) {
+    directLight.color = pointLight.color;
+    directLight.color *= punctualLightIntensityToIrradianceFactor(lightDistance, pointLight.distance, pointLight.decay);
+    directLight.visible = true;
+  } else {
+    directLight.color = vec3(0.0);
+    directLight.visible = false;
+  }
+}
+
+struct SpotLight {
+  vec3 position;
+  vec3 direction;
+  vec3 color;
+  float distance;
+  float decay;
+  float coneCos;
+  float penumbraCos;
+};
+
+// allとanyはbvec2（boolのvec2型）に適用する。要するにまたはとすべてですね
+// あんま使わないが...
+// スポットライトからポジションへのベクトルを正規化してスポットライト本来の....
+
+// 点光源とスポットライトは点の位置も絡んでくるんですが
+// 当然これらもビュー座標系で計算することになる
+// で、
+// positionがz軸逆方向で計算してあるので
+// それを考慮しないと多分おかしなことになるわね
+
+// え・・・
+/// ？？？
+// バーテックスシェーダで
+//   vViewPosition = -mvPosition.xyz;
+
+
+// まとめると
+// まずviewPositionですが
+// 最終的に2回マイナスですので
+// 通常のビュー座標ですね...（つまりzが負の数になる通常の計算）
+// んで
+// viewDir
+// もうここまで書いたらviewDirectionのが分かりやすそうだけど...
+// これはマイナスにしたのをそのまま
+// 正規化してるんで
+// 点の位置からカメラに向かうやつだ。
+
+// ダブルマイナスは分かりづらいんだがな..........
+
+
+// えー、気を取り直して
+// 何でこれを調べてたかというとね
+// ポイントライトとスポットライトで
+// 普通にその位置をモデルビュー、というか「点」なのでビュー変換してて
+// だからおかしいなと思ってたら
+// そりゃ2回マイナスしたら戻るわけだわ
+// 逆にわかりにくい...lightDirだけマイナスの方がいいと思う
+// 何かメリットがあるんだろうか
+// まあいいか
+
+// もしかするとzをプラスにしたpositionを別の用途で使う理由があるのかもしれないけどね
+// 今回は不採用しましょ
+// 一応
+
+void getSpotDirectLightIrradiance(const in SpotLight spotLight, const in GeometricContext geometry, out IncidentLight directLight) {
+  vec3 L = spotLight.position - geometry.position;
+  directLight.direction = normalize(L);
+
+  float lightDistance = length(L);
+  float angleCos = dot(directLight.direction, spotLight.direction);
+
+  if (all(bvec2(angleCos > spotLight.coneCos, testLightInRange(lightDistance, spotLight.distance)))) {
+    float spotEffect = smoothstep(spotLight.coneCos, spotLight.penumbraCos, angleCos);
+    directLight.color = spotLight.color;
+    directLight.color *= spotEffect * punctualLightIntensityToIrradianceFactor(lightDistance, spotLight.distance, spotLight.decay);
+    directLight.visible = true;
+  } else {
+    directLight.color = vec3(0.0);
+    directLight.visible = false;
+  }
+}
+
+// #defineでライトの個数を決めることについて...
+// いいと思う
+// 構造体で扱うならその方が都合がいいだろ
+// ていうか
+// そんなのより
+// shininessとattenuationって役割がかぶってるんだよな
+// どっちも減衰を扱ってて
+// はっきりいってめんどくさいんで
+// やめたいです～
+// 実際使ってないしな...
+
+// ...ん？？
+// DirectionalLightの減衰？？？？？
+// 平行光なのに減衰？？
+
+// こっちでクックトランスでやってるところ
+// を
+// 今現在のライティングでは
+// フォンシェーディングでやってる
+// そういう話だと思います...多分。
+// じゃないな
+// ランバート・フォンモデルだ。両方だ。
+
+// FallOffってなんですか...
+
+// あのですね
+// 色を計算した後はやること全部一緒なんですよね
+// つまり無駄が多い...
+
+// 要するにこっちでRE_Directでやってるところを
+// フォン・ランバートにすると
+// 今現在のやり方に近くなるっぽいね。
+// あとは今関係ないinDirectとか省いて
+// いや一応残して
+// それでいける？
+// opacityどうするか
+// 透明処理も一応（少ないけど）扱ってるんで
+// ...
+// albedoをvec4にしてalphaでopacityするか
+// まあ気が向いたらで良いと思う
+// よし。
+
+// light uniforms
+#define LIGHT_MAX 4
+uniform DirectionalLight directionalLights[LIGHT_MAX];
+uniform PointLight pointLights[LIGHT_MAX];
+uniform SpotLight spotLights[LIGHT_MAX];
+
+// ライトの数をユニフォーム変数として登録してるね。
+uniform int numDirectionalLights;
+uniform int numPointLights;
+uniform int numSpotLights;
+
+// ここまでだけを使うのであればおそらくだけど従来のライティングに...なる？
+
+// BRDFs
+
+// Normalized Lambert
+vec3 DiffuseBRDF(vec3 diffuseColor) {
+  return diffuseColor / PI;
+}
+
+vec3 F_Schlick(vec3 specularColor, vec3 H, vec3 V) {
+  return (specularColor + (1.0 - specularColor) * pow(1.0 - saturate(dot(V,H)), 5.0));
+}
+
+float D_GGX(float a, float dotNH) {
+  float a2 = a*a;
+  float dotNH2 = dotNH*dotNH;
+  float d = dotNH2 * (a2 - 1.0) + 1.0;
+  return a2 / (PI * d * d);
+}
+
+float G_Smith_Schlick_GGX(float a, float dotNV, float dotNL) {
+  float k = a*a*0.5 + EPSILON;
+  float gl = dotNL / (dotNL * (1.0 - k) + k);
+  float gv = dotNV / (dotNV * (1.0 - k) + k);
+  return gl*gv;
+}
+
+// Cook-Torrance
+vec3 SpecularBRDF(const in IncidentLight directLight, const in GeometricContext geometry, vec3 specularColor, float roughnessFactor) {
+
+  vec3 N = geometry.normal;
+  vec3 V = geometry.viewDir;
+  vec3 L = directLight.direction;
+
+  float dotNL = saturate(dot(N,L));
+  float dotNV = saturate(dot(N,V));
+  vec3 H = normalize(L+V);
+  float dotNH = saturate(dot(N,H));
+  float dotVH = saturate(dot(V,H));
+  float dotLV = saturate(dot(L,V));
+  float a = roughnessFactor * roughnessFactor;
+
+  float D = D_GGX(a, dotNH);
+  float G = G_Smith_Schlick_GGX(a, dotNV, dotNL);
+  vec3 F = F_Schlick(specularColor, V, H);
+  return (F*(G*D))/(4.0*dotNL*dotNV+EPSILON);
+}
+
+// レンダリング方程式
+// 拡散と反射をそれぞれ処理してるですね
+// つまりここにいくまでの段階では拡散も反射も考慮していないのだ
+// ...
+// 拡散は現在、ランバートでやっています
+// ランバートというのは要するに法線方向と光の方向を見て互いに逆方向だと1で、ずれるごとに下がっていき垂直で0に、とかそういう。
+// 反射は現在、フォンです
+// フォンというのは光を法線で反射させて（綺麗に反射させて）、それが目線に来る、その、互いに逆の時1でMAXで、ずれると小さくなる、
+// その時の係数がある、係数が大きいほど強く下がる、小さいほどなんかぺか～～～なる。
+// この2つがこっちでいうところのDiffuseとSpecularなのかなと思いました。
+// shininessですが
+// RenderEquations(RE)
+void RE_Direct(const in IncidentLight directLight, const in GeometricContext geometry, const in Material material, inout ReflectedLight reflectedLight) {
+
+  float dotNL = saturate(dot(geometry.normal, directLight.direction));
+  vec3 irradiance = dotNL * directLight.color;
+
+  // punctual light
+  irradiance *= PI;
+
+  reflectedLight.directDiffuse += irradiance * DiffuseBRDF(material.diffuseColor);
+  reflectedLight.directSpecular += irradiance * SpecularBRDF(directLight, geometry, material.specularColor, material.specularRoughness);
+}
+
+void main() {
+  GeometricContext geometry;
+  geometry.position = -vViewPosition;
+  geometry.normal = normalize(vNormal);
+  geometry.viewDir = normalize(vViewPosition);
+
+  Material material;
+  material.diffuseColor = mix(albedo, vec3(0.0), metallic);
+  material.specularColor = mix(vec3(0.04), albedo, metallic);
+  material.specularRoughness = roughness;
+
+  // Lighting
+
+  ReflectedLight reflectedLight = ReflectedLight(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
+  vec3 emissive = vec3(0.0);
+  float opacity = 1.0;
+
+  IncidentLight directLight;
+
+  // point light
+  for (int i=0; i<LIGHT_MAX; ++i) {
+  処理はLIGHT_MAXまでとし、num～～Lightsで切ってるね
+    if (i >= numPointLights) break;
+    getPointDirectLightIrradiance(pointLights[i], geometry, directLight);
+    if (directLight.visible) {
+      RE_Direct(directLight, geometry, material, reflectedLight);
+    }
+  }
+
+  // spot light
+  for (int i=0; i<LIGHT_MAX; ++i) {
+    if (i >= numSpotLights) break;
+    getSpotDirectLightIrradiance(spotLights[i], geometry, directLight);
+    if (directLight.visible) {
+      RE_Direct(directLight, geometry, material, reflectedLight);
+    }
+  }
+
+  // directional light
+  for (int i=0; i<LIGHT_MAX; ++i) {
+    if (i >= numDirectionalLights) break;
+    getDirectionalDirectLightIrradiance(directionalLights[i], geometry, directLight);
+    RE_Direct(directLight, geometry, material, reflectedLight);
+  }
+
+  vec3 outgoingLight = emissive + reflectedLight.directDiffuse + reflectedLight.directSpecular + reflectedLight.indirectDiffuse + reflectedLight.indirectSpecular;
+
+  gl_FragColor = vec4(outgoingLight, opacity);
+}
+
+// vertexShaderは今まで通りで良いと思う
+// viewPosition,viewNormalだけあればいい
+// こっちで構造体用意してぶちこむ
+
+// fragmentShaderはもうviewMatrixを受け取りません
+// ライトのベクトルは送るときにviewMatrixで変換します
+// 位置も...位置？？
+// モデル変換にtranslateが関わってるからモデル変換もしないとまずいですね
+// あーわかった
+// あっちの「viewMatrix」って
+// いいや
+// 。。。
+// モデルビューでいいでしょ
+// 早く作りたい...
+
+久しぶりのTODO
+// ---------------------------------------------------------------------------------------------------------------------- //
+TODO
+
+まず
+foxIAについて
+登録したイベントというか関数に名前を付けて管理してピンポイントで削除とかできるようにする
+たとえばwheel以外全部消すとかそういうの
+名前はdefault_keydownとかそんな感じ
+あくまでfoxIAが作ったイベントだけですね
+今んとこinitializeでしか作ってないですからね
+不要なイベントを削除出来たらうれしいなっていうのが一つと
+あとまあ
+ワンタイムイベント（一回だけ実行したらもう要らない）
+次に
+大きな変更になるんですが
+mu...meshUtilのね、線とテクスチャ座標を
+
+殺す
+
+理由はいろいろあるんですが
+まず
+テクスチャ座標...要らんのです
+ていうかあれ以来ほぼ全く使ってない
+そもそもLSではオプションなのにmu.create()でやると普通にuvが入ってて
+しかもcubeとかsphereとかやると使いもしないのにuvが設定されるわけで
+しかもmu.regist()するとさ、使いもしないのにバッファにUVが....入るんで...
+ていうかあれ
+mu.regist()では頂点色は追加attr扱いなのにuvは必須になってるんよ
+問題ないっちゃないかもだけど、まあ、無くていいかな、と思うなど...
+そのかわりメタデータをつけるくらいはまあしてもいいかなって思うけど
+たとえば？？
+トーラスだったら角度とか
+チューブだったらオフセットと主法線からなるvec4データとかそういうの。
+uvではなく、メタデータ。あくまで。uvではなく。
+uvでなくてもその、いろんな方法があるんでね。材料。
+立方体も...？
+まあそうね...
+コンポジットの際に面倒なことになるのを避けたいんよ
+たとえばサイコロ作るにしても平面をコロコロしながら作ればuvとか自由に作れるわけ
+上下とかも結局
+まあ例のあれ、水中動画、あれでやったように、上下とかカスタムしたいときに
+普通に不便なんよ
+テクスチャって通常Blenderとかでやるものでしょっていうのもあり
+サイコロの他に思いつかないなら要らないだろって話
+トーラスのカスタムUVにしてもそういうトーラスを作ればいいと思う
+その場合はそういうトーラスを作る関数を新たに作って...
+メタデータでやろう
+というかまあ
+そういう配列（円柱とか）作って
+そのデータをそのまま使うかもしくはそれを元に好きなようにattrを作って
+あくまで追加attrとして用意するなどすればいいしそれによって描画できればいい
+トーラスで(cos(s),sin(s),cos(t),sin(t))
+円柱で(h,cos(s),sin(s))
+やりたいでしょ？そういうことですね。
+lineについては、まあいわゆるワイヤーフレームだけども。
+これも要らんのよね
+必要になったら用意したらいい
+とりあえず今は要らないんで
+たとえば...
+与えられた頂点から面の辺を重複なく用意して（Setとかで）それで辺を作るとか
+対角線が問題だけどワイヤーフレームなら別に問題ないし
+そういうこだわりがあるならまた個別にメソッド作ればよいかと...思うね。
+だから全部削除してすっきりさせたい
+っていうか
+メッシュのコンポジットもっと自由にやりたい
+頂点彩色でいいじゃない
+UV？Blenderで作ってもちこめば普通に機能する、追加attrでやれば。それももう実験済みだし...
+というわけでなくしたいです
+頑張って計算したんだけど。全部無しで。
+だいたい正二十面体だって諦めてて一貫性が無いし（気付いてたよ）
+そういう感じでよろしく...！
+
+foxIAの柔軟性を高める
+具体的にはsignalとonceをすべてのリスナーに用意したい感じです
+こんなことができるらしい
+
+function setup() {
+  createCanvas(400, 400);
+
+  const AC = new AbortController();
+  const removeSignal = AC.signal;
+
+  const getPosition = (e)=>{
+    console.log(e.clientX);
+    if(e.clientX > 200){
+      console.log("200より大きいので中止します");
+      AC.abort();
+    }
+  }
+
+  this.canvas.addEventListener("click", getPosition, {passive:false, signal:removeSignal});
+
+}
+
+function draw() {
+  background(220);
+}
+ACを用意してそれのsignalを渡すことで
+関数内でabort()を呼び出してそのイベントを抹消出来るようです
+または
+once:true
+にすると一回だけ実行されて消える
+これを使うと例えばあれ、クリックのイベントリスナーでdispatchして消す、とかできる
+多分同じことしてるわね
+もしくは
+マウスダウンまたはタッチスタートで
+どっちかで
+たとえばね
+AudioContextを生成して
+どっちかで生成したらどっちのイベントも消える、とかしたい場合に...
+onceだと片方しか消えてくれないので
+この場合はabortですね！
+touchstartとmousedownのそれぞれに
+同じACから作ったsignalを渡して
+同じ関数で...ってやればいいね
+...click使いたくないんよね
+dblclickで2回発動しちゃうし
+
+abortとonceについてはこんな感じで実装できるかと思います。
+
+/*
+  イメージ的には...
+	まずaborts={}というオプションを新しく作る
+	中身ですが
+	ctrl:["mousedown","touchstart"]
+	といった感じで
+	コントローラー名：[コントロールしたいイベント名一覧]
+	のようにする
+	んでその名前のコントローラを作り
+	signalを取り
+	そのイベントのところに来たら
+	optionオブジェクトにsignalを登録する。
+	あとは
+	たとえばInteraction内で
+	this.abort(コントローラー名)とかすると
+	イベントを殺せるわけですね
+
+  あとはそうね...
+	once = []というオプションを用意する
+	んで....
+	単純にその中のイベントに関しては1回こっきりとする
+	これもせいぜいmousedownとtouchstartでしか使わないが...
+
+  initialize()内部のリファクタリングが要る
+	具体的には
+	仕様の中で登録するイベントを.mousedown={}とか.keydown={}とかとか
+	{}の中身は
+	{target:window/canvas, name:イベント名、func:関数、options:オプション（現在はpassive:falseのみ）}
+	なんだけどこうすればoptionsに.signal:～～とかonce:true/falseとか追加しやすいでしょ
+	今の形式だと無理
+	んで
+	それらが終わったら
+	もちろん登録しないものについてはundefinedのままなわけ
+	そうです
+	で
+	Object.keys()で取り出して
+	ひとつずつぶちこむわけ
+	ついでに関数も保持しておいて任意で消去出来たらいいんだけどとりあえず今は良いです
+	このabortやonceにしてもどうせclickやmousedown程度でしか
+	多分使う機会ないでしょうし
+	ね。
+*/
+https://openprocessing.org/sketch/2412951
+
+そうすると、たとえば5回タップするとイベントが終了するこんな感じのプログラムが書けるようになるわけ
+function setup(){
+	createCanvas(400, 400);
+	const IA = new MyIA(this.canvas, {aborts:["mousedown","touchstart"]});
+	background(0);
+}
+
+class MyIA extends foxIA.Interaction{
+	constructor(cvs, options={}){
+		super(cvs, options);
+		this.count = 0;
+	}
+	myTap(){
+		this.count++;
+		background(50*this.count);
+		console.log(`${this.count}回目のタップです`);
+		if(this.count === 5){
+			console.log("5回タップされたのでイベントを終了します");
+			this.abort("ctrl");
+		}
+	}
+	mouseDownDefaultAction(e){
+		this.myTap();
+	}
+	touchStartDefaultAction(e){
+		this.myTap();
+	}
+}
+たとえば
+メインインタラクションをInteraction継承で作っておいたうえで
+コンテクスト作成だけIRにお任せして
+IRのmousedownやtouchstartにコンテクストの作成とonceを要求して
+さらに作成時のオプションで
+mousedownとtouchstart以外のイベントを殺しておけば
+すっきりするでしょ。そういうことがしたい。
+そう
+初期化時に特定のイベント以外全部殺すとかそういうオプションが欲しいんよ
+不要なイベントを作らないために
+restrict:[]
+restrictに指定されたイベントがある場合、そのイベント以外はすべて作成されない！
+[]の場合は用意されたイベントはすべて登録される
+そんな感じですね
+たとえば
+IR = new Inspector(this.canvas, {once:["mousedown","touchstart"], restrict:["mousedown","touchstart"]});
+これでmousedown,touchstart以外は作成されず、さらに両方とも1回だけ実行されるというわけ。
+またaborts:{ctrl:["mousedown","touchstart"]}とすれば
+これらのイベント内でIA.abort("ctrl")とすることで
+任意のタイミングでイベントを殺せる
+そういうのを作りたいです。
+
+あとあれ
+
+これはすぐできるんだけど
+renderGradationのcolorsで長さ4の配列に限ってるけど
+あれをcoulourに対応させるのをやろう。
+renderTextureの方は対応してるんでね。
+
+あともうちょっとだけ
+
+PBRについて
+
+noLightですが
+やめよう
+ライティングしないんだったら別のメソッドにした方がいい
+初期化でライティング部分をバッサリ切って
+別の形式になるようにする
+もちろんmetallicとか一切なしの...
+あるいはもういっそ
+ライティング無しの別のPrototypeを作りましょ
+そうしよう
+その方がいいと思うんです
+
+で
+lineについても作って切り替えられるように...
+ライトのヘルパーとか欲しい
+
+opacityもオプションにする
+これも常に必要なわけじゃない
+ほぼ不要かと
+ですね
+必要な時だけ出現させてカリングと組み合わせるなどして
+半透明描画でしょ？
+そういうときだけ使えばいい
+適用箇所はmainProcessのあと
+rgbにopacityを掛けるかどうかも含めてこっちで決める。
+
+以上です。両方切っといて。
+
+これ以上ここにいても仕方ないな
+メインの方に移行するか
+こっちのリポジトリはもう更新しないかもしれん。
